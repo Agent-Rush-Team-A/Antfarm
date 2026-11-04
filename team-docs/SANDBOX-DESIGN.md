@@ -45,15 +45,16 @@ Harness 和 Runner 分别由系统服务运行，通过本地 Unix socket 通信
 
 | 内部操作 | 行为 |
 | --- | --- |
-| 执行 Bash | 输入由 Host 确认的 `workspaceId`、`executionId`、`command`、可选相对 `workdir` 和 `timeoutMs`。同一工作区同时只执行一条命令，同一执行 ID 不重复启动。 |
+| 执行 Bash | 输入由 Host 确认的 `workspaceId`、`executionId`、`command`、可选相对 `workdir` 和 `timeoutMs`。同一工作区同时只执行一条命令，本次清理完成后才启动下一条。同一执行 ID 不重复启动。 |
 | 结束工作区任务 | 先禁止该工作区接收新执行，再移除容器。工作区和会话记录保留，文件仍可查看和下载。 |
 | 读取状态 | 前端展示工作区文件和执行状态。容器重建信息留在运行记录或前端，不写进模型消息。 |
 
 Runner 用 Docker Engine 的 `ExecCreate → ExecStart → ExecInspect` 执行 `/bin/bash -c <command>`，把命令作为单独参数传给容器。默认目录是 `/workspace`，`workdir` 只接受该目录下的相对位置。关闭 TTY 并分开采集 stdout 和 stderr，按原来的 `foreground` 结构回传退出码、截断和超时。非零退出码是可用于修复的真实结果。Runner 错误单独分类，无法确定是否已经执行的请求不自动重放。参赛预设禁用后台晋升和提升权限入口。 [Docker Exec API][docker-exec] · [Bash 结果形状][bash-result]
 
-- **正常完成。** 一轮对话结束不改变工作区归属，后续会话或消息可继续复用容器。用户点“结束工作区任务”时回收容器，关闭执行入口。
-- **用户忘记结束。** 无正在执行的命令且 10 分钟没有 Bash 活动时回收容器，每代容器最长运行 30 分钟。自动回收只结束该代容器，工作区保持可用。下一次 Bash 自动挂回原目录，前端可以显示重建状态。
-- **命令取消、超时或断连。** 需要中止时移除整个容器来停止其进程，保留 workspace 中已写下的内容。下次执行可以创建新容器，文件不会自动回滚。Harness 的 `exec.signal` 传递本次取消，`turn/end` 的取消事件可作为停止信号之一。 [Agent Loop 结束][turn-end] · [工具取消信号][tool-context]
+- **命令完成。** Runner 返回真实退出码和输出，包括非零退出。确认本次执行的进程已清理后，后续会话或消息可继续复用容器。
+- **命令超时或取消。** Runner 按 `executionId` 停止本次命令及其子进程。Harness 通过本次调用的 `exec.signal` 传递取消。确认相关进程均已退出后保留容器。若清理失败或无法确认所有相关进程都已退出，销毁该代容器，确认销毁后才允许再次执行。工作区中已经写入的文件保留。 [工具取消信号][tool-context]
+- **空闲回收。** 工作区没有正在执行、正在清理或等待执行的命令时开始计时。收到新的执行请求并接纳后停止计时，连续空闲 30 分钟则回收容器。工作区保持可用，下次 Bash 执行时创建新容器并挂回原目录。
+- **主动结束。** 用户点“结束工作区任务”时，先关闭该工作区的执行入口，再立即回收容器并终止其中仍在运行的进程。已接纳但尚未开始的命令结束等待并返回取消，工作区产物仍可查看和下载。
 - **异常退出。** 创建、执行和销毁按 `workspaceId` 协调，关闭中的旧代确认已删除后才允许下一代。Runner 重启按专用标签清理遗留容器，工作区继续保留。Docker 响应不确定时先核对实际资源，只有确认不存在才记录已销毁。
 
 容器先用固定 digest 的本地镜像、非 root UID、只读根文件系统、无外网、默认 seccomp、`cap-drop=ALL` 与 `no-new-privileges`。只挂任务目录，`/tmp` 用 32 MiB tmpfs。起步限制为每容器 1 vCPU、512 MiB RAM、64 个进程，单命令默认 30 秒、最多 60 秒，每路输出 64 KiB，同时最多 2 个容器。持久 workspace 的磁盘容量也要有实际配额，目录本身没有容量上限，需在 VM 上验证底层配额能力后再对外开放。 [Docker 运行参数][docker-run] · [Docker 资源限制][docker-resources]
@@ -62,15 +63,14 @@ Runner 用 Docker Engine 的 `ExecCreate → ExecStart → ExecInspect` 执行 `
 
 1. **首版开放哪些文件接口。** fork 的 `workspaceFiles.read` 明确允许读取工作区之外的文件，原生 `read` 也经宿主文件系统读取。仅更换 Bash 执行器或工作目录无法约束这些入口。建议首版由 Agent 在容器内通过 Bash 操作文件，Web 文件列表和下载走 Runner 的限根接口。若保留原生文件工具或预览，需改造对应读写路径。验收需覆盖宿主绝对路径、符号链接以及路径在检查后被替换的情况。 [Web 文件读取][workspace-file-read] · [原生读取][file-read]
 2. **公开演示的身份和授权。** 现有注册表回答会话属于哪个工作区。需要另行确定演示访客的登录方式、可访问的工作区范围，以及 Host 在已有会话发消息、访问文件和结束工作区时如何鉴权。fork 默认放行 `owner`，因此建议访客走受限身份并由 Host 核验权限，验收用两个身份覆盖越权请求。 [fork 的 Remote 访问控制][remote-access]
-3. **一次 Bash 执行何时算结束。** 关闭 Harness 的后台选项后，命令仍能用 `sleep 300 >/dev/null 2>&1 &` 等方式让子进程在 Bash 退出后继续运行。需要决定如何检查和清理残留进程。建议首版发现残留就回收该代容器，确认回收后再接受下一次执行，并用这个命令验证后台进程不会越过本次执行边界。 [Docker Exec][docker-exec]
-4. **主动结束、自动回收和硬上限的优先顺序。** 主动结束关闭工作区的执行入口并保留文件，空闲回收释放容器并允许后续重建。还需确定 30 分钟上限撞上正在执行的命令时如何处理。建议上限到达时中止本次命令并回收容器，前端显示实际结果。验收分别确认结束后的执行请求被拒绝、空闲回收后可继续，以及达到硬上限时在跑的命令被清理。 [赛题生命周期要求][challenge]
-5. **模型、Runner 和文件面板的路径格式。** Runner 的 `workdir` 只收工作区相对路径，fork 的 Bash 工具目前也接受绝对路径，结果中还必须有 `cwd`。建议模型可传相对路径或容器内 `/workspace` 下的绝对路径，Host 规范化后将相对路径交给 Runner，工具结果与文件面板按同一规则解释路径。验收覆盖把 `pwd` 返回的 `/workspace/src` 再用作 `workdir`、打开相应产物，以及拒绝越界路径。 [Bash 路径和返回值][bash-path]
+3. **按执行跟踪和清理进程的实现方式。** Runner 需要把子进程可靠地归到本次 `executionId`，包括 Bash 先退出、后台子进程仍在运行的情况。需要确定如何跟踪这些进程并确认清理完成。用 `sleep 300 >/dev/null 2>&1 &` 验证普通命令退出后也能发现并清理残留进程。 [Docker Exec][docker-exec]
+4. **模型、Runner 和文件面板的路径格式。** Runner 的 `workdir` 只收工作区相对路径，fork 的 Bash 工具目前也接受绝对路径，结果中还必须有 `cwd`。建议模型可传相对路径或容器内 `/workspace` 下的绝对路径，Host 规范化后将相对路径交给 Runner，工具结果与文件面板按同一规则解释路径。验收覆盖把 `pwd` 返回的 `/workspace/src` 再用作 `workdir`、打开相应产物，以及拒绝越界路径。 [Bash 路径和返回值][bash-path]
 
 ## 最小实施与验收
 
 1. 实现 Runner 并复用工作区注册表。用工作区 A 的两个会话执行命令，两者读取到同一个标记且容器 ID 相同。回收 A 的容器后再次执行，容器 ID 变化，标记仍在。工作区 B 不能读到 A 的标记。
 2. 接通参赛预设。用 Vultr DeepSeek 在 A 中跨会话创建、编辑并运行同一个 Python 文件，核对工具轨迹的 stdout、stderr、退出码和前端产物。切到 B 执行相同命令，确认命中 B。验证仅提交 `cwd` 无法通过参赛入口创建会话，无工作区归属、归属非受管理目录或无权访问的会话无法执行。
-3. 验证文件和进程边界。用合成凭证证明容器无法读到 Harness 的文件，验证容器无网络、时间与内存限制生效，以及容器制造的链接无法让宿主文件面板读取其他目录。覆盖主动结束、空闲回收、执行中取消和 Runner 重启。检查容器确实删除、任务产物仍可下载。
+3. 验证文件和进程边界。用合成凭证证明容器无法读到 Harness 的文件，验证容器无网络、时间与内存限制生效，以及容器制造的链接无法让宿主文件面板读取其他目录。验证命令超时和取消后，相关进程都已退出且下一条命令复用同一容器。模拟无法确认清理完成，验证旧容器销毁后才允许重建。验证连续空闲 30 分钟后回收、再次执行能看到原文件，以及主动结束时立即回收、后续执行被拒绝、产物仍可下载。Runner 重启后也应清理遗留容器。
 4. 对外开放前固定参赛预设，封住可绕过 Runner 的本地 Bash、PTY、PTC、动态插件等执行路径。确认原生文件工具和前端预览只访问授权任务目录。当前团队 SSH 访问方式继续用于内部验证。 [Web 预设][preset] · [赛题要求][challenge]
 
 [challenge]: https://lablab.ai/ai-hackathons/vultr-hackathon
@@ -94,7 +94,6 @@ Runner 用 Docker Engine 的 `ExecCreate → ExecStart → ExecInspect` 执行 `
 [workspace-file-read]: ../packages/api/workspace-files/src/index.ts#L226-L246
 [remote-access]: ../packages/api/remote-access/README.md#L25-L33
 [bash-path]: ../packages/shell/tool-bash/src/index.ts#L146-L167
-[turn-end]: ../packages/core/agent-loop/src/agent.ts#L422
 [docker-bind]: https://docs.docker.com/engine/storage/bind-mounts/
 [docker-volumes]: https://docs.docker.com/engine/storage/volumes/
 [docker-security]: https://docs.docker.com/engine/security/
