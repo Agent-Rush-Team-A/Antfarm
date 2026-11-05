@@ -672,6 +672,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ClosedSandbox: 'sandbox.md',
   RunningSandbox: 'sandbox.md',
   SandboxExecutionPolicy: 'sandbox.md',
+  SandboxExecutionRequest: 'sandbox.md',
+  SandboxExecutionResult: 'sandbox.md',
   SandboxMode: 'sandbox.md',
   SandboxPolicy: 'sandbox.md',
   SandboxStatus: 'sandbox.md',

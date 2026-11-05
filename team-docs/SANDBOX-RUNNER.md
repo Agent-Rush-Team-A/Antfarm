@@ -56,4 +56,23 @@ curl --unix-socket "$socket" -X DELETE "$url"
 
 ## Bash 执行交接
 
-Issue #6 沿用 `dsh --profile sandbox-runner`。调用方把已授权的工作区 ID 放在 `/v1/workspaces/:workspaceId/sandbox` 的路径中，开启时在 PUT 的 `workspaceDir` 字段传入预建目录。执行前用 GET 确认返回 HTTP 200 和 `state: "running"`，并读取完整的 `containerId`。关闭、重开或重启 Runner 后，应重新查询容器 ID。
+沙箱镜像须提供 `/bin/bash`。先用 PUT 开启工作区，再用 GET 取得 `running` 状态的完整 `containerId`，作为 Exec 请求的 `expectedContainerId`。下面使用 `jq` 构造 JSON，在已开启的 A 中执行可信前台命令。
+
+```sh
+socket=/run/agentrush-sandbox/runner.sock
+url=http://localhost/v1/workspaces/A/sandbox
+container_id=$(curl -fsS --unix-socket "$socket" "$url" | jq -er 'select(.state == "running") | .containerId')
+execution_id=$(cat /proc/sys/kernel/random/uuid)
+jq -n --arg id "$execution_id" --arg container "$container_id" \
+  '{executionId: $id, expectedContainerId: $container, command: "printf hello; printf warning >&2; exit 7"}' \
+  | curl -sS --unix-socket "$socket" -H 'Content-Type: application/json' \
+      --data-binary @- -w '\nHTTP %{http_code}\n' "$url/exec"
+```
+
+示例返回 HTTP 200、退出码 7 和两路独立输出。同一容器可立即启动多个不同执行 ID 的 Bash，命令共享容器的资源限制。调用方断开连接后可用原执行 ID、容器 ID 和请求内容重试。同一代结果不明时先查询沙箱状态，`cleanup_required` 表示需要 DELETE 并确认关闭。重开后使用新容器 ID 和新执行 ID。字段限制和错误状态见 [Runner 参考](../packages/sandbox/sandbox-runner/README.zh.md#use-this-package)。
+
+## 进程清理交接
+
+[Runner 服务](../packages/sandbox/sandbox-runner/src/index.ts) 在当前工作区容器代次的内存中按执行 ID 保存各自的在途执行、结果和失败。Start 发出前的失败只影响本次执行，原 ID 仍可重试取回失败。Start 发出后，若连接中断、等待超时或 Docker 无法确认退出，当前代次进入 `cleanup_required`。Runner 阻止新命令和尚未发出的 Start。已启动的其他命令仍可各自结算，关闭容器会结束其中的在途命令。
+
+Issue #9 需要验收按执行 ID 清理进程树，覆盖超时、显式取消和 Bash 正常退出后遗留的后台子进程。清理成功时，同容器的其他命令可以继续并返回自己的结果。无法确认时，先销毁旧容器再重开，并核对工作区已写入的文件仍在。

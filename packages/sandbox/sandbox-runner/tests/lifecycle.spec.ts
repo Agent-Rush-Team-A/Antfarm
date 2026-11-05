@@ -1,15 +1,16 @@
 import { randomUUID } from 'node:crypto'
 import { once } from 'node:events'
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
-import { createServer } from 'node:http'
+import { createServer, type ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
-import { expect, test, type TestContext } from 'vitest'
-import SandboxRunner from '../src/index.ts'
+import { expect, test, vi, type TestContext } from 'vitest'
+import SandboxRunner, { type DockerContainerId, type SandboxExecutionId } from '../src/index.ts'
 import { sandboxName } from '../src/config.ts'
+import { DockerEngine, type SandboxContainer } from '../src/docker.ts'
 
 const deployment = 'lifecycle-test'
 const A = brandString<WorkspaceId>('A')
@@ -22,10 +23,7 @@ interface Call {
   body: unknown
 }
 
-interface Reply {
-  status: number
-  body?: unknown
-}
+type Reply = { status: number; body?: unknown } | ((response: ServerResponse) => void)
 
 interface FakeContainer {
   Id: string
@@ -42,6 +40,19 @@ function creation(call: Call, id?: WorkspaceId): boolean {
     && (id === undefined || call.url.searchParams.get('name') === sandboxName(deployment, id))
 }
 
+function execution(containerId: DockerContainerId, id: string, timeoutMs = 5_000) {
+  return {
+    executionId: brandString<SandboxExecutionId>(id), expectedContainerId: containerId,
+    argv: ['/bin/bash', '-c', 'printf result'], timeoutMs,
+  }
+}
+
+function execStart(call: Call): boolean {
+  return call.method === 'POST' && /^\/v1\.51\/exec\/[a-f0-9]{64}\/start$/u.test(call.url.pathname)
+}
+
+const upgradeHeaders = 'HTTP/1.1 101 UPGRADED\r\nConnection: Upgrade\r\nUpgrade: tcp\r\n\r\n'
+
 async function fixture(t: TestContext, requestTimeoutMs = 5_000) {
   const temp = await mkdtemp(join(await realpath(tmpdir()), 'dsh-life-'))
   t.onTestFinished(() => rm(temp, { recursive: true, force: true }))
@@ -51,6 +62,7 @@ async function fixture(t: TestContext, requestTimeoutMs = 5_000) {
   const socket = process.platform === 'win32' ? `\\\\.\\pipe\\dsh-life-${randomUUID()}` : join(temp, 'engine.sock')
   const calls: Call[] = []
   const containers = new Map<string, FakeContainer>()
+  const execs = new Map<string, { ID: string; ContainerID: string; Running: boolean; ExitCode: number }>()
   let nextId = 0
   const id = () => (++nextId).toString(16).padStart(64, '0')
   const control: { intercept?: Intercept } = {}
@@ -96,10 +108,22 @@ async function fixture(t: TestContext, requestTimeoutMs = 5_000) {
       return { status: 200, body: [...containers.keys()].map(Id => ({ Id })) }
     }
     const [, version, collection, key, action] = url.pathname.split('/')
-    if (version !== 'v1.51' || collection !== 'containers' || !key) return { status: 500 }
+    if (version !== 'v1.51' || !key) return { status: 500 }
+    if (collection === 'exec') {
+      const exec = execs.get(key)
+      if (!exec) return { status: 404 }
+      if (execStart(call)) return (response) => { response.socket?.end(upgradeHeaders) }
+      if (method === 'GET' && action === 'json') return { status: 200, body: exec }
+    }
+    if (collection !== 'containers') return { status: 500 }
     const container = containers.get(key) ?? [...containers.values()].find(row => row.Name === `/${key}`)
     if (!container) return { status: 404 }
     if (method === 'GET' && action === 'json') return { status: 200, body: container }
+    if (method === 'POST' && key === container.Id && action === 'exec') {
+      const ID = id()
+      execs.set(ID, { ID, ContainerID: container.Id, Running: false, ExitCode: 7 })
+      return { status: 201, body: { Id: ID } }
+    }
     if (method === 'POST' && key === container.Id && action === 'start') {
       container.State = { Running: true, Paused: false }
       return { status: 204 }
@@ -120,7 +144,12 @@ async function fixture(t: TestContext, requestTimeoutMs = 5_000) {
       const call = { method: request.method ?? '', url: new URL(request.url ?? '/', 'http://docker'), body: parsed }
       calls.push(call)
       const respond = () => reply(call)
-      void Promise.resolve(control.intercept ? control.intercept(call, respond) : respond()).then(({ status, body: data }) => {
+      void Promise.resolve(control.intercept ? control.intercept(call, respond) : respond()).then((result) => {
+        if (typeof result === 'function') {
+          result(response)
+          return
+        }
+        const { status, body: data } = result
         response.writeHead(status, { 'Content-Type': 'application/json' })
         response.end(JSON.stringify(data))
       })
@@ -149,6 +178,484 @@ async function fixture(t: TestContext, requestTimeoutMs = 5_000) {
 
   return { boot, mount, calls, containers, control, directory, seed }
 }
+
+test('distinct IDs run concurrently in one sandbox and matching retries share one Start', async (t) => {
+  const f = await fixture(t)
+  const runner = await f.boot()
+  const a = await runner.open(A, f.directory(A))
+  const b = await runner.open(B, f.directory(B))
+  const aRequest = execution(a.containerId, 'once')
+  const arrived = Promise.withResolvers<undefined>()
+  const allow = Promise.withResolvers<undefined>()
+  const secondArrived = Promise.withResolvers<undefined>()
+  const allowSecond = Promise.withResolvers<undefined>()
+  const heldStarts = [[arrived, allow], [secondArrived, allowSecond]] as const
+  let nextHeldStart = 0
+  f.control.intercept = async (call, respond) => {
+    const gate = execStart(call) ? heldStarts[nextHeldStart++] : undefined
+    if (gate) {
+      gate[0].resolve(undefined)
+      await gate[1].promise
+    }
+    return respond()
+  }
+
+  const first = runner.execute(A, aRequest)
+  const joined = runner.execute(A, { ...aRequest, argv: [...aRequest.argv] })
+  await arrived.promise
+  const second = runner.execute(A, execution(a.containerId, 'second'))
+  try {
+    await secondArrived.promise
+    await expect(runner.execute(A, { ...aRequest, argv: ['/bin/false'] })).rejects.toMatchObject({ code: 'execution_id_conflict' })
+    await expect(runner.execute(A, { ...aRequest, timeoutMs: 1_000 })).rejects.toMatchObject({ code: 'execution_id_conflict' })
+    await expect(runner.execute(A, execution(b.containerId, 'cross-workspace'))).rejects.toMatchObject({ code: 'execution_generation_mismatch' })
+    await expect(runner.execute(A, execution(a.containerId, 'third'))).resolves.toMatchObject({ executionId: 'third', exitCode: 7 })
+    await expect(runner.execute(B, execution(b.containerId, 'once'))).resolves.toMatchObject({ executionId: 'once', exitCode: 7 })
+    allow.resolve(undefined)
+    const result = await first
+    expect(result).toEqual({
+      executionId: aRequest.executionId, exitCode: 7,
+      stdout: { text: '', truncated: false }, stderr: { text: '', truncated: false },
+    })
+    expect(await joined).toBe(result)
+    expect(await runner.execute(A, aRequest)).toBe(result)
+
+    await expect(runner.open(A, f.directory(A))).resolves.toEqual(a)
+    const container = f.containers.get(a.containerId)
+    if (!container) throw new Error('Expected the workspace container')
+    container.State.Paused = true
+    await expect(runner.open(A, f.directory(A))).rejects.toMatchObject({ code: 'sandbox_outcome_unknown' })
+    expect(f.containers.has(a.containerId)).toBe(true)
+    container.State.Paused = false
+  } finally {
+    allow.resolve(undefined)
+    allowSecond.resolve(undefined)
+  }
+  await expect(second).resolves.toMatchObject({ executionId: 'second', exitCode: 7 })
+  expect(f.calls.filter(execStart)).toHaveLength(4)
+  expect(f.calls.filter(call => call.url.pathname.endsWith('/exec')).map(call => call.url.pathname)).toEqual([
+    `/v1.51/containers/${a.containerId}/exec`, `/v1.51/containers/${a.containerId}/exec`,
+    `/v1.51/containers/${a.containerId}/exec`, `/v1.51/containers/${b.containerId}/exec`,
+  ])
+  expect(f.calls.filter(call => creation(call, A))).toHaveLength(1)
+})
+
+test('reusing a running generation keeps status and new executions available', async (t) => {
+  const f = await fixture(t)
+  const runner = await f.boot()
+  const a = await runner.open(A, f.directory(A))
+  const inspecting = Promise.withResolvers<undefined>()
+  const allow = Promise.withResolvers<undefined>()
+  let held = false
+  f.control.intercept = async (call, respond) => {
+    if (!held && call.method === 'GET' && call.url.pathname === `/v1.51/containers/${a.containerId}/json`) {
+      held = true
+      inspecting.resolve(undefined)
+      await allow.promise
+    }
+    return respond()
+  }
+  const reuse = runner.open(A, f.directory(A))
+  try {
+    await inspecting.promise
+    await expect(runner.status(A)).resolves.toEqual(a)
+    await expect(runner.execute(A, execution(a.containerId, 'during-reuse'))).resolves.toMatchObject({ exitCode: 7 })
+  } finally {
+    allow.resolve(undefined)
+    await reuse
+  }
+  expect(await reuse).toEqual(a)
+  expect(f.calls.filter(call => creation(call, A))).toHaveLength(1)
+})
+
+test.for(['closed', 'reopened', 'removed', 'cleanup', 'disposed'] as const)(
+  'a reuse inspection cannot override a generation that was %s', async (change, t) => {
+    const f = await fixture(t)
+    const ctx = new Context()
+    const runner = await f.boot(ctx)
+    const a = await runner.open(A, f.directory(A))
+    const inspecting = Promise.withResolvers<undefined>()
+    const allow = Promise.withResolvers<undefined>()
+    let held = false
+    f.control.intercept = async (call, respond) => {
+      if (!held && call.url.pathname === `/v1.51/containers/${a.containerId}/json`) {
+        held = true
+        const stale = structuredClone(respond())
+        inspecting.resolve(undefined)
+        await allow.promise
+        return stale
+      }
+      if (change === 'cleanup' && execStart(call)) return (response) => { response.destroy() }
+      return respond()
+    }
+    const codes = {
+      disposed: 'sandbox_not_ready', cleanup: 'sandbox_cleanup_required', removed: 'sandbox_outcome_unknown',
+      closed: 'sandbox_closing', reopened: 'sandbox_closing',
+    }
+    const reuse = expect(runner.open(A, f.directory(A))).rejects.toMatchObject({ code: codes[change] })
+    let disposal: Promise<unknown> | undefined
+    try {
+      await inspecting.promise
+      if (change === 'disposed') {
+        disposal = Promise.resolve(ctx.fiber.dispose())
+      } else if (change === 'cleanup') {
+        await expect(runner.execute(A, execution(a.containerId, 'unknown'))).rejects.toMatchObject({ code: 'execution_outcome_unknown' })
+      } else if (change === 'removed') {
+        expect(f.containers.delete(a.containerId)).toBe(true)
+        await expect(runner.status(A)).resolves.toEqual({ state: 'closed' })
+      } else {
+        await expect(runner.close(A)).resolves.toEqual({ state: 'closed' })
+        if (change === 'reopened') {
+          const replacement = await runner.open(A, f.directory(A))
+          expect(replacement.containerId).not.toBe(a.containerId)
+        }
+      }
+    } finally {
+      allow.resolve(undefined)
+      await Promise.all([reuse, disposal])
+    }
+    expect(f.calls.filter(call => creation(call, A))).toHaveLength(change === 'reopened' ? 2 : 1)
+  },
+)
+
+test('overlapping replacement checks share the pending replacement and reject stale observations after it completes', async (t) => {
+  const f = await fixture(t)
+  const runner = await f.boot()
+  const a = await runner.open(A, f.directory(A))
+  const container = f.containers.get(a.containerId)
+  if (!container) throw new Error('Expected the workspace container')
+  container.State.Paused = true
+  const stale: SandboxContainer = structuredClone({ ...container, Id: a.containerId })
+  const inspections = [Promise.withResolvers<SandboxContainer | null>(), Promise.withResolvers<SandboxContainer | null>()] as const
+  const arrived = [Promise.withResolvers<undefined>(), Promise.withResolvers<undefined>()] as const
+  const inspect = vi.spyOn(DockerEngine.prototype, 'inspect')
+  for (const [pending, started] of [[inspections[0], arrived[0]], [inspections[1], arrived[1]]] as const) {
+    inspect.mockImplementationOnce(() => {
+      started.resolve(undefined)
+      return pending.promise
+    })
+  }
+  t.onTestFinished(() => { inspect.mockRestore() })
+  const creating = Promise.withResolvers<undefined>()
+  const allowCreate = Promise.withResolvers<undefined>()
+  f.control.intercept = async (call, respond) => {
+    if (creation(call, A)) {
+      creating.resolve(undefined)
+      await allowCreate.promise
+    }
+    return respond()
+  }
+  const joined = runner.open(A, f.directory(A))
+  await arrived[0].promise
+  const late = expect(runner.open(A, f.directory(A))).rejects.toMatchObject({ code: 'sandbox_outcome_unknown' })
+  await arrived[1].promise
+  const replacement = runner.open(A, f.directory(A))
+  try {
+    await creating.promise
+    inspections[0].resolve(stale)
+    await inspections[0].promise
+    allowCreate.resolve(undefined)
+    const result = await replacement
+    expect(await joined).toEqual(result)
+    expect(result.containerId).not.toBe(a.containerId)
+  } finally {
+    allowCreate.resolve(undefined)
+    for (const pending of inspections) pending.resolve(stale)
+    await Promise.allSettled([joined, late, replacement])
+  }
+  await late
+  expect(f.calls.filter(call => creation(call, A))).toHaveLength(2)
+})
+
+test('a command admitted during a reuse inspection prevents replacement of a stale paused observation', async (t) => {
+  const f = await fixture(t)
+  const runner = await f.boot()
+  const a = await runner.open(A, f.directory(A))
+  const container = f.containers.get(a.containerId)
+  if (!container) throw new Error('Expected the workspace container')
+  container.State.Paused = true
+  const inspecting = Promise.withResolvers<undefined>()
+  const allow = Promise.withResolvers<undefined>()
+  const started = Promise.withResolvers<() => void>()
+  let held = false
+  f.control.intercept = async (call, respond) => {
+    if (!held && call.url.pathname === `/v1.51/containers/${a.containerId}/json`) {
+      held = true
+      const stale = structuredClone(respond())
+      inspecting.resolve(undefined)
+      await allow.promise
+      return stale
+    }
+    if (execStart(call)) return (response) => {
+      const socket = response.socket
+      if (!socket) throw new Error('Expected an exec output socket')
+      socket.write(upgradeHeaders)
+      started.resolve(() => { socket.end() })
+    }
+    return respond()
+  }
+  const reuse = expect(runner.open(A, f.directory(A))).rejects.toMatchObject({ code: 'sandbox_outcome_unknown' })
+  await inspecting.promise
+  container.State.Paused = false
+  const result = runner.execute(A, execution(a.containerId, 'during-inspection'))
+  const finish = await started.promise
+  try {
+    allow.resolve(undefined)
+    await reuse
+    expect(f.calls.some(call => call.method === 'DELETE')).toBe(false)
+  } finally {
+    allow.resolve(undefined)
+    finish()
+  }
+  await expect(result).resolves.toMatchObject({ exitCode: 7 })
+  expect(f.calls.filter(call => creation(call, A))).toHaveLength(1)
+})
+
+test('requires the known generation to be ready, running, and owned before Exec Create', async (t) => {
+  const f = await fixture(t)
+  const runner = await f.boot()
+  const id = brandString<DockerContainerId>('1'.padStart(64, '0'))
+  const starting = Promise.withResolvers<undefined>()
+  const allow = Promise.withResolvers<undefined>()
+  f.control.intercept = async (call, respond) => {
+    if (call.url.pathname === `/v1.51/containers/${id}/start`) {
+      starting.resolve(undefined)
+      await allow.promise
+    }
+    return respond()
+  }
+  const opening = runner.open(A, f.directory(A))
+  await starting.promise
+  try {
+    await expect(runner.execute(A, execution(id, 'opening'))).rejects.toMatchObject({ code: 'sandbox_not_running' })
+  } finally {
+    allow.resolve(undefined)
+  }
+  const a = await opening
+  delete f.control.intercept
+
+  const container = f.containers.get(a.containerId)
+  if (!container) throw new Error('Expected the workspace container')
+  container.State.Paused = true
+  await expect(runner.execute(A, execution(a.containerId, 'paused'))).rejects.toMatchObject({ code: 'sandbox_not_running' })
+  container.State.Paused = false
+  container.Config.Labels['org.agentrush.sandbox.workspace'] = B
+  await expect(runner.execute(A, execution(a.containerId, 'unowned'))).rejects.toMatchObject({ code: 'sandbox_name_conflict' })
+  expect(f.calls.filter(call => call.url.pathname.endsWith('/exec'))).toHaveLength(0)
+})
+
+test('caps recorded IDs without evicting results and clears the cap on replacement', { timeout: 15_000 }, async (t) => {
+  const f = await fixture(t)
+  const runner = await f.boot()
+  const old = await runner.open(A, f.directory(A))
+  const original = execution(old.containerId, 'first')
+  const result = await runner.execute(A, original)
+  f.control.intercept = (call, respond) => call.url.pathname.endsWith('/exec') ? { status: 409 } : respond()
+  for (let i = 1; i < 128; i++) {
+    await expect(runner.execute(A, execution(old.containerId, `entry-${i}`))).rejects.toMatchObject({ kind: 'engine' })
+  }
+  await expect(runner.execute(A, execution(old.containerId, 'over-limit'))).rejects.toMatchObject({ code: 'execution_limit' })
+  expect(await runner.execute(A, original)).toBe(result)
+  expect(f.calls.filter(execStart)).toHaveLength(1)
+
+  delete f.control.intercept
+  const container = f.containers.get(old.containerId)
+  if (!container) throw new Error('Expected the old workspace container')
+  container.State.Paused = true
+  const replacement = await runner.open(A, f.directory(A))
+  expect(replacement.containerId).not.toBe(old.containerId)
+  expect(f.containers.has(old.containerId)).toBe(false)
+  await expect(runner.execute(A, original)).rejects.toMatchObject({ code: 'execution_generation_mismatch' })
+  await expect(runner.execute(A, { ...original, expectedContainerId: replacement.containerId })).resolves.toMatchObject({ exitCode: 7 })
+  expect(f.calls.filter(execStart)).toHaveLength(2)
+})
+
+test('a deadline before Start releases the execution position and caches the failure', async (t) => {
+  const f = await fixture(t)
+  const runner = await f.boot()
+  const a = await runner.open(A, f.directory(A))
+  const timed = execution(a.containerId, 'pre-start-deadline', 100)
+  const allow = Promise.withResolvers<undefined>()
+  f.control.intercept = async (call, respond) => {
+    if (call.url.pathname === `/v1.51/containers/${a.containerId}/exec`) await allow.promise
+    return respond()
+  }
+  try {
+    await expect(runner.execute(A, timed)).rejects.toMatchObject({ code: 'execution_timeout' })
+    const beforeRetry = f.calls.length
+    await expect(runner.execute(A, timed)).rejects.toMatchObject({ code: 'execution_timeout' })
+    expect(f.calls).toHaveLength(beforeRetry)
+    expect(f.calls.filter(execStart)).toHaveLength(0)
+    await expect(runner.status(A)).resolves.toEqual(a)
+  } finally {
+    delete f.control.intercept
+    allow.resolve(undefined)
+  }
+  await expect(runner.execute(A, execution(a.containerId, 'new'))).resolves.toMatchObject({ exitCode: 7 })
+})
+
+test.for(['lost reply', 'deadline'] as const)('a Start %s blocks further commands until the container is removed', async (failure, t) => {
+  const f = await fixture(t)
+  const runner = await f.boot()
+  const old = await runner.open(A, f.directory(A))
+  const request = execution(old.containerId, 'unknown', failure === 'deadline' ? 500 : 5_000)
+  const code = failure === 'deadline' ? 'execution_timeout' : 'execution_outcome_unknown'
+  const siblingStarted = Promise.withResolvers<() => void>()
+  f.control.intercept = (call, respond) => {
+    if (!execStart(call)) return respond()
+    return (response) => {
+      const socket = response.socket
+      if (!socket) throw new Error('Expected an exec output socket')
+      socket.write(upgradeHeaders)
+      siblingStarted.resolve(() => { socket.end() })
+    }
+  }
+  const sibling = runner.execute(A, execution(old.containerId, 'sibling'))
+  const finishSibling = await siblingStarted.promise
+  f.control.intercept = (call, respond) => {
+    if (!execStart(call)) return respond()
+    return (response) => {
+      if (failure === 'deadline') response.socket?.write(upgradeHeaders)
+      else response.destroy()
+    }
+  }
+  try {
+    await expect(runner.execute(A, request)).rejects.toMatchObject({ code })
+    const beforeRetry = f.calls.length
+    await expect(runner.execute(A, request)).rejects.toMatchObject({ code })
+    await expect(runner.execute(A, execution(old.containerId, 'blocked'))).rejects.toMatchObject({ code: 'sandbox_cleanup_required' })
+    await expect(runner.open(A, f.directory(A))).rejects.toMatchObject({ code: 'sandbox_cleanup_required' })
+    expect(f.calls).toHaveLength(beforeRetry)
+    expect(f.calls.filter(execStart)).toHaveLength(2)
+  } finally {
+    finishSibling()
+  }
+  await expect(sibling).resolves.toMatchObject({ executionId: 'sibling', exitCode: 7 })
+  await expect(runner.status(A)).resolves.toEqual({ state: 'cleanup_required' })
+
+  delete f.control.intercept
+  await expect(runner.close(A)).resolves.toEqual({ state: 'closed' })
+  const replacement = await runner.open(A, f.directory(A))
+  await expect(runner.execute(A, request)).rejects.toMatchObject({ code: 'execution_generation_mismatch' })
+  await expect(runner.execute(A, execution(replacement.containerId, 'new'))).resolves.toMatchObject({ exitCode: 7 })
+})
+
+test.for(['inspection', 'create'] as const)('close prevents Start while Exec %s is in flight', async (blocked, t) => {
+  const f = await fixture(t)
+  const runner = await f.boot()
+  const old = await runner.open(A, f.directory(A))
+  const arrived = Promise.withResolvers<undefined>()
+  const allow = Promise.withResolvers<undefined>()
+  const remove = Promise.withResolvers<undefined>()
+  const prefix = `/v1.51/containers/${old.containerId}`
+  let held = false
+  f.control.intercept = async (call, respond) => {
+    if (!held && call.url.pathname === `${prefix}/${blocked === 'inspection' ? 'json' : 'exec'}`) {
+      held = true
+      const reply = respond()
+      arrived.resolve(undefined)
+      await allow.promise
+      return reply
+    }
+    if (call.method === 'DELETE') await remove.promise
+    return respond()
+  }
+  const started = runner.execute(A, execution(old.containerId, 'closing'))
+  await arrived.promise
+  const closing = runner.close(A)
+  try {
+    await expect(runner.execute(A, execution(old.containerId, 'new'))).rejects.toMatchObject({ code: 'sandbox_closing' })
+    if (blocked === 'create') {
+      remove.resolve(undefined)
+      await expect(closing).resolves.toEqual({ state: 'closed' })
+      const replacement = await runner.open(A, f.directory(A))
+      expect(replacement.containerId).not.toBe(old.containerId)
+    }
+    allow.resolve(undefined)
+    const code = blocked === 'inspection' ? 'sandbox_closing' : 'execution_generation_mismatch'
+    await expect(started).rejects.toMatchObject({ code })
+  } finally {
+    allow.resolve(undefined)
+    remove.resolve(undefined)
+  }
+  await expect(closing).resolves.toEqual({ state: 'closed' })
+  expect(f.calls.filter(execStart)).toHaveLength(0)
+  expect(f.calls.filter(call => call.url.pathname.endsWith('/exec'))).toHaveLength(blocked === 'inspection' ? 0 : 1)
+})
+
+test('close and reopen proceed before a lost Start reply on the old generation', async (t) => {
+  const f = await fixture(t)
+  const runner = await f.boot()
+  const old = await runner.open(A, f.directory(A))
+  const arrived = Promise.withResolvers<undefined>()
+  const allow = Promise.withResolvers<undefined>()
+  const newArrived = Promise.withResolvers<undefined>()
+  const newAllow = Promise.withResolvers<undefined>()
+  f.control.intercept = async (call, respond) => {
+    if (!execStart(call)) return respond()
+    arrived.resolve(undefined)
+    await allow.promise
+    return (response) => { response.destroy() }
+  }
+  const request = execution(old.containerId, 'old')
+  const late = runner.execute(A, request)
+  await arrived.promise
+  delete f.control.intercept
+  try {
+    await expect(runner.close(A)).resolves.toEqual({ state: 'closed' })
+    const replacement = await runner.open(A, f.directory(A))
+    await expect(runner.execute(A, request)).rejects.toMatchObject({ code: 'execution_generation_mismatch' })
+    f.control.intercept = async (call, respond) => {
+      if (execStart(call)) {
+        newArrived.resolve(undefined)
+        await newAllow.promise
+      }
+      return respond()
+    }
+    const fresh = runner.execute(A, execution(replacement.containerId, 'new'))
+    await newArrived.promise
+    delete f.control.intercept
+    allow.resolve(undefined)
+    await expect(late).rejects.toMatchObject({ code: 'execution_outcome_unknown' })
+    await expect(runner.status(A)).resolves.toEqual(replacement)
+    await expect(runner.execute(A, execution(replacement.containerId, 'after-late'))).resolves.toMatchObject({ exitCode: 7 })
+    newAllow.resolve(undefined)
+    await expect(fresh).resolves.toMatchObject({ exitCode: 7 })
+    expect(f.calls.filter(execStart)).toHaveLength(3)
+    expect(f.calls.filter(call => call.method === 'DELETE').map(call => call.url.pathname)).toEqual([
+      `/v1.51/containers/${old.containerId}`,
+    ])
+  } finally {
+    allow.resolve(undefined)
+    newAllow.resolve(undefined)
+  }
+})
+
+test('disposal closes an active output socket and stops accepting executions', async (t) => {
+  const f = await fixture(t)
+  const ctx = new Context()
+  const fiber = f.mount(ctx)
+  await fiber
+  const runner = ctx.sandboxRunner
+  const a = await runner.open(A, f.directory(A))
+  const upgraded = Promise.withResolvers<undefined>()
+  const disconnected = Promise.withResolvers<undefined>()
+  f.control.intercept = (call, respond) => {
+    if (!execStart(call)) return respond()
+    return (response) => {
+      response.socket?.once('close', () => { disconnected.resolve(undefined) }).write(upgradeHeaders)
+      upgraded.resolve(undefined)
+    }
+  }
+  const started = runner.execute(A, execution(a.containerId, 'during-dispose'))
+  await upgraded.promise
+  const result = expect(started).rejects.toMatchObject({ code: 'execution_outcome_unknown' })
+  await fiber.dispose()
+  await result
+  await disconnected.promise
+  await expect(runner.execute(A, execution(a.containerId, 'after-dispose'))).rejects.toMatchObject({ code: 'sandbox_not_ready' })
+  expect(f.calls.filter(execStart)).toHaveLength(1)
+})
 
 test('concurrent callers share one create and only two workspaces reserve capacity', async (t) => {
   const f = await fixture(t)
@@ -288,12 +795,30 @@ test('replaces a paused generation only after its full ID is confirmed absent', 
   const before = f.calls.length
   const replacement = await runner.open(A, f.directory(A))
   expect(replacement.containerId).not.toBe(first.containerId)
-  expect(f.calls.slice(before, before + 3).map(call => `${call.method} ${call.url.pathname}`)).toEqual([
+  expect(f.calls.slice(before, before + 4).map(call => `${call.method} ${call.url.pathname}`)).toEqual([
+    `GET /v1.51/containers/${first.containerId}/json`,
     `GET /v1.51/containers/${first.containerId}/json`,
     `DELETE /v1.51/containers/${first.containerId}`,
     `GET /v1.51/containers/${first.containerId}/json`,
   ])
   expect(f.containers.has(first.containerId)).toBe(false)
+})
+
+test('reuses a generation that resumes before replacement acquires it', async (t) => {
+  const f = await fixture(t)
+  const runner = await f.boot()
+  const a = await runner.open(A, f.directory(A))
+  const container = f.containers.get(a.containerId)
+  if (!container) throw new Error('Expected the workspace container')
+  container.State.Paused = true
+  f.control.intercept = (call, respond) => {
+    const reply = structuredClone(respond())
+    if (call.url.pathname === `/v1.51/containers/${a.containerId}/json`) container.State.Paused = false
+    return reply
+  }
+  await expect(runner.open(A, f.directory(A))).resolves.toEqual(a)
+  expect(f.calls.some(call => call.method === 'DELETE')).toBe(false)
+  expect(f.calls.filter(call => creation(call, A))).toHaveLength(1)
 })
 
 test('startup waits for deployment cleanup and leaves other containers and workspace files intact', async (t) => {

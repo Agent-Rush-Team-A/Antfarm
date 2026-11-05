@@ -8,6 +8,12 @@ const failures = {
   sandbox_workspace_conflict: 'The workspace directory does not match the sandbox reservation or mount',
   sandbox_name_conflict: 'The sandbox name or container ID is not owned by this workspace',
   sandbox_outcome_unknown: 'Docker has not confirmed the outcome of a sandbox operation',
+  sandbox_not_running: 'The current workspace sandbox is not running',
+  execution_generation_mismatch: 'The expected container is not the current workspace sandbox',
+  execution_id_conflict: 'This execution ID was already used with different arguments or a different timeout',
+  execution_limit: 'This container has reached its execution ID limit',
+  execution_timeout: 'The execution deadline elapsed before Docker confirmed the result',
+  execution_outcome_unknown: 'Docker has not confirmed the execution result. Close the workspace sandbox before running another command',
 }
 
 /** A Runner decision that callers can classify without parsing an error message. */

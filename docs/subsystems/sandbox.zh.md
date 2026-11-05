@@ -168,6 +168,8 @@ interface ConfinedArgv {
 
 `RunningSandbox` 包含完整的 Docker 容器 ID。`ClosedSandbox` 表示已确认容器不存在。`SandboxStatus` 还包含开启中、关闭中和待清理状态。部署和生命周期行为见 [Docker Runner 参考](../../packages/sandbox/sandbox-runner/README.zh.md)。
 
+`SandboxExecutionRequest` 包含容器代次、执行 ID、规范化的命令参数和等待时限。`SandboxExecutionResult` 包含执行 ID、确认后的退出码，以及各自带有截断标记的 stdout 和 stderr。
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -249,6 +251,15 @@ async open(workspaceId: WorkspaceId, directory: string): Promise<RunningSandbox>
  * @returns The observed sandbox state.
  */
 async status(workspaceId: WorkspaceId): Promise<SandboxStatus>
+
+/** Run a foreground command on the expected workspace container. Distinct execution IDs can run concurrently.
+ * Matching retries share the pending or stored result, including failures.
+ * An unconfirmed Start reserves the container for cleanup. Caller disconnects do not cancel the operation.
+ * @param workspaceId - Workspace registry identity.
+ * @param request - Validated arguments and expected generation from the trusted caller.
+ * @returns The confirmed exit code and retained output for the caller's execution ID.
+ */
+async execute(workspaceId: WorkspaceId, request: SandboxExecutionRequest): Promise<SandboxExecutionResult>
 
 /** Close the current generation. Acknowledging deletion alone does not release its slot.
  * @param workspaceId - Workspace registry identity.

@@ -3003,7 +3003,7 @@ export interface Config {
 ```ts config-catalog
 /** Deployment settings after the Loader applies the request deadline default. */
 export type ResolvedConfig = Config & {
-  /** Effective Docker request deadline, in milliseconds. */
+  /** Effective Docker JSON request deadline, in milliseconds. */
   requestTimeoutMs: number
 }
 
@@ -3023,7 +3023,7 @@ export interface Config {
   uid: number
   /** Non-root numeric GID inside the container. */
   gid: number
-  /** Total deadline for a Docker request, in milliseconds. */
+  /** Total deadline for a Docker JSON request, in milliseconds. */
   requestTimeoutMs?: number
 }
 ```

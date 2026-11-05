@@ -1,9 +1,9 @@
 /** Linux built CLI smoke with a local fake Docker Engine. */
 
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { chmod, chown, copyFile, lstat, mkdir, mkdtemp, rm, symlink } from 'node:fs/promises'
+import { chmod, chown, copyFile, lstat, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { createServer, request } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,11 +13,10 @@ import { fileURLToPath } from 'node:url'
 
 const repo = fileURLToPath(new URL('../../../../../', import.meta.url))
 
-function query(socketPath, method, workspace, body) {
+function query(socketPath, method, workspace, body, { suffix = '', signal = AbortSignal.timeout(3_000) } = {}) {
   return new Promise((resolve, reject) => {
     const req = request({
-      socketPath, method, path: `/v1/workspaces/${workspace}/sandbox`, agent: false,
-      signal: AbortSignal.timeout(3_000),
+      socketPath, method, path: `/v1/workspaces/${workspace}/sandbox${suffix}`, agent: false, signal,
     }, (res) => {
       res.setEncoding('utf8')
       let data = ''
@@ -28,6 +27,16 @@ function query(socketPath, method, workspace, body) {
     req.on('error', reject)
     req.end(body)
   })
+}
+
+const upgradeHeaders = 'HTTP/1.1 101 UPGRADED\r\nConnection: Upgrade\r\nUpgrade: tcp\r\n\r\n'
+
+function frame(stream, text) {
+  const body = Buffer.from(text)
+  const header = Buffer.alloc(8)
+  header[0] = stream
+  header.writeUInt32BE(body.length, 4)
+  return Buffer.concat([header, body])
 }
 
 const linuxProfileTest = {
@@ -134,9 +143,16 @@ test('built dsh releases the Runner socket on SIGTERM during startup cleanup', l
 test('built dsh starts the isolated Runner profile and serves the Linux socket', linuxProfileTest, async (t) => {
   const { root, profile, distinctUsers, uid, gid, apiSocket, engineSocket, dataRoot, startRunner, listenEngine } = await profileFixture(t)
   const rows = new Map()
+  const execs = new Map()
   let serial = 0
   let unavailable = false
   let preserve = false
+  let execFault
+  let holdStart
+  let holdInspection
+  let starts = 0
+  const startupHook = join(root, 'bash-env')
+  await writeFile(startupHook, 'printf unexpected-startup; cd /tmp\n')
   const engine = createServer((req, res) => {
     req.setEncoding('utf8')
     let raw = ''
@@ -161,10 +177,58 @@ test('built dsh starts the isolated Runner profile and serves the Linux socket',
         })
         return send(201, { Id })
       }
-      const [, , , key, action] = url.pathname.split('/')
+      const [, , collection, key, action] = url.pathname.split('/')
+      if (collection === 'exec') {
+        const exec = execs.get(key)
+        if (!exec) return send(404)
+        if (req.method === 'GET' && action === 'json') {
+          return send(200, { ID: key, ContainerID: exec.containerId, Running: false, ExitCode: exec.exitCode })
+        }
+        assert.equal(req.method, 'POST')
+        assert.equal(action, 'start')
+        starts++
+        if (execFault === 'drop') return res.destroy()
+        if (execFault === 'timeout') {
+          res.socket.write(upgradeHeaders)
+          return
+        }
+        const run = () => {
+          // Map Docker's /workspace to the bind source without changing the wrapper or its arguments.
+          const [file, ...args] = exec.argv
+          assert.equal(file, '/bin/bash')
+          const env = { PATH: '/usr/bin:/bin', BASH_ENV: startupHook }
+          execFile(file, args, { cwd: exec.cwd, env, timeout: 2_000 }, (error, stdout, stderr) => {
+            exec.exitCode = error === null ? 0 : error.code
+            assert.ok(Number.isInteger(exec.exitCode), String(error))
+            res.socket.end(Buffer.concat([Buffer.from(upgradeHeaders), frame(1, stdout), frame(2, stderr)]))
+          })
+        }
+        if (holdStart) {
+          const { arrived, release } = holdStart
+          holdStart = undefined
+          arrived.resolve()
+          void release.promise.then(run)
+        } else run()
+        return
+      }
       const row = rows.get(key) ?? [...rows.values()].find(container => container.Name === `/${key}`)
       if (!row) return send(404)
-      if (req.method === 'GET' && action === 'json') return send(200, row)
+      if (req.method === 'GET' && action === 'json') {
+        if (holdInspection) {
+          const { arrived, release } = holdInspection
+          holdInspection = undefined
+          arrived.resolve()
+          void release.promise.then(() => send(200, row))
+        } else send(200, row)
+        return
+      }
+      if (req.method === 'POST' && action === 'exec' && key === row.Id) {
+        const body = JSON.parse(raw)
+        assert.equal(body.WorkingDir, '/workspace')
+        const Id = (execs.size + 1).toString(16).padStart(64, 'e')
+        execs.set(Id, { argv: body.Cmd, containerId: key, cwd: row.Mounts[0].Source, exitCode: null })
+        return send(201, { Id })
+      }
       if (req.method === 'POST' && action === 'start' && key === row.Id) {
         row.State.Running = true
         return send(204)
@@ -234,9 +298,81 @@ test('built dsh starts the isolated Runner profile and serves the Linux socket',
     assert.deepEqual(await open('A'), a)
     assert.deepEqual(await query(apiSocket, 'GET', 'A'), a)
     assert.deepEqual(await open('A'), a)
-    assert.equal((await open('B'))[0], 200)
+    const b = await open('B')
+    assert.equal(b[0], 200)
     assert.deepEqual(await open('C'), [409, { error: 'sandbox_capacity' }])
     assert.equal(serial, 2)
+
+    const requestA = { executionId: 'nonzero', expectedContainerId: a[1].containerId, command: 'printf hello; printf warning >&2; exit 7' }
+    const execute = (workspace, input, signal) => query(apiSocket, 'POST', workspace, JSON.stringify(input), { suffix: '/exec', signal })
+    const inspection = Promise.withResolvers()
+    const allowInspection = Promise.withResolvers()
+    holdInspection = { arrived: inspection, release: allowInspection }
+    const reuse = open('A')
+    try {
+      await Promise.race([inspection.promise, reuse.then(() => { assert.fail('Reuse inspection was not held') })])
+      assert.deepEqual(await query(apiSocket, 'GET', 'A'), a)
+      assert.deepEqual(await execute('A', requestA), [200, {
+        executionId: 'nonzero', exitCode: 7,
+        stdout: { text: 'hello', truncated: false }, stderr: { text: 'warning', truncated: false },
+      }])
+    } finally {
+      allowInspection.resolve()
+      await reuse
+    }
+    assert.deepEqual(await reuse, a)
+    assert.equal(serial, 2)
+    const aDirectory = join(dataRoot, 'A')
+    const nested = join(aDirectory, '--nested')
+    await mkdir(nested)
+    await symlink(join(dataRoot, 'B'), join(aDirectory, 'out'))
+    const pwd = { ...requestA, executionId: 'directory', command: 'pwd -P' }
+    const [, inside] = await execute('A', { ...pwd, workdir: './--nested//' })
+    assert.equal(inside.exitCode, 0)
+    assert.equal(inside.stdout.text, `${nested}\n`)
+    assert.deepEqual(await execute('A', { ...pwd, workdir: '--nested' }), [200, inside])
+    const rejected = { ...requestA, executionId: 'outside', command: 'printf should-not-run' }
+    assert.deepEqual(await execute('A', { ...rejected, workdir: '../B' }), [400, { error: 'invalid_request' }])
+    const [outsideStatus, outside] = await execute('A', { ...rejected, workdir: 'out' })
+    assert.equal(outsideStatus, 200)
+    assert.equal(outside.exitCode, 125)
+    assert.equal(outside.stdout.text, '')
+    assert.match(outside.stderr.text, /working directory inside \/workspace/u)
+    assert.deepEqual(await execute('A', { ...requestA, expectedContainerId: b[1].containerId }),
+      [409, { error: 'execution_generation_mismatch' }])
+
+    const arrived = Promise.withResolvers()
+    const release = Promise.withResolvers()
+    holdStart = { arrived, release }
+    const detached = { ...requestA, executionId: 'detached', command: 'printf detached' }
+    const client = new AbortController()
+    const beforeDetach = starts
+    const disconnected = assert.rejects(execute('A', detached, client.signal), { name: 'AbortError' })
+    try {
+      await Promise.race([arrived.promise, disconnected])
+      client.abort()
+      await disconnected
+      assert.deepEqual(await execute('A', { ...detached, executionId: 'parallel', command: 'printf parallel' }), [200, {
+        executionId: 'parallel', exitCode: 0,
+        stdout: { text: 'parallel', truncated: false }, stderr: { text: '', truncated: false },
+      }])
+    } finally {
+      release.resolve()
+    }
+    assert.deepEqual(await execute('A', detached), [200, {
+      executionId: 'detached', exitCode: 0,
+      stdout: { text: 'detached', truncated: false }, stderr: { text: '', truncated: false },
+    }])
+    assert.equal(starts - beforeDetach, 2)
+
+    execFault = 'drop'
+    assert.deepEqual(await execute('A', { ...requestA, executionId: 'lost' }), [503, { error: 'execution_outcome_unknown' }])
+    assert.deepEqual(await query(apiSocket, 'GET', 'A'), [200, { state: 'cleanup_required' }])
+    execFault = 'timeout'
+    assert.deepEqual(await execute('B', { ...requestA, expectedContainerId: b[1].containerId, executionId: 'timeout', timeoutMs: 500 }),
+      [504, { error: 'execution_timeout' }])
+    execFault = undefined
+
     unavailable = true
     assert.deepEqual(await query(apiSocket, 'GET', 'A'), [503, { error: 'docker_unavailable' }])
     unavailable = false

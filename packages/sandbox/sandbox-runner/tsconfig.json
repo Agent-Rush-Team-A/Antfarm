@@ -10,6 +10,7 @@
     { "path": "../../../vendor/cordis" },
     { "path": "../../../vendor/schemastery" },
     { "path": "../../util/brand" },
+    { "path": "../../util/output-retention" },
     { "path": "../../workspace/workspace" }
   ]
 }

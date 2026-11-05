@@ -3,13 +3,15 @@
  * @module @deepseek-ai/dsh-sandbox-runner
  */
 
+import { createHash } from 'node:crypto'
 import { dirname, isAbsolute, resolve } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
+import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import {
   Config, creationLabel, deploymentLabel, project, projectLabel, resolveCreateRequest, sandboxName, workspaceLabel, type ResolvedConfig,
 } from './config.ts'
-import { DockerEngine, DockerRequestError, type DockerContainerId, type SandboxContainer } from './docker.ts'
+import { DockerEngine, DockerRequestError, type DockerContainerId, type DockerExecResult, type SandboxContainer } from './docker.ts'
 import { SandboxLifecycleError } from './errors.ts'
 import { listenRunnerSocket } from './server.ts'
 
@@ -31,6 +33,31 @@ export interface ClosedSandbox {
 /** Observed Docker state or the Runner operation currently owning the workspace. */
 export type SandboxStatus = RunningSandbox | ClosedSandbox | { readonly state: 'starting' | 'closing' | 'cleanup_required' }
 
+/** Caller identity used to retrieve one execution's result in the same container generation. */
+export type SandboxExecutionId = Branded<'SandboxExecutionId'>
+
+/** Validated execution inputs for a trusted Runner caller. */
+export interface SandboxExecutionRequest {
+  readonly executionId: SandboxExecutionId
+  readonly expectedContainerId: DockerContainerId
+  /** Canonical command arguments, including the normalized working directory when supplied. */
+  readonly argv: readonly string[]
+  /** Total wait in milliseconds, resolved by the caller before admission. */
+  readonly timeoutMs: number
+}
+
+/** Confirmed foreground result with the caller's execution ID. */
+export interface SandboxExecutionResult extends DockerExecResult {
+  readonly executionId: SandboxExecutionId
+}
+
+const executionRecordLimit = 128
+
+interface ExecutionRecord {
+  readonly fingerprint: string
+  readonly result: Promise<SandboxExecutionResult>
+}
+
 type Phase =
   | { state: 'starting'; result: Promise<RunningSandbox> }
   | { state: 'closing'; result: Promise<ClosedSandbox> }
@@ -40,6 +67,7 @@ interface Slot {
   directory: string | null
   container: DockerContainerId | { token: string } | null
   phase: Phase
+  readonly executions: Map<SandboxExecutionId, ExecutionRecord>
 }
 
 function running(container: SandboxContainer): boolean {
@@ -58,9 +86,11 @@ export default class SandboxRunner extends Service {
   static Config = Config
 
   private readonly startup = new AbortController()
+  private readonly shutdownExecutions = new AbortController()
   private readonly docker: DockerEngine
   private readonly slots = new Map<WorkspaceId, Slot>()
-  private readonly statusQueries = new Set<Promise<SandboxStatus>>()
+  private readonly observations = new Set<Promise<SandboxStatus>>()
+  private readonly inFlightExecutions = new Set<Promise<SandboxExecutionResult>>()
   private ready = false
 
   /**
@@ -82,9 +112,10 @@ export default class SandboxRunner extends Service {
     // Disposal waits for init, but the fiber stops accepting effects as soon as disposal starts.
     this.ctx.effect(() => async () => {
       this.ready = false
+      this.shutdownExecutions.abort()
       const inFlight = [...this.slots.values()].flatMap(({ phase }) =>
         phase.state === 'starting' || phase.state === 'closing' ? [phase.result] : [])
-      const drained = Promise.allSettled([...inFlight, ...this.statusQueries])
+      const drained = Promise.allSettled([...inFlight, ...this.observations, ...this.inFlightExecutions])
       try {
         await stop?.()
       } finally {
@@ -128,16 +159,14 @@ export default class SandboxRunner extends Service {
       if (slot.directory !== directory) throw new SandboxLifecycleError('sandbox_workspace_conflict')
       if (slot.phase.state === 'starting') return slot.phase.result
       if (slot.phase.state === 'cleanup_required') throw new SandboxLifecycleError('sandbox_cleanup_required')
+      return this.trackObservation(this.reuseOrReplaceSlot(workspaceId, directory, slot))
     } else {
       const occupied = [...this.slots.values()].filter(entry => entry.directory !== null || entry.container !== null).length
       if (occupied >= 2) throw new SandboxLifecycleError('sandbox_capacity')
-      slot = { directory, container: null, phase: { state: 'cleanup_required' } }
+      slot = { directory, container: null, phase: { state: 'cleanup_required' }, executions: new Map() }
       this.slots.set(workspaceId, slot)
     }
-    const entry = slot
-    const result = Promise.resolve().then(() => this.openSlot(workspaceId, directory, entry))
-    entry.phase = { state: 'starting', result }
-    return result
+    return this.startOpening(workspaceId, directory, slot)
   }
 
   /** Query the current generation without interpreting an uncertain create as absent. Disposal waits for in-flight queries.
@@ -145,13 +174,42 @@ export default class SandboxRunner extends Service {
    * @returns The observed sandbox state.
    */
   async status(workspaceId: WorkspaceId): Promise<SandboxStatus> {
-    const query = this.queryStatus(workspaceId)
-    this.statusQueries.add(query)
+    return this.trackObservation(this.queryStatus(workspaceId))
+  }
+
+  private async trackObservation<T extends SandboxStatus>(query: Promise<T>): Promise<T> {
+    this.observations.add(query)
     try {
       return await query
     } finally {
-      this.statusQueries.delete(query)
+      this.observations.delete(query)
     }
+  }
+
+  private startOpening(workspaceId: WorkspaceId, directory: string, slot: Slot): Promise<RunningSandbox> {
+    const result = Promise.resolve().then(() => this.openSlot(workspaceId, directory, slot))
+    slot.phase = { state: 'starting', result }
+    return result
+  }
+
+  private async reuseOrReplaceSlot(workspaceId: WorkspaceId, directory: string, slot: Slot): Promise<RunningSandbox> {
+    const id = slot.container
+    await resolveCreateRequest(this.config, workspaceId, directory)
+    this.assertOpening(slot)
+    const container = await this.observe(workspaceId, id)
+    this.assertOpening(slot)
+    if (this.slots.get(workspaceId) !== slot) throw new SandboxLifecycleError('sandbox_outcome_unknown')
+    if (slot.phase.state === 'starting') return slot.phase.result
+    this.assertExecutable(slot)
+    if (slot.container !== id) throw new SandboxLifecycleError('sandbox_outcome_unknown')
+    if (container) {
+      this.assertMount(container, directory)
+      if (running(container)) return { state: 'running', containerId: container.Id }
+    }
+    for (const { result } of slot.executions.values()) {
+      if (this.inFlightExecutions.has(result)) throw new SandboxLifecycleError('sandbox_outcome_unknown')
+    }
+    return this.startOpening(workspaceId, directory, slot)
   }
 
   private async queryStatus(workspaceId: WorkspaceId): Promise<SandboxStatus> {
@@ -175,13 +233,49 @@ export default class SandboxRunner extends Service {
     return { state: 'cleanup_required' }
   }
 
+  /** Run a foreground command on the expected workspace container. Distinct execution IDs can run concurrently.
+   * Matching retries share the pending or stored result, including failures.
+   * An unconfirmed Start reserves the container for cleanup. Caller disconnects do not cancel the operation.
+   * @param workspaceId - Workspace registry identity.
+   * @param request - Validated arguments and expected generation from the trusted caller.
+   * @returns The confirmed exit code and retained output for the caller's execution ID.
+   */
+  async execute(workspaceId: WorkspaceId, request: SandboxExecutionRequest): Promise<SandboxExecutionResult> {
+    this.assertReady()
+    const { executionId, expectedContainerId, timeoutMs } = request
+    const slot = this.slots.get(workspaceId)
+    if (!slot || slot.container !== expectedContainerId) throw new SandboxLifecycleError('execution_generation_mismatch')
+    const id = slot.container
+
+    const argv = [...request.argv]
+    const fingerprint = createHash('sha256').update(JSON.stringify([argv, timeoutMs])).digest('hex')
+    const previous = slot.executions.get(executionId)
+    if (previous) {
+      if (previous.fingerprint !== fingerprint) throw new SandboxLifecycleError('execution_id_conflict')
+      return previous.result
+    }
+
+    this.assertExecutable(slot)
+    if (slot.executions.size >= executionRecordLimit) throw new SandboxLifecycleError('execution_limit')
+
+    const deadline = AbortSignal.timeout(timeoutMs)
+    const result = Promise.resolve().then(() => this.executeSlot(workspaceId, slot, id, executionId, argv, deadline))
+      .finally(() => {
+        this.inFlightExecutions.delete(result)
+      })
+    slot.executions.set(executionId, { fingerprint, result })
+    this.inFlightExecutions.add(result)
+    return result
+  }
+
   /** Close the current generation. Acknowledging deletion alone does not release its slot.
    * @param workspaceId - Workspace registry identity.
    * @returns Closed after Docker confirms the generation is absent.
    */
   async close(workspaceId: WorkspaceId): Promise<ClosedSandbox> {
     this.assertReady()
-    const slot: Slot = this.slots.get(workspaceId) ?? { directory: null, container: null, phase: { state: 'cleanup_required' } }
+    const slot: Slot = this.slots.get(workspaceId)
+      ?? { directory: null, container: null, phase: { state: 'cleanup_required' }, executions: new Map() }
     if (slot.phase.state === 'closing') return slot.phase.result
     const opening = slot.phase.state === 'starting' ? slot.phase.result : undefined
     const result = Promise.resolve().then(() => this.closeSlot(workspaceId, slot, opening))
@@ -197,6 +291,45 @@ export default class SandboxRunner extends Service {
   private assertOpening(slot: Slot): void {
     this.assertReady()
     if (slot.phase.state === 'closing') throw new SandboxLifecycleError('sandbox_closing')
+  }
+
+  private assertExecutable(slot: Slot): void {
+    if (slot.phase.state === 'closing') throw new SandboxLifecycleError('sandbox_closing')
+    if (slot.phase.state === 'cleanup_required') throw new SandboxLifecycleError('sandbox_cleanup_required')
+    if (slot.phase.state !== 'running') throw new SandboxLifecycleError('sandbox_not_running')
+  }
+
+  private async executeSlot(
+    workspaceId: WorkspaceId, slot: Slot, id: DockerContainerId, executionId: SandboxExecutionId,
+    argv: readonly string[], deadline: AbortSignal,
+  ): Promise<SandboxExecutionResult> {
+    const signal = AbortSignal.any([deadline, this.shutdownExecutions.signal])
+    const current = () => this.slots.get(workspaceId) === slot && slot.container === id
+    const confirm = () => {
+      this.assertReady()
+      if (!current()) throw new SandboxLifecycleError('execution_generation_mismatch')
+      this.assertExecutable(slot)
+      signal.throwIfAborted()
+    }
+
+    let attemptedStart = false
+    try {
+      confirm()
+      const container = await this.docker.inspect(id, signal)
+      confirm()
+      if (!container || !running(container)) throw new SandboxLifecycleError('sandbox_not_running')
+      this.assertOwner(container, workspaceId)
+      this.assertMount(container, slot.directory)
+      const exec = await this.docker.createExec(container.Id, argv, signal)
+      confirm()
+      attemptedStart = true
+      return { executionId, ...await this.docker.startExec(exec, container.Id, signal) }
+    } catch (cause) {
+      if (attemptedStart && current() && slot.phase.state === 'running') slot.phase = { state: 'cleanup_required' }
+      if (deadline.aborted) throw new SandboxLifecycleError('execution_timeout', cause)
+      if (attemptedStart) throw new SandboxLifecycleError('execution_outcome_unknown', cause)
+      throw cause
+    }
   }
 
   private owner(container: SandboxContainer): string | undefined {
@@ -244,6 +377,7 @@ export default class SandboxRunner extends Service {
           await this.removeAndConfirm(old.Id)
         }
         slot.container = null
+        slot.executions.clear()
       }
 
       this.assertOpening(slot)

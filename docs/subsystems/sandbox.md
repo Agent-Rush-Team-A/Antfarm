@@ -168,6 +168,8 @@ Provider selection, probing, caching, and backend-specific enforcement reports b
 
 `RunningSandbox` includes the full Docker container ID. `ClosedSandbox` confirms the container is absent. `SandboxStatus` also covers opening, closing, and pending cleanup. See the [Docker Runner reference](../../packages/sandbox/sandbox-runner/README.md) for deployment and lifecycle behavior.
 
+`SandboxExecutionRequest` supplies a container generation, an execution ID, canonical command arguments, and a wait budget. `SandboxExecutionResult` carries the execution ID, confirmed exit code, and retained stdout and stderr with truncation flags.
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -249,6 +251,15 @@ async open(workspaceId: WorkspaceId, directory: string): Promise<RunningSandbox>
  * @returns The observed sandbox state.
  */
 async status(workspaceId: WorkspaceId): Promise<SandboxStatus>
+
+/** Run a foreground command on the expected workspace container. Distinct execution IDs can run concurrently.
+ * Matching retries share the pending or stored result, including failures.
+ * An unconfirmed Start reserves the container for cleanup. Caller disconnects do not cancel the operation.
+ * @param workspaceId - Workspace registry identity.
+ * @param request - Validated arguments and expected generation from the trusted caller.
+ * @returns The confirmed exit code and retained output for the caller's execution ID.
+ */
+async execute(workspaceId: WorkspaceId, request: SandboxExecutionRequest): Promise<SandboxExecutionResult>
 
 /** Close the current generation. Acknowledging deletion alone does not release its slot.
  * @param workspaceId - Workspace registry identity.
