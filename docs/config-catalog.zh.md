@@ -2993,6 +2993,50 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-sandbox-policy -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-sandbox-runner -->
+<a id="deepseek-aidsh-sandbox-runner"></a>
+
+## `@deepseek-ai/dsh-sandbox-runner`
+
+- `source`: [`packages/sandbox/sandbox-runner/src/config.ts:34`](../packages/sandbox/sandbox-runner/src/config.ts)
+
+```ts config-catalog
+/** Deployment settings after the Loader applies timing defaults. */
+export type ResolvedConfig = Config & {
+  /** Effective Docker JSON request deadline, in milliseconds. */
+  requestTimeoutMs: number
+  /** Effective supervisor cleanup budget, in milliseconds. */
+  cleanupTimeoutMs: number
+  /** Effective shared SIGTERM grace, in milliseconds. */
+  termGraceMs: number
+}
+
+/** Settings owned by the Runner deployment, not by workspace callers. */
+export interface Config {
+  /** Absolute path to the local Docker Engine socket. */
+  dockerSocket: string
+  /** Absolute Linux path for the local Runner API. Omit for a service without a listener. */
+  runnerSocket?: string
+  /** Deployment label value, unique among Runners using this Engine. */
+  deploymentId: string
+  /** Canonical absolute path to the pre-existing, trusted workspace parent. */
+  workspaceRoot: string
+  /** Preloaded image reference pinned by a SHA-256 digest. */
+  image: string
+  /** Non-root numeric UID inside the container. */
+  uid: number
+  /** Non-root numeric GID inside the container. */
+  gid: number
+  /** Total deadline for a Docker JSON request, in milliseconds. */
+  requestTimeoutMs?: number
+  /** Supervisor cleanup and result-confirmation budget, in milliseconds. */
+  cleanupTimeoutMs?: number
+  /** Shared SIGTERM grace, strictly smaller than cleanupTimeoutMs. */
+  termGraceMs?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-sandbox-runner -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-schedule -->
 <a id="deepseek-aidsh-schedule"></a>
 

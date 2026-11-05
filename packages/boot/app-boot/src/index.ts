@@ -952,6 +952,7 @@ const requiredStartupEntryIds = new Set<string>([
   'modules',
   'connection',
   'headless-runner',
+  'sandbox-runner',
   'acp',
   'sdk-jsonrpc-server',
 ])

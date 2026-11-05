@@ -22,13 +22,14 @@ The `sandbox/` group confines subprocess execution to a file-effect policy: comm
 <a id="packages"></a>
 ## Packages
 
-Four packages play the confinement roles; the subsystem reference owns the exhaustive contracts and the per-call policy semantics.
+Four packages support host confinement; the subsystem reference owns its per-call policy. The independent workspace runner has a separate Docker interface.
 
 | Package | Role | ctx key |
 |---|---|---|
 | [`sandbox/`](sandbox/README.md) | Confinement service contract: modes, enforcement, per-call policy, and the escalation vocabulary | `ctx.sandbox` |
 | [`sandbox-local/`](sandbox-local/README.md) | Per-platform confinement backends: Linux bwrap then Landlock, macOS Seatbelt, Windows restricted token | registers on `ctx.sandbox` |
 | [`sandbox-policy/`](sandbox-policy/README.md) | Shared policy home: deployment defaults and per-session mode overrides for every enforcing family | `ctx.sandboxPolicy` |
+| [`sandbox-runner/`](sandbox-runner/README.md) | Docker Engine operations and workspace bind mounts for an independent deployment | `ctx.sandboxRunner` |
 | [`sandbox-windows-acl/`](sandbox-windows-acl/README.md) | Windows write restriction: confined children may write only in the workspace and a private temp directory | — (mounted by `sandbox-local` as the win32 backend) |
 
 -----

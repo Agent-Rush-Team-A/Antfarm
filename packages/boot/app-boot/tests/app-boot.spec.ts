@@ -564,6 +564,7 @@ describe('auditStartupEntries', () => {
     'modules',
     'connection',
     'headless-runner',
+    'sandbox-runner',
     'acp',
     'sdk-jsonrpc-server',
   ]

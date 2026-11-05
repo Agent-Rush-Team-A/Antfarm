@@ -973,6 +973,7 @@ describe('Node 24 lane ownership', () => {
       'doc-typecheck',
       'node-next-types',
       'built-bin-smoke',
+      'sandbox-runner-profile',
     ])
     expect(subject.find(item => item.id === 'publint')?.needs).toEqual(['build'])
     // The consumers lane emits artifacts only: the aggregate test and script
@@ -991,6 +992,7 @@ describe('Node 24 lane ownership', () => {
       'doc-typecheck',
       'node-next-types',
       'built-bin-smoke',
+      'sandbox-runner-profile',
     ]) {
       expect(subject.find(item => item.id === id)?.needs).toEqual(['build'])
     }
@@ -1020,6 +1022,7 @@ describe('Node 24 lane ownership', () => {
         'doc-typecheck',
         'node-next-types',
         'built-bin-smoke',
+        'sandbox-runner-profile',
       ],
     })
   })
@@ -1033,6 +1036,15 @@ describe('Linux primary graph', () => {
     expect(web).toMatchObject({
       displayCommand: 'DSH_SNAPSHOT=replay pnpm run test:web:built',
       env: { DSH_SNAPSHOT: 'replay' },
+      needs: ['build'],
+    })
+  })
+
+  it.each(['ci-linux-primary', 'ci-consumers'] as const)('runs the built Runner profile in %s', (mode) => {
+    const subject = withPnpmEntrypoint(() => gatesForMode(mode))
+    expect(subject.find(item => item.id === 'sandbox-runner-profile')).toMatchObject({
+      command: process.execPath,
+      args: ['--test', 'apps/cli/tests/profiles/sandbox-runner/socket.built.test.mjs'],
       needs: ['build'],
     })
   })

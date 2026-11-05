@@ -1,0 +1,13 @@
+- insert:
+    - id: sandbox-runner
+      name: '@deepseek-ai/dsh-sandbox-runner'
+      config:
+        dockerSocket: !!js process.env.DSH_RUNNER_DOCKER_SOCKET ?? '/var/run/docker.sock'
+        runnerSocket: !!js process.env.DSH_RUNNER_SOCKET ?? '/run/agentrush-sandbox/runner.sock'
+        deploymentId: !!js process.env.DSH_RUNNER_DEPLOYMENT
+        workspaceRoot: !!js process.env.DSH_RUNNER_WORKSPACE_ROOT ?? '/var/lib/agentrush-workspaces'
+        image: !!js process.env.DSH_RUNNER_IMAGE
+        uid: !!js Number(process.env.DSH_RUNNER_CONTAINER_UID)
+        gid: !!js Number(process.env.DSH_RUNNER_CONTAINER_GID)
+        cleanupTimeoutMs: !!js 'process.env.DSH_RUNNER_CLEANUP_TIMEOUT_MS === undefined ? undefined : Number(process.env.DSH_RUNNER_CLEANUP_TIMEOUT_MS)'
+        termGraceMs: !!js 'process.env.DSH_RUNNER_TERM_GRACE_MS === undefined ? undefined : Number(process.env.DSH_RUNNER_TERM_GRACE_MS)'

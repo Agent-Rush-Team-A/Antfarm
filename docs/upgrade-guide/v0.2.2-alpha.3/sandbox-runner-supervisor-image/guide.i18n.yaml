@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.2-alpha.3/sandbox-runner-supervisor-image/guide.md
+/:
+  en: 11ca858f5fc9d3b3
+  zh: 127e88c288531287
+/runner-exec-requires-a-supervisor-image:
+  en: 87c768fd3029e843
+  zh: f7cf7404e3f11d95
+/runner-exec-requires-a-supervisor-image/change:
+  en: 6e6580f4beeb9fd8
+  zh: 38c6ffa44c43d0ba
+/runner-exec-requires-a-supervisor-image/migration:
+  en: 233a892655108d83
+  zh: 7f7d2044e7ca3610

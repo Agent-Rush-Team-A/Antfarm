@@ -788,6 +788,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'The one home for the deployment default mode + workspace root; only the sandboxed executor and provider read the service (the tool layers use the pure `sandbox/mode` fold it also exports). Both enforcing families read it so bash and fs cannot confine to different roots.',
   },
   {
+    key: 'sandboxRunner',
+    pkg: 'sandbox-runner',
+    title: 'Docker workspace lifecycle',
+    mode: 'service',
+    note: 'An independent deployment opens, queries, and closes Docker workspace containers through a local Unix socket.',
+  },
+  {
     key: 'approval',
     pkg: 'user-approval',
     title: 'Approval seam',
