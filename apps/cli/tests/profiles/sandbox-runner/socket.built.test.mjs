@@ -1,10 +1,10 @@
 /** Linux built CLI smoke with a local fake Docker Engine. */
 
 import assert from 'node:assert/strict'
-import { execFile, spawn } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { chmod, chown, copyFile, lstat, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
-import { createServer, request } from 'node:http'
+import { chmod, chown, copyFile, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { createServer, IncomingMessage, request, ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -37,6 +37,41 @@ function frame(stream, text) {
   header[0] = stream
   header.writeUInt32BE(body.length, 4)
   return Buffer.concat([header, body])
+}
+
+function enableExecUpgrade(server) {
+  const connections = new Set()
+  server.on('connection', socket => {
+    connections.add(socket)
+    socket.once('close', () => connections.delete(socket))
+  })
+  server.on('upgrade', (request, socket, head) => {
+    socket.once('end', () => socket.end())
+    socket.pause()
+    let body = head
+    const length = Number(request.headers['content-length'] ?? 0)
+    const consume = chunk => {
+      if (chunk) body = Buffer.concat([body, chunk])
+      if (body.length < length) return
+      socket.pause()
+      socket.removeListener('data', consume)
+      const upgraded = new IncomingMessage(socket)
+      Object.assign(upgraded, {
+        method: request.method, url: request.url, headers: request.headers, complete: true,
+        httpVersion: request.httpVersion, httpVersionMajor: request.httpVersionMajor, httpVersionMinor: request.httpVersionMinor,
+      })
+      const response = new ServerResponse(upgraded)
+      response.assignSocket(socket)
+      server.emit('request', upgraded, response)
+      upgraded.push(body.subarray(0, length))
+      upgraded.push(null)
+      if (body.length > length) socket.unshift(body.subarray(length))
+      socket.resume()
+    }
+    consume()
+    if (body.length < length) socket.on('data', consume).resume()
+  })
+  return () => { for (const socket of connections) socket.destroy() }
 }
 
 const linuxProfileTest = {
@@ -96,8 +131,10 @@ async function profileFixture(t) {
   }
 
   async function listenEngine(engine) {
+    const closeUpgrades = enableExecUpgrade(engine)
     await once(engine.listen(engineSocket), 'listening')
     t.after(() => new Promise((resolve) => {
+      closeUpgrades()
       engine.close(resolve)
       engine.closeAllConnections()
     }))
@@ -150,6 +187,7 @@ test('built dsh starts the isolated Runner profile and serves the Linux socket',
   let execFault
   let holdStart
   let holdInspection
+  let unreadyStart
   let starts = 0
   const startupHook = join(root, 'bash-env')
   await writeFile(startupHook, 'printf unexpected-startup; cd /tmp\n')
@@ -182,7 +220,7 @@ test('built dsh starts the isolated Runner profile and serves the Linux socket',
         const exec = execs.get(key)
         if (!exec) return send(404)
         if (req.method === 'GET' && action === 'json') {
-          return send(200, { ID: key, ContainerID: exec.containerId, Running: false, ExitCode: exec.exitCode })
+          return send(200, { ID: key, ContainerID: exec.containerId, Running: exec.running, ExitCode: exec.exitCode })
         }
         assert.equal(req.method, 'POST')
         assert.equal(action, 'start')
@@ -190,17 +228,34 @@ test('built dsh starts the isolated Runner profile and serves the Linux socket',
         if (execFault === 'drop') return res.destroy()
         if (execFault === 'timeout') {
           res.socket.write(upgradeHeaders)
+          unreadyStart?.resolve()
+          unreadyStart = undefined
           return
         }
         const run = () => {
-          // Map Docker's /workspace to the bind source without changing the wrapper or its arguments.
+          // The fake Engine maps the immutable image program and /workspace to their repository/host paths.
           const [file, ...args] = exec.argv
-          assert.equal(file, '/bin/bash')
+          assert.equal(file, '/usr/local/bin/python3')
+          assert.equal(args[2], '/opt/agentrush/sandbox-runner/supervisor.py')
+          args[2] = join(repo, 'packages', 'sandbox', 'sandbox-runner', 'assets', 'supervisor.py')
           const env = { PATH: '/usr/bin:/bin', BASH_ENV: startupHook }
-          execFile(file, args, { cwd: exec.cwd, env, timeout: 2_000 }, (error, stdout, stderr) => {
-            exec.exitCode = error === null ? 0 : error.code
-            assert.ok(Number.isInteger(exec.exitCode), String(error))
-            res.socket.end(Buffer.concat([Buffer.from(upgradeHeaders), frame(1, stdout), frame(2, stderr)]))
+          const socket = res.socket
+          exec.running = true
+          const child = spawn('python3', args, {
+            cwd: exec.cwd, env, stdio: ['pipe', 'pipe', 'pipe'],
+            ...(process.getuid() === 0 ? { uid: 10001, gid: 10001 } : {}),
+          })
+          socket.write(upgradeHeaders)
+          socket.on('data', chunk => { child.stdin.write(chunk) })
+          socket.once('close', () => child.stdin.end())
+          child.stdin.on('error', error => socket.destroy(error))
+          child.stdout.on('data', chunk => socket.write(frame(1, chunk)))
+          child.stderr.on('data', chunk => socket.write(frame(2, chunk)))
+          child.once('error', error => { socket.write(frame(2, String(error))) })
+          child.once('close', (code) => {
+            exec.running = false
+            exec.exitCode = code ?? 1
+            socket.end()
           })
         }
         if (holdStart) {
@@ -225,8 +280,10 @@ test('built dsh starts the isolated Runner profile and serves the Linux socket',
       if (req.method === 'POST' && action === 'exec' && key === row.Id) {
         const body = JSON.parse(raw)
         assert.equal(body.WorkingDir, '/workspace')
+        assert.equal(body.AttachStdin, true)
+        assert.equal(body.Tty, false)
         const Id = (execs.size + 1).toString(16).padStart(64, 'e')
-        execs.set(Id, { argv: body.Cmd, containerId: key, cwd: row.Mounts[0].Source, exitCode: null })
+        execs.set(Id, { argv: body.Cmd, containerId: key, cwd: row.Mounts[0].Source, exitCode: null, running: false })
         return send(201, { Id })
       }
       if (req.method === 'POST' && action === 'start' && key === row.Id) {
@@ -303,8 +360,11 @@ test('built dsh starts the isolated Runner profile and serves the Linux socket',
     assert.deepEqual(await open('C'), [409, { error: 'sandbox_capacity' }])
     assert.equal(serial, 2)
 
-    const requestA = { executionId: 'nonzero', expectedContainerId: a[1].containerId, command: 'printf hello; printf warning >&2; exit 7' }
+    const requestA = { executionId: '--nonzero=世界', expectedContainerId: a[1].containerId, command: 'printf hello; printf warning >&2; exit 7' }
     const execute = (workspace, input, signal) => query(apiSocket, 'POST', workspace, JSON.stringify(input), { suffix: '/exec', signal })
+    const cancel = (workspace, input) => query(apiSocket, 'POST', workspace, JSON.stringify({
+      executionId: input.executionId, expectedContainerId: input.expectedContainerId,
+    }), { suffix: '/exec/cancel' })
     const inspection = Promise.withResolvers()
     const allowInspection = Promise.withResolvers()
     holdInspection = { arrived: inspection, release: allowInspection }
@@ -313,7 +373,7 @@ test('built dsh starts the isolated Runner profile and serves the Linux socket',
       await Promise.race([inspection.promise, reuse.then(() => { assert.fail('Reuse inspection was not held') })])
       assert.deepEqual(await query(apiSocket, 'GET', 'A'), a)
       assert.deepEqual(await execute('A', requestA), [200, {
-        executionId: 'nonzero', exitCode: 7,
+      executionId: requestA.executionId, exitCode: 7,
         stdout: { text: 'hello', truncated: false }, stderr: { text: 'warning', truncated: false },
       }])
     } finally {
@@ -365,22 +425,117 @@ test('built dsh starts the isolated Runner profile and serves the Linux socket',
     }])
     assert.equal(starts - beforeDetach, 2)
 
+    const waitFor = async (predicate) => {
+      const deadline = performance.now() + 5_000
+      while (performance.now() < deadline) {
+        if (await predicate()) return
+        await setTimeout(10)
+      }
+      assert.fail('No command/file readiness before the test deadline')
+    }
+    const text = name => readFile(join(aDirectory, name), 'utf8').catch((error) => {
+      if (error.code === 'ENOENT') return ''
+      throw error
+    })
+    const beforeCancel = starts
+    const active = { ...requestA, executionId: '--cancel-active=世界', command:
+      `trap 'exit 0' TERM; printf x >> cancel.starts; sleep 60 & printf '%s' $! > cancel.pid; wait` }
+    const activeResult = execute('A', active)
+    const continuing = execute('A', { ...requestA, executionId: 'cancel-survivor', command:
+      'while [[ ! -e cancel.release ]]; do printf x >> cancel.progress; sleep 0.02; done; printf continued; exit 7' })
+    await waitFor(async () => (await text('cancel.pid')).length > 0 && (await text('cancel.progress')).length > 0)
+    const childPid = Number(await text('cancel.pid'))
+    const accepted = [202, { executionId: active.executionId, containerId: a[1].containerId, cancellation: 'requested' }]
+    assert.deepEqual(await cancel('A', active), accepted)
+    const cancelled = [409, {
+      error: 'execution_cancelled', executionId: active.executionId, containerId: a[1].containerId,
+      reason: 'cancelled', cleanup: 'processes_cleaned', bash: { exitCode: 0, signal: null },
+    }]
+    assert.deepEqual(await activeResult, cancelled)
+    assert.deepEqual(await execute('A', active), cancelled)
+    assert.deepEqual(await cancel('A', active), [200, { ...accepted[1], cancellation: 'settled' }])
+    assert.equal(await text('cancel.starts'), 'x')
+    assert.equal(starts - beforeCancel, 2)
+    await assert.rejects(lstat(`/proc/${childPid}`), { code: 'ENOENT' })
+    const beforeProgress = (await text('cancel.progress')).length
+    await waitFor(async () => (await text('cancel.progress')).length > beforeProgress)
+    await writeFile(join(aDirectory, 'cancel.release'), '')
+    assert.deepEqual(await continuing, [200, {
+      executionId: 'cancel-survivor', exitCode: 7,
+      stdout: { text: 'continued', truncated: false }, stderr: { text: '', truncated: false },
+    }])
+    assert.deepEqual(await query(apiSocket, 'GET', 'A'), a)
+    assert.deepEqual(await cancel('A', { ...active, executionId: 'unknown' }), [404, { error: 'execution_not_found' }])
+    assert.deepEqual(await cancel('A', { ...active, expectedContainerId: b[1].containerId }),
+      [409, { error: 'execution_generation_mismatch' }])
+
+    const waiting = Promise.withResolvers()
+    const allowReady = Promise.withResolvers()
+    holdStart = { arrived: waiting, release: allowReady }
+    const early = { ...requestA, executionId: 'cancel-before-ready', command: 'printf bad > must-not-start' }
+    const earlyResult = execute('A', early)
+    try {
+      await waiting.promise
+      const pending = [202, { executionId: early.executionId, containerId: a[1].containerId, cancellation: 'requested' }]
+      assert.deepEqual(await cancel('A', early), pending)
+      assert.deepEqual(await cancel('A', early), pending)
+    } finally {
+      allowReady.resolve()
+    }
+    const earlyFailure = [409, {
+      error: 'execution_cancelled', executionId: early.executionId, containerId: a[1].containerId,
+      reason: 'cancelled', cleanup: 'processes_cleaned', bash: null,
+    }]
+    assert.deepEqual(await earlyResult, earlyFailure)
+    assert.deepEqual(await execute('A', early), earlyFailure)
+    await assert.rejects(lstat(join(aDirectory, 'must-not-start')), { code: 'ENOENT' })
+
+    const parallelSurvivor = execute('A', {
+      ...requestA, executionId: 'survivor', command: 'sleep 0.8; printf survived; exit 7',
+    })
+    assert.deepEqual(await execute('A', { ...requestA, executionId: 'clean-timeout', command: 'sleep 60', timeoutMs: 200 }),
+      [504, {
+        error: 'execution_timeout', executionId: 'clean-timeout', containerId: a[1].containerId,
+        reason: 'timeout', cleanup: 'processes_cleaned', bash: { exitCode: null, signal: 15 },
+      }])
+    assert.deepEqual(await parallelSurvivor, [200, {
+      executionId: 'survivor', exitCode: 7,
+      stdout: { text: 'survived', truncated: false }, stderr: { text: '', truncated: false },
+    }])
+    assert.deepEqual(await query(apiSocket, 'GET', 'A'), a)
+
     execFault = 'drop'
-    assert.deepEqual(await execute('A', { ...requestA, executionId: 'lost' }), [503, { error: 'execution_outcome_unknown' }])
-    assert.deepEqual(await query(apiSocket, 'GET', 'A'), [200, { state: 'cleanup_required' }])
+    assert.deepEqual(await execute('A', { ...requestA, executionId: 'lost' }), [503, {
+      error: 'execution_outcome_unknown', executionId: 'lost', containerId: a[1].containerId,
+      reason: null, cleanup: 'container_removed',
+    }])
+    assert.deepEqual(await query(apiSocket, 'GET', 'A'), [200, { state: 'closed' }])
     execFault = 'timeout'
-    assert.deepEqual(await execute('B', { ...requestA, expectedContainerId: b[1].containerId, executionId: 'timeout', timeoutMs: 500 }),
-      [504, { error: 'execution_timeout' }])
+    const unavailableReady = Promise.withResolvers()
+    unreadyStart = unavailableReady
+    const unconfirmed = { ...requestA, expectedContainerId: b[1].containerId, executionId: 'unconfirmed-cancel' }
+    const unconfirmedResult = execute('B', unconfirmed)
+    await unavailableReady.promise
+    assert.deepEqual(await cancel('B', unconfirmed), [202, {
+      executionId: unconfirmed.executionId, containerId: b[1].containerId, cancellation: 'requested',
+    }])
+    assert.deepEqual(await unconfirmedResult, [503, {
+      error: 'execution_outcome_unknown', executionId: unconfirmed.executionId, containerId: b[1].containerId,
+      reason: null, cleanup: 'container_removed',
+    }])
     execFault = undefined
+    const reopened = await open('A')
+    assert.equal(reopened[0], 200)
+    assert.deepEqual(await cancel('A', active), [409, { error: 'execution_generation_mismatch' }])
 
     unavailable = true
     assert.deepEqual(await query(apiSocket, 'GET', 'A'), [503, { error: 'docker_unavailable' }])
     unavailable = false
     preserve = true
-    assert.deepEqual(await query(apiSocket, 'DELETE', 'A'), [409, { error: 'sandbox_cleanup_required' }])
+    assert.deepEqual(await query(apiSocket, 'DELETE', 'A'), [503, { error: 'sandbox_cleanup_required' }])
     preserve = false
     assert.deepEqual(await query(apiSocket, 'DELETE', 'A'), [200, { state: 'closed' }])
-    assert.equal(rows.has(a[1].containerId), false)
+    assert.equal(rows.has(reopened[1].containerId), false)
     assert.deepEqual(await query(apiSocket, 'GET', 'A'), [200, { state: 'closed' }])
     assert.equal((await open('C'))[0], 200)
   } finally {

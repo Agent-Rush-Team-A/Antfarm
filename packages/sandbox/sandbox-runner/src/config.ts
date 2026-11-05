@@ -24,12 +24,20 @@ export interface Config {
   gid: number
   /** Total deadline for a Docker JSON request, in milliseconds. */
   requestTimeoutMs?: number
+  /** Supervisor cleanup and result-confirmation budget, in milliseconds. */
+  cleanupTimeoutMs?: number
+  /** Shared SIGTERM grace, strictly smaller than cleanupTimeoutMs. */
+  termGraceMs?: number
 }
 
-/** Deployment settings after the Loader applies the request deadline default. */
+/** Deployment settings after the Loader applies timing defaults. */
 export type ResolvedConfig = Config & {
   /** Effective Docker JSON request deadline, in milliseconds. */
   requestTimeoutMs: number
+  /** Effective supervisor cleanup budget, in milliseconds. */
+  cleanupTimeoutMs: number
+  /** Effective shared SIGTERM grace, in milliseconds. */
+  termGraceMs: number
 }
 
 /** Loader schema for the deployment settings. */
@@ -42,6 +50,8 @@ export const Config: Schema<Config, ResolvedConfig> = Schema.object({
   uid: Schema.natural().min(1).max(0xffff_fffe).required(),
   gid: Schema.natural().min(1).max(0xffff_fffe).required(),
   requestTimeoutMs: Schema.natural().min(1).max(2_147_483_647).default(10_000),
+  cleanupTimeoutMs: Schema.natural().min(1).max(60_000).default(2_000),
+  termGraceMs: Schema.natural().max(59_999).default(250),
 })
 
 /** Label used to select this deployment's containers. */

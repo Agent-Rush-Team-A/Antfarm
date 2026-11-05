@@ -37,6 +37,8 @@ ln -s "$repo/packages/sandbox/sandbox-runner" "$profile/node_modules/@deepseek-a
 
 在环境文件中设置 `DSH_HOME`、唯一的 `DSH_RUNNER_DEPLOYMENT`、已拉取的固定摘要镜像 `DSH_RUNNER_IMAGE`，以及非 root 的 `DSH_RUNNER_CONTAINER_UID` 和 `DSH_RUNNER_CONTAINER_GID`。按部署需要设置 `DSH_RUNNER_DOCKER_SOCKET`、`DSH_RUNNER_SOCKET` 和 `DSH_RUNNER_WORKSPACE_ROOT`。默认路径分别为 `/var/run/docker.sock`、`/run/agentrush-sandbox/runner.sock` 和 `/var/lib/agentrush-workspaces`。预建数据根下的工作区目录，为配置的容器 UID/GID 分配读写权限。
 
+工作区根须位于 Docker 数据根之外。Runner 保持工作区绑定的 `rprivate` 传播方式，Docker 不允许以此方式绑定数据根内部的目录。Runner 在容器内运行时，工作区绝对路径还须与 Docker daemon 看到的路径一致；Runner 的 profile 和控制数据可以使用独立卷。
+
 在前台使用相同环境启动时，运行 `node "$repo/apps/cli/lib/bin.js" --profile sandbox-runner`。完成部署清理后 Runner 开始处理工作区操作。若启动失败，例如 Docker socket 无法连接，CLI 会在 stderr 报告原因并以退出码 1 结束。启动清理期间收到 `SIGTERM` 时，Runner 会取消在途 Docker 请求并释放 API socket。
 
 ## 本机调用
@@ -56,7 +58,7 @@ curl --unix-socket "$socket" -X DELETE "$url"
 
 ## Bash 执行交接
 
-沙箱镜像须提供 `/bin/bash`。先用 PUT 开启工作区，再用 GET 取得 `running` 状态的完整 `containerId`，作为 Exec 请求的 `expectedContainerId`。下面使用 `jq` 构造 JSON，在已开启的 A 中执行可信前台命令。
+沙箱镜像须提供 Python、`/bin/bash` 和固定的只读监管程序，构建及启动约定见[监管镜像参考](../packages/sandbox/sandbox-runner/docs/README.zh.md)。先用 PUT 开启工作区，再用 GET 取得 `running` 状态的完整 `containerId`，作为 Exec 请求的 `expectedContainerId`。下面使用 `jq` 构造 JSON，在已开启的 A 中执行命令。
 
 ```sh
 socket=/run/agentrush-sandbox/runner.sock
@@ -71,8 +73,43 @@ jq -n --arg id "$execution_id" --arg container "$container_id" \
 
 示例返回 HTTP 200、退出码 7 和两路独立输出。同一容器可立即启动多个不同执行 ID 的 Bash，命令共享容器的资源限制。调用方断开连接后可用原执行 ID、容器 ID 和请求内容重试。同一代结果不明时先查询沙箱状态，`cleanup_required` 表示需要 DELETE 并确认关闭。重开后使用新容器 ID 和新执行 ID。字段限制和错误状态见 [Runner 参考](../packages/sandbox/sandbox-runner/README.zh.md#use-this-package)。
 
+使用相同身份取消已有执行；该请求不包含 command，也不创建执行记录。
+
+```sh
+jq -n --arg id "$execution_id" --arg container "$container_id" \
+  '{executionId: $id, expectedContainerId: $container}' \
+  | curl -sS --unix-socket "$socket" -H 'Content-Type: application/json' \
+      --data-binary @- -w '\nHTTP %{http_code}\n' "$url/exec/cancel"
+```
+
+在途取消返回 202/requested，已结算返回 200/settled；上面的快速命令通常已经结算。两者都不表示清理成功，应等原 exec 请求或原样重试取得最终结果。未知 ID 返回 404，旧代返回 409。原 exec 的执行错误保留 error，另带 executionId、containerId、reason、cleanup 和已知时的 bash；未知 Bash 状态省略，不编造成功结果。进程已清理的取消为 409/execution_cancelled，已清理或未发 Start 的超时为 504/execution_timeout；清理失证为 503，需根据 cleanup 判断容器已删除还是仍未确认。其他准备/生命周期错误仍只含 error，sandbox_cleanup_required 使用 503。
+
 ## 进程清理交接
 
-[Runner 服务](../packages/sandbox/sandbox-runner/src/index.ts) 在当前工作区容器代次的内存中按执行 ID 保存各自的在途执行、结果和失败。Start 发出前的失败只影响本次执行，原 ID 仍可重试取回失败。Start 发出后，若连接中断、等待超时或 Docker 无法确认退出，当前代次进入 `cleanup_required`。Runner 阻止新命令和尚未发出的 Start。已启动的其他命令仍可各自结算，关闭容器会结束其中的在途命令。
+[Runner 服务](../packages/sandbox/sandbox-runner/src/index.ts) 在当前工作区容器代次的内存中按执行 ID 保存各自的在途执行、结果和失败。Start 发出前的失败只影响本次执行，原 ID 仍可重试取回失败。Docker Exec 启动监管程序，ready 后重新确认原执行及容器，再发送一次 run。只有收到清理完成的 finished、流完整结束及 Docker Inspect 确认监管退出零后，才返回原 Bash 结果。命令期限和停机信号请求取消；独立的清理预算到达后才关闭传输。profile 可通过 DSH_RUNNER_CLEANUP_TIMEOUT_MS 和 DSH_RUNNER_TERM_GRACE_MS 覆盖部署清理预算和 TERM 宽限。
 
-Issue #9 需要验收按执行 ID 清理进程树，覆盖超时、显式取消和 Bash 正常退出后遗留的后台子进程。清理成功时，同容器的其他命令可以继续并返回自己的结果。无法确认时，先销毁旧容器再重开，并核对工作区已写入的文件仍在。
+确认单次超时或取消已清理时，容器继续可用，其他执行不受影响。结果无法确认则同步冻结该代的新命令和尚未发出的 Start/run，按完整 ID 删除并确认。原失败报 execution_outcome_unknown，受回收影响的其他执行报 execution_container_recycled。删除成功可重新开启；删除失败继续保留名额和 cleanup_required，需要关闭操作重试。HTTP 与进程内 `cancel(workspaceId, {executionId, expectedContainerId})` 均只定位已有记录，重复取消复用同一次清理。
+
+交接给 #11 的执行入口为 POST /exec，取消入口为 POST /exec/cancel，身份和最终结果按上一节处理。`processes_cleaned` 表示本次后代已清理，`container_removed` 表示整代已删除，`unconfirmed` 表示仍没有清理保证；取消请求已接纳不能代替这些证据。一次清理成功时 B 继续，监管失证时 B 返回可识别的整代回收错误。旧代取消不能作用到重开的容器。
+
+## 真实 Docker 验收
+
+[独立验收脚本](../apps/cli/tests/profiles/sandbox-runner/fixtures/docker-acceptance.mjs)启动构建后的正式 `sandbox-runner` profile，经 Unix socket 发出所有用户执行和取消，再独立核对 `/proc`、Docker top、容器 ID 和文件。脚本仅用于专用部署和空测试目录，不加入默认单元测试。需要 Linux、Node >=24.9、当前构建产物和 Linux 原生依赖、可访问的 `/var/run/docker.sock`，以及能给目录分配 UID/GID 10001 的账号；本轮在专用 root Runner 载体中运行，沙箱仍为 `10001:10001`。
+
+准备已拉取的固定镜像 `agentrush-sandbox@sha256:6410324ee0ef8f3f1609a0056234e52b6fc0345ab4a2c754051f0931faafcb98`，在 Linux 仓库根执行以下命令。控制目录和工作区目录须为本轮独占，工作区路径须满足上面的 daemon 可见性要求。
+
+```sh
+export M5_REPO="$PWD"
+export M5_DEPLOYMENT="issue9-m5-$(date +%s%N)"
+export M5_DATA_ROOT=$(mktemp -d /var/tmp/dsh-m5-control-XXXXXX)
+export M5_WORKSPACE_ROOT=$(mktemp -d /var/tmp/dsh-m5-workspaces-XXXXXX)
+mkdir -p .local/issue-9-process-cleanup/m5-runtime
+cc -static -O2 -Wall -Wextra -Werror \
+  -o .local/issue-9-process-cleanup/m5-runtime/clone-child \
+  packages/sandbox/sandbox-runner/tests/supervisor/clone_child.c
+node apps/cli/tests/profiles/sandbox-runner/fixtures/docker-acceptance.mjs
+```
+
+输出为 JSON 行，控制目录的 `evidence.jsonl` 保存相同证据。退出零且 `passed` 列出全部场景后，检查最后的 `cleanup`，所有记录的完整容器 ID 都须不存在。归档日志后删除本轮专用控制、工作区和编译目录；工作区含有意构造的越界符号链接，删除时先解除链接，禁止跟随链接。
+
+2026-11-05 的 Linux/amd64、Docker Engine 29.9.2、Node 24.19.0 验收通过 10 组场景：A 超时和取消时 B 继续，普通后台、多层 fork/setsid/忽略 TERM、特殊 clone 的回收，容量/去重/目录/两路截断，监管被杀后的整代回收，SIGTERM 和 SIGKILL 后重启清理，以及在途关闭。B 分别继续写标记并退出 7；A 后代消失，单次清理保持容器，整代回收后文件保留。本轮测试容器、辅助容器、卷和专用目录均已清理。删除失败时的冻结与保留容量由可控 Engine 测试验证；真实 Docker 验收未故意使 daemon 删除失败。Vultr 部署未运行。

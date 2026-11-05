@@ -11,13 +11,16 @@ import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import {
   Config, creationLabel, deploymentLabel, project, projectLabel, resolveCreateRequest, sandboxName, workspaceLabel, type ResolvedConfig,
 } from './config.ts'
-import { DockerEngine, DockerRequestError, type DockerContainerId, type DockerExecResult, type SandboxContainer } from './docker.ts'
-import { SandboxLifecycleError } from './errors.ts'
+import {
+  DockerEngine, DockerRequestError, type DockerContainerId, type DockerExecResult, type DockerExecSession, type SandboxContainer,
+} from './docker.ts'
+import { SandboxExecutionError, SandboxLifecycleError } from './errors.ts'
+import type { SupervisorCancelReason, SupervisorFinished, SupervisorResult } from './protocol.ts'
 import { listenRunnerSocket } from './server.ts'
 
 export { InvalidWorkspaceDirectoryError } from './config.ts'
 export { DockerRequestError, type DockerContainerId } from './docker.ts'
-export { SandboxLifecycleError } from './errors.ts'
+export { SandboxExecutionError, SandboxLifecycleError, type SandboxExecutionFailure } from './errors.ts'
 
 /** Docker has confirmed that this generation is running and not paused. */
 export interface RunningSandbox {
@@ -36,13 +39,17 @@ export type SandboxStatus = RunningSandbox | ClosedSandbox | { readonly state: '
 /** Caller identity used to retrieve one execution's result in the same container generation. */
 export type SandboxExecutionId = Branded<'SandboxExecutionId'>
 
-/** Validated execution inputs for a trusted Runner caller. */
-export interface SandboxExecutionRequest {
+/** Identity of one accepted command in a specific container generation. */
+export interface SandboxExecutionIdentity {
   readonly executionId: SandboxExecutionId
   readonly expectedContainerId: DockerContainerId
+}
+
+/** Validated execution inputs for a trusted Runner caller. */
+export interface SandboxExecutionRequest extends SandboxExecutionIdentity {
   /** Canonical command arguments, including the normalized working directory when supplied. */
   readonly argv: readonly string[]
-  /** Total wait in milliseconds, resolved by the caller before admission. */
+  /** Command budget in milliseconds; cleanup and supervisor confirmation have their own deadline. */
   readonly timeoutMs: number
 }
 
@@ -51,12 +58,28 @@ export interface SandboxExecutionResult extends DockerExecResult {
   readonly executionId: SandboxExecutionId
 }
 
+/** Cancellation acceptance, independent of the command's final result and cleanup. */
+export interface SandboxCancellationResult {
+  readonly executionId: SandboxExecutionId
+  readonly containerId: DockerContainerId
+  readonly cancellation: 'requested' | 'settled'
+}
+
 const executionRecordLimit = 128
 
 interface ExecutionRecord {
   readonly fingerprint: string
   readonly result: Promise<SandboxExecutionResult>
+  readonly preparation: AbortController
+  phase: 'preparing' | 'running' | 'cleaning' | 'settled'
+  started: boolean
+  requested?: SupervisorCancelReason
+  session?: DockerExecSession
+  finished?: SupervisorFinished
+  retirement?: { code: 'execution_outcome_unknown' | 'execution_container_recycled'; result: Promise<RemovalOutcome> }
 }
+
+type RemovalOutcome = { cleanup: 'container_removed' } | { cleanup: 'unconfirmed'; cause: unknown }
 
 type Phase =
   | { state: 'starting'; result: Promise<RunningSandbox> }
@@ -68,6 +91,7 @@ interface Slot {
   container: DockerContainerId | { token: string } | null
   phase: Phase
   readonly executions: Map<SandboxExecutionId, ExecutionRecord>
+  recovery?: Promise<RemovalOutcome>
 }
 
 function running(container: SandboxContainer): boolean {
@@ -86,7 +110,6 @@ export default class SandboxRunner extends Service {
   static Config = Config
 
   private readonly startup = new AbortController()
-  private readonly shutdownExecutions = new AbortController()
   private readonly docker: DockerEngine
   private readonly slots = new Map<WorkspaceId, Slot>()
   private readonly observations = new Set<Promise<SandboxStatus>>()
@@ -112,7 +135,9 @@ export default class SandboxRunner extends Service {
     // Disposal waits for init, but the fiber stops accepting effects as soon as disposal starts.
     this.ctx.effect(() => async () => {
       this.ready = false
-      this.shutdownExecutions.abort()
+      for (const slot of this.slots.values()) {
+        for (const record of slot.executions.values()) this.cancelExecution(record, 'shutdown')
+      }
       const inFlight = [...this.slots.values()].flatMap(({ phase }) =>
         phase.state === 'starting' || phase.state === 'closing' ? [phase.result] : [])
       const drained = Promise.allSettled([...inFlight, ...this.observations, ...this.inFlightExecutions])
@@ -217,6 +242,7 @@ export default class SandboxRunner extends Service {
     const slot = this.slots.get(workspaceId)
     const phase = slot?.phase
     if (phase?.state === 'starting' || phase?.state === 'closing') return { state: phase.state }
+    if (slot?.recovery) return { state: 'cleanup_required' }
 
     const container = await this.observe(workspaceId, slot?.container ?? null)
     this.assertReady()
@@ -233,9 +259,10 @@ export default class SandboxRunner extends Service {
     return { state: 'cleanup_required' }
   }
 
-  /** Run a foreground command on the expected workspace container. Distinct execution IDs can run concurrently.
+  /** Run a supervised command on the expected workspace container. Distinct execution IDs can run concurrently.
    * Matching retries share the pending or stored result, including failures.
-   * An unconfirmed Start reserves the container for cleanup. Caller disconnects do not cancel the operation.
+   * Confirmed per-command cleanup keeps the container usable. An unknown result freezes and removes its generation.
+   * Caller disconnects do not cancel the operation; accepted failures include independent cleanup details.
    * @param workspaceId - Workspace registry identity.
    * @param request - Validated arguments and expected generation from the trusted caller.
    * @returns The confirmed exit code and retained output for the caller's execution ID.
@@ -258,14 +285,41 @@ export default class SandboxRunner extends Service {
     this.assertExecutable(slot)
     if (slot.executions.size >= executionRecordLimit) throw new SandboxLifecycleError('execution_limit')
 
-    const deadline = AbortSignal.timeout(timeoutMs)
-    const result = Promise.resolve().then(() => this.executeSlot(workspaceId, slot, id, executionId, argv, deadline))
-      .finally(() => {
-        this.inFlightExecutions.delete(result)
-      })
-    slot.executions.set(executionId, { fingerprint, result })
-    this.inFlightExecutions.add(result)
-    return result
+    const expiresAt = performance.now() + timeoutMs
+    const record: ExecutionRecord = {
+      fingerprint, preparation: new AbortController(), phase: 'preparing', started: false,
+      result: Promise.resolve().then(() => this.executeSlot(workspaceId, slot, id, executionId, argv, record, expiresAt))
+        .finally(() => {
+          record.phase = 'settled'
+          delete record.session
+          clearTimeout(timer)
+          this.inFlightExecutions.delete(record.result)
+        }),
+    }
+    const timer = setTimeout(() => { this.cancelExecution(record, 'timeout') }, timeoutMs)
+    timer.unref()
+    slot.executions.set(executionId, record)
+    this.inFlightExecutions.add(record.result)
+    return record.result
+  }
+
+  /** Request cancellation of an existing command without waiting for cleanup or changing its first accepted reason.
+   * Repeated requests share its control channel; a settled command is left unchanged, even in a blocked generation.
+   * @param workspaceId - Workspace registry identity.
+   * @param request - Execution identity and the original expected container.
+   * @returns Whether cancellation is requested or the original result is already settled.
+   */
+  cancel(workspaceId: WorkspaceId, request: SandboxExecutionIdentity): SandboxCancellationResult {
+    this.assertReady()
+    const slot = this.slots.get(workspaceId)
+    if (!slot || slot.container !== request.expectedContainerId) throw new SandboxLifecycleError('execution_generation_mismatch')
+    const record = slot.executions.get(request.executionId)
+    if (!record) throw new SandboxLifecycleError('execution_not_found')
+    this.cancelExecution(record, 'cancelled')
+    return {
+      executionId: request.executionId, containerId: request.expectedContainerId,
+      cancellation: record.phase === 'settled' ? 'settled' : 'requested',
+    }
   }
 
   /** Close the current generation. Acknowledging deletion alone does not release its slot.
@@ -278,9 +332,28 @@ export default class SandboxRunner extends Service {
       ?? { directory: null, container: null, phase: { state: 'cleanup_required' }, executions: new Map() }
     if (slot.phase.state === 'closing') return slot.phase.result
     const opening = slot.phase.state === 'starting' ? slot.phase.result : undefined
-    const result = Promise.resolve().then(() => this.closeSlot(workspaceId, slot, opening))
+    const recovery = slot.recovery
+    const removal = Promise.resolve().then(async (): Promise<RemovalOutcome> => {
+      if (recovery) return recovery
+      try {
+        await this.closeSlot(workspaceId, slot, opening)
+        return { cleanup: 'container_removed' }
+      } catch (cause) {
+        return { cleanup: 'unconfirmed', cause }
+      }
+    })
+    const result = removal.then(async (outcome): Promise<ClosedSandbox> => {
+      await Promise.allSettled([...slot.executions.values()].map(record => record.result))
+      if (outcome.cleanup === 'unconfirmed') {
+        this.settleFailure(workspaceId, slot)
+        throw outcome.cause
+      }
+      if (this.slots.get(workspaceId) === slot) this.slots.delete(workspaceId)
+      return { state: 'closed' }
+    })
     slot.phase = { state: 'closing', result }
     this.slots.set(workspaceId, slot)
+    this.retireExecutions(slot, removal)
     return result
   }
 
@@ -301,35 +374,119 @@ export default class SandboxRunner extends Service {
 
   private async executeSlot(
     workspaceId: WorkspaceId, slot: Slot, id: DockerContainerId, executionId: SandboxExecutionId,
-    argv: readonly string[], deadline: AbortSignal,
+    argv: readonly string[], record: ExecutionRecord, expiresAt: number,
   ): Promise<SandboxExecutionResult> {
-    const signal = AbortSignal.any([deadline, this.shutdownExecutions.signal])
+    const signal = record.preparation.signal
     const current = () => this.slots.get(workspaceId) === slot && slot.container === id
+    const stopping = () => record.requested !== undefined || record.retirement !== undefined
     const confirm = () => {
       this.assertReady()
       if (!current()) throw new SandboxLifecycleError('execution_generation_mismatch')
       this.assertExecutable(slot)
       signal.throwIfAborted()
     }
-
-    let attemptedStart = false
-    try {
+    const inspectExecutable = async (inspectionSignal: AbortSignal) => {
       confirm()
-      const container = await this.docker.inspect(id, signal)
+      const container = await this.docker.inspect(id, inspectionSignal)
       confirm()
       if (!container || !running(container)) throw new SandboxLifecycleError('sandbox_not_running')
       this.assertOwner(container, workspaceId)
       this.assertMount(container, slot.directory)
-      const exec = await this.docker.createExec(container.Id, argv, signal)
+    }
+
+    let completed: SupervisorResult
+    try {
+      await inspectExecutable(signal)
+      const exec = await this.docker.createExec(id, executionId, signal)
       confirm()
-      attemptedStart = true
-      return { executionId, ...await this.docker.startExec(exec, container.Id, signal) }
+      const session = this.docker.startExec(exec, id, {
+        executionId, argv, expiresAt,
+        beforeStart: () => { confirm(); record.started = true },
+        beforeRun: async (transport) => {
+          // A cancellation keeps the protocol alive while preventing any late run.
+          if (stopping()) return
+          const container = await this.docker.inspect(id, transport)
+          if (stopping()) return
+          confirm()
+          if (!container || !running(container)) throw new SandboxLifecycleError('sandbox_not_running')
+          this.assertOwner(container, workspaceId)
+          this.assertMount(container, slot.directory)
+        },
+        onRun: () => { record.phase = 'running' },
+        onFinished: (finished) => { record.finished = finished; record.phase = 'cleaning' },
+      })
+      record.session = session
+      if (record.retirement) session.interrupt()
+      else if (record.requested) session.cancel(record.requested)
+      completed = await session.result
+      if (record.retirement) throw new Error('Container generation was retired before execution settlement')
+      if (completed.finished.reason === 'control_eof') throw new Error('Unexpected supervisor control EOF')
     } catch (cause) {
-      if (attemptedStart && current() && slot.phase.state === 'running') slot.phase = { state: 'cleanup_required' }
-      if (deadline.aborted) throw new SandboxLifecycleError('execution_timeout', cause)
-      if (attemptedStart) throw new SandboxLifecycleError('execution_outcome_unknown', cause)
+      const retirement = record.retirement ?? (record.started ? this.recoverSlot(workspaceId, slot, id, record) : undefined)
+      if (retirement) {
+        const outcome = await retirement.result
+        throw new SandboxExecutionError(retirement.code, {
+          executionId, containerId: id, cleanup: outcome.cleanup, reason: record.finished?.reason ?? null,
+          ...record.finished ? { bash: record.finished.bash } : {},
+        }, outcome.cleanup === 'unconfirmed' ? new AggregateError([cause, outcome.cause], 'Execution and removal failed') : cause)
+      }
+      if (record.requested) {
+        throw new SandboxExecutionError(record.requested === 'timeout' ? 'execution_timeout' : 'execution_cancelled', {
+          executionId, containerId: id, reason: record.requested, cleanup: 'not_started', bash: null,
+        }, cause)
+      }
       throw cause
     }
+    const { finished, stdout, stderr } = completed
+    if (finished.reason !== 'exited') {
+      throw new SandboxExecutionError(finished.reason === 'timeout' ? 'execution_timeout' : 'execution_cancelled', {
+        executionId, containerId: id, reason: finished.reason, cleanup: 'processes_cleaned', bash: finished.bash,
+      })
+    }
+    if (finished.bash === null) throw new Error('An exited supervisor result must contain the Bash status')
+    return { executionId, exitCode: finished.bash.exitCode ?? 128 + finished.bash.signal, stdout, stderr }
+  }
+
+  private cancelExecution(record: ExecutionRecord, reason: SupervisorCancelReason): void {
+    if (record.phase === 'settled' || record.finished || record.requested || record.retirement) return
+    record.requested = reason
+    record.phase = 'cleaning'
+    if (record.started) record.session?.cancel(reason)
+    else record.preparation.abort(reason)
+  }
+
+  private retireExecutions(slot: Slot, result: Promise<RemovalOutcome>): void {
+    for (const record of slot.executions.values()) {
+      if (record.phase === 'settled') continue
+      record.retirement ??= { code: 'execution_container_recycled', result }
+      record.phase = 'cleaning'
+      record.preparation.abort()
+      record.session?.interrupt()
+    }
+  }
+
+  private recoverSlot(
+    workspaceId: WorkspaceId, slot: Slot, id: DockerContainerId, failed: ExecutionRecord,
+  ): NonNullable<ExecutionRecord['retirement']> {
+    slot.phase = { state: 'cleanup_required' }
+    const result = slot.recovery ?? Promise.resolve().then(async (): Promise<RemovalOutcome> => {
+      try {
+        await this.removeAndConfirm(id)
+        if (this.slots.get(workspaceId) === slot && slot.container === id && slot.phase.state !== 'closing') {
+          this.slots.delete(workspaceId)
+        }
+        return { cleanup: 'container_removed' }
+      } catch (cause) {
+        return { cleanup: 'unconfirmed', cause }
+      } finally {
+        if (slot.recovery === result) delete slot.recovery
+      }
+    })
+    slot.recovery = result
+    const retirement = { code: 'execution_outcome_unknown' as const, result }
+    failed.retirement = retirement
+    this.retireExecutions(slot, result)
+    return retirement
   }
 
   private owner(container: SandboxContainer): string | undefined {
@@ -428,23 +585,19 @@ export default class SandboxRunner extends Service {
   private async closeSlot(workspaceId: WorkspaceId, slot: Slot, opening: Promise<RunningSandbox> | undefined): Promise<ClosedSandbox> {
     // The opening caller receives its failure; closing still owns any generation it left behind.
     if (opening) await Promise.allSettled([opening])
-    try {
-      const container = await this.observe(workspaceId, slot.container)
-      if (container) {
-        slot.container = container.Id
-        await this.removeAndConfirm(container.Id)
-      }
-      this.slots.delete(workspaceId)
-      return { state: 'closed' }
-    } catch (cause) {
-      this.settleFailure(workspaceId, slot)
-      throw cause
+    const container = await this.observe(workspaceId, slot.container)
+    if (container) {
+      slot.container = container.Id
+      await this.removeAndConfirm(container.Id)
     }
+    if (this.slots.get(workspaceId) === slot) this.slots.delete(workspaceId)
+    return { state: 'closed' }
   }
 
   private settleFailure(workspaceId: WorkspaceId, slot: Slot): void {
-    if (slot.container === null) this.slots.delete(workspaceId)
-    else slot.phase = { state: 'cleanup_required' }
+    if (slot.container === null) {
+      if (this.slots.get(workspaceId) === slot) this.slots.delete(workspaceId)
+    } else slot.phase = { state: 'cleanup_required' }
   }
 
   private async removeAndConfirm(id: DockerContainerId): Promise<void> {

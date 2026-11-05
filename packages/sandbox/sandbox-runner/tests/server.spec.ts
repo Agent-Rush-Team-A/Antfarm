@@ -8,7 +8,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import { afterEach, expect, test, vi, type TestContext } from 'vitest'
 import { InvalidWorkspaceDirectoryError } from '../src/config.ts'
 import { DockerEngine, DockerRequestError, type DockerContainerId } from '../src/docker.ts'
-import { SandboxLifecycleError } from '../src/errors.ts'
+import { SandboxExecutionError, SandboxLifecycleError, type SandboxExecutionFailure } from '../src/errors.ts'
 import SandboxRunner, { type SandboxExecutionId } from '../src/index.ts'
 import { listenRunnerSocket } from '../src/server.ts'
 
@@ -74,6 +74,9 @@ async function fixture(t: TestContext) {
     status: vi.fn<SandboxRunner['status']>().mockResolvedValue(running),
     close: vi.fn<SandboxRunner['close']>().mockResolvedValue({ state: 'closed' }),
     execute: vi.fn<SandboxRunner['execute']>().mockResolvedValue(executed),
+    cancel: vi.fn<SandboxRunner['cancel']>().mockReturnValue({
+      executionId: executed.executionId, containerId: running.containerId, cancellation: 'requested',
+    }),
   }
   const report = vi.fn<(error: unknown) => void>()
   return { socketPath, root, parent, directory, runner, running, executed, report, servers }
@@ -81,6 +84,7 @@ async function fixture(t: TestContext) {
 
 const route = '/v1/workspaces/A/sandbox'
 const execRoute = `${route}/exec`
+const cancelRoute = `${execRoute}/cancel`
 const execRequest = { executionId: 'run-1', expectedContainerId: 'a'.repeat(64), command: 'printf out; printf err >&2; exit 7' }
 
 function send(socketPath: string, method: string, path = route, body?: string | Buffer) {
@@ -148,13 +152,97 @@ test('Exec distinguishes conflicts, unknown results, and timeouts', async (t) =>
   await listenRunnerSocket(f.socketPath, f.runner, f.report)
   const cases = [
     ['execution_generation_mismatch', 409], ['execution_id_conflict', 409],
-    ['execution_limit', 409], ['sandbox_cleanup_required', 409],
-    ['execution_outcome_unknown', 503], ['execution_timeout', 504],
+    ['execution_limit', 409], ['sandbox_cleanup_required', 503],
+    ['execution_outcome_unknown', 503], ['execution_container_recycled', 503], ['execution_timeout', 504],
   ] as const
   for (const [code, status] of cases) {
     f.runner.execute.mockRejectedValueOnce(new SandboxLifecycleError(code))
     await expect(send(f.socketPath, 'POST', execRoute, JSON.stringify(execRequest))).resolves.toMatchObject({ status, body: { error: code } })
   }
+})
+
+test('cancel acknowledges pending and settled records without dispatching Exec', async (t) => {
+  const f = await fixture(t)
+  await listenRunnerSocket(f.socketPath, f.runner, f.report)
+  const request = { executionId: f.executed.executionId, expectedContainerId: f.running.containerId }
+  const result = { executionId: request.executionId, containerId: request.expectedContainerId }
+  for (let repeat = 0; repeat < 2; repeat++) {
+    await expect(send(f.socketPath, 'POST', cancelRoute, JSON.stringify(request))).resolves.toMatchObject({
+      status: 202, body: { ...result, cancellation: 'requested' },
+    })
+  }
+  f.runner.cancel.mockReturnValueOnce({ ...result, cancellation: 'settled' })
+  await expect(send(f.socketPath, 'POST', cancelRoute, JSON.stringify(request))).resolves.toMatchObject({
+    status: 200, body: { ...result, cancellation: 'settled' },
+  })
+  expect(f.runner.cancel.mock.calls).toEqual([['A', request], ['A', request], ['A', request]])
+  expect(f.runner.execute).not.toHaveBeenCalled()
+  await expect(send(f.socketPath, 'GET', cancelRoute)).resolves.toMatchObject({ status: 405, allow: 'POST' })
+  await expect(send(f.socketPath, 'POST', `${cancelRoute}/extra`)).resolves.toMatchObject({ status: 404 })
+})
+
+test('cancel validates both identities, strict fields and an 8 KiB byte limit before dispatch', async (t) => {
+  const f = await fixture(t)
+  await listenRunnerSocket(f.socketPath, f.runner, f.report)
+  const request = { executionId: execRequest.executionId, expectedContainerId: f.running.containerId }
+  const json = JSON.stringify(request)
+  const utf8 = Buffer.from(JSON.stringify({ ...request, executionId: 'é' }))
+  utf8[utf8.indexOf(0xc3)] = 0xff
+  const fields = [
+    { executionId: '' }, { executionId: 'x'.repeat(129) }, { executionId: '\ud800' }, { executionId: 'a\0b' },
+    { executionId: null }, { expectedContainerId: 'a'.repeat(12) }, { expectedContainerId: 'A'.repeat(64) },
+    { expectedContainerId: null }, { command: 'must not start' }, { timeoutMs: 1 },
+  ]
+  const invalid = ['{', '{}', JSON.stringify({ executionId: request.executionId }),
+    JSON.stringify({ expectedContainerId: request.expectedContainerId }), 'null', utf8,
+    `${json}${' '.repeat(8193 - Buffer.byteLength(json))}`,
+    ...fields.map(field => JSON.stringify({ ...request, ...field })),
+  ]
+  for (const body of invalid) {
+    await expect(send(f.socketPath, 'POST', cancelRoute, body)).resolves.toMatchObject({
+      status: 400, body: { error: 'invalid_request' },
+    })
+  }
+  expect(f.runner.cancel).not.toHaveBeenCalled()
+  await expect(send(f.socketPath, 'POST', cancelRoute, `${json}${' '.repeat(8192 - Buffer.byteLength(json))}`))
+    .resolves.toMatchObject({ status: 202 })
+  expect(f.runner.cancel).toHaveBeenCalledOnce()
+})
+
+test('cancel preserves lookup errors without claiming cleanup', async (t) => {
+  const f = await fixture(t)
+  await listenRunnerSocket(f.socketPath, f.runner, f.report)
+  const request = { executionId: execRequest.executionId, expectedContainerId: f.running.containerId }
+  for (const [code, status] of [['execution_not_found', 404], ['execution_generation_mismatch', 409], ['sandbox_not_ready', 503]] as const) {
+    f.runner.cancel.mockImplementationOnce(() => { throw new SandboxLifecycleError(code) })
+    await expect(send(f.socketPath, 'POST', cancelRoute, JSON.stringify(request))).resolves.toMatchObject({
+      status, body: { error: code },
+    })
+  }
+  expect(f.runner.execute).not.toHaveBeenCalled()
+})
+
+test.for([
+  { code: 'execution_timeout', status: 504, cleanup: 'not_started', reason: 'timeout', bash: null },
+  { code: 'execution_timeout', status: 504, cleanup: 'processes_cleaned', reason: 'timeout', bash: { exitCode: 0, signal: null } },
+  { code: 'execution_cancelled', status: 409, cleanup: 'not_started', reason: 'cancelled', bash: null },
+  { code: 'execution_cancelled', status: 409, cleanup: 'processes_cleaned', reason: 'cancelled', bash: { exitCode: null, signal: 15 } },
+  { code: 'execution_outcome_unknown', status: 503, cleanup: 'container_removed', reason: null },
+  { code: 'execution_outcome_unknown', status: 503, cleanup: 'unconfirmed', reason: 'exited', bash: { exitCode: 7, signal: null } },
+  { code: 'execution_container_recycled', status: 503, cleanup: 'container_removed', reason: null },
+  { code: 'execution_container_recycled', status: 503, cleanup: 'unconfirmed', reason: null },
+] as const)('Exec exposes $code/$cleanup independently of Bash status', async ({ code, status, ...facts }, t) => {
+  const f = await fixture(t)
+  await listenRunnerSocket(f.socketPath, f.runner, f.report)
+  const execution: SandboxExecutionFailure = { executionId: f.executed.executionId, containerId: f.running.containerId, ...facts }
+  const error = new SandboxExecutionError(code, execution, new Error('private internal path'))
+  f.runner.execute.mockRejectedValue(error)
+  for (let retry = 0; retry < 2; retry++) {
+    const response = await send(f.socketPath, 'POST', execRoute, JSON.stringify(execRequest))
+    expect(response).toMatchObject({ status })
+    expect(response.body).toEqual({ error: code, ...execution })
+  }
+  expect(f.report).not.toHaveBeenCalled()
 })
 
 test('a detached Exec caller does not prevent the Runner from settling', async (t) => {
@@ -179,6 +267,7 @@ test('a detached Exec caller does not prevent the Runner from settling', async (
   await closed
   settle.resolve(f.executed)
   await settle.promise
+  expect(f.runner.cancel).not.toHaveBeenCalled()
   expect(f.report).not.toHaveBeenCalled()
 })
 

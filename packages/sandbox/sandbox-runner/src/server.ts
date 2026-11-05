@@ -10,18 +10,23 @@ import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import { z } from 'zod'
 import { InvalidWorkspaceDirectoryError } from './config.ts'
 import { dockerContainerIdSchema, DockerRequestError } from './docker.ts'
-import { SandboxLifecycleError } from './errors.ts'
-import type { default as SandboxRunner, SandboxExecutionId, SandboxExecutionRequest } from './index.ts'
+import { SandboxExecutionError, SandboxLifecycleError } from './errors.ts'
+import type { default as SandboxRunner, SandboxExecutionRequest } from './index.ts'
+import { executionIdSchema } from './protocol.ts'
 
-type SandboxOperations = Pick<SandboxRunner, 'open' | 'status' | 'close' | 'execute'>
+type SandboxOperations = Pick<SandboxRunner, 'open' | 'status' | 'close' | 'execute' | 'cancel'>
 
-const route = /^\/v1\/workspaces\/([^/]*)\/sandbox(\/exec)?$/u
+const route = /^\/v1\/workspaces\/([^/]*)\/sandbox(\/exec(?:\/cancel)?)?$/u
 const workspaceIdPattern = /^[a-zA-Z0-9_-]{1,128}$/u
 const putBody = z.strictObject({ workspaceDir: z.string().min(1) })
 const argumentText = (value: string) => value.isWellFormed() && !value.includes('\0')
-const execBody = z.strictObject({
-  executionId: z.string().min(1).max(128).refine(argumentText).transform(value => brandString<SandboxExecutionId>(value)),
+const executionIdentity = {
+  executionId: executionIdSchema,
   expectedContainerId: dockerContainerIdSchema,
+}
+const cancelBody = z.strictObject(executionIdentity)
+const execBody = z.strictObject({
+  ...executionIdentity,
   command: z.string().refine(value => argumentText(value) && value.trim().length > 0),
   workdir: z.string().min(1).refine(value => argumentText(value) && !posix.isAbsolute(value) && !value.split('/').includes('..'))
     .transform(value => posix.normalize(value).replace(/\/$/u, '')).default('.'),
@@ -84,7 +89,10 @@ async function dispatch(
   try {
     if (exec) {
       if (request.method === 'POST') {
-        reply(response, 200, await runner.execute(workspaceId, await readExec(request)))
+        if (exec === '/exec/cancel') {
+          const result = runner.cancel(workspaceId, await readBody(request, 8192, cancelBody))
+          reply(response, result.cancellation === 'requested' ? 202 : 200, result)
+        } else reply(response, 200, await runner.execute(workspaceId, await readExec(request)))
         return
       }
       response.setHeader('Allow', 'POST')
@@ -105,8 +113,10 @@ async function dispatch(
       reply(response, 400, { error: 'invalid_workspace_directory' })
     } else if (error instanceof SandboxLifecycleError) {
       const unavailable = error.code === 'sandbox_outcome_unknown' || error.code === 'sandbox_not_ready'
-        || error.code === 'execution_outcome_unknown'
-      reply(response, error.code === 'execution_timeout' ? 504 : unavailable ? 503 : 409, { error: error.code })
+        || error.code === 'execution_outcome_unknown' || error.code === 'execution_container_recycled'
+        || error.code === 'sandbox_cleanup_required'
+      const status = error.code === 'execution_timeout' ? 504 : error.code === 'execution_not_found' ? 404 : unavailable ? 503 : 409
+      reply(response, status, error instanceof SandboxExecutionError ? { error: error.code, ...error.execution } : { error: error.code })
     } else if (error instanceof DockerRequestError) {
       reply(response, 503, { error: 'docker_unavailable' })
     } else {

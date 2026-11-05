@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/sandbox/sandbox-runner/docs/README.md
+/execution-supervisor-image:
+  en: 9dca43a9f51cc88e
+  zh: 001df518ef8340ee
+/execution-supervisor-image/build-and-launch:
+  en: 415a1d5942282e89
+  zh: 0480ac3b57a7ddd6
+/execution-supervisor-image/protocol-reference:
+  en: fb88157abfe0780d
+  zh: 05f25bfc8ba7d3d1
+/execution-supervisor-image/cleanup-and-failure:
+  en: febad0b118b9d63d
+  zh: 7ae98fd5baee39ed
+/execution-supervisor-image/docker-adapter:
+  en: 42f99e6ba919f9a7
+  zh: 321fecb84ceed5b9
+/execution-supervisor-image/linux-verification:
+  en: c89f14b09385c55a
+  zh: a733e00674750dfd

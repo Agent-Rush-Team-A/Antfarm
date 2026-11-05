@@ -4,10 +4,13 @@
 
 import { request, type IncomingMessage } from 'node:http'
 import { addAbortSignal, type Duplex } from 'node:stream'
+import { setTimeout as delay } from 'node:timers/promises'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
-import { TextRetainer } from '@deepseek-ai/dsh-output-retention'
 import { z } from 'zod'
 import { deploymentLabel, type resolveCreateRequest, type ResolvedConfig } from './config.ts'
+import type { SandboxExecutionId } from './index.ts'
+import { encodeCancel, encodeRun, executionIdSchema, SupervisorProtocol, SupervisorProtocolError } from './protocol.ts'
+import type { SupervisorCancelReason, SupervisorFinished, SupervisorResult } from './protocol.ts'
 
 /** Full, 64-character Docker container ID. */
 export type DockerContainerId = Branded<'DockerContainerId'>
@@ -21,11 +24,43 @@ export interface DockerExecOutput {
   readonly truncated: boolean
 }
 
-/** Confirmed foreground exit and bounded output from Docker. */
+/** Cleanup-confirmed command exit and bounded user output. */
 export interface DockerExecResult {
   readonly exitCode: number
   readonly stdout: DockerExecOutput
   readonly stderr: DockerExecOutput
+}
+
+/** One command's identity, original deadline and admission check. */
+export interface DockerExecRequest {
+  readonly executionId: SandboxExecutionId
+  readonly argv: readonly string[]
+  /** Absolute monotonic command deadline, in performance.now() milliseconds. */
+  readonly expiresAt: number
+  /** Recheck the execution immediately before dispatching the single Exec Start. */
+  readonly beforeStart: () => void
+  /** Recheck the captured execution and container after ready, before run.
+   * @param signal - Transport deadline; aborts any unfinished check when the operation settles.
+   * @returns When the original generation is still executable.
+   */
+  readonly beforeRun: (signal: AbortSignal) => Promise<void>
+  /** Observe run admission when supplied; omitting it does not change protocol handling. */
+  readonly onRun?: () => void
+  /** Observe validated finished before EOF/Inspect when supplied; omitting it leaves protocol handling unchanged.
+   * @param finished - A reported result that still requires EOF and Inspect confirmation.
+   */
+  readonly onFinished?: (finished: SupervisorFinished) => void
+}
+
+/** A dedicated control connection and its cleanup-confirmed result. */
+export interface DockerExecSession {
+  readonly result: Promise<SupervisorResult>
+  /** Request cancellation once without closing the result stream.
+   * @param reason - First requested cancellation reason; subsequent requests do not replace it.
+   */
+  cancel(reason: SupervisorCancelReason): void
+  /** Close a connection whose entire container generation is being removed. */
+  interrupt(): void
 }
 
 const apiVersion = '/v1.51'
@@ -58,7 +93,7 @@ export class DockerRequestError extends Error {
   constructor(
     readonly operation: string,
     readonly kind: 'transport' | 'engine' | 'invalid_response',
-    readonly details: { status?: number | undefined; cause?: unknown },
+    readonly details: { status?: number | undefined; cause?: unknown; diagnostics?: string },
   ) {
     super(`Docker ${operation}: ${details.status === undefined ? kind : `HTTP ${details.status}`}`, { cause: details.cause })
     this.name = 'DockerRequestError'
@@ -89,55 +124,15 @@ function jsonHeaders(body: string) {
   return { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
 }
 
-async function readExecOutput(socket: Duplex, head: Buffer, signal: AbortSignal, operation: string) {
-  const stdout = new TextRetainer({ kind: 'tail', maxBytes: 64 * 1024 })
-  const stderr = new TextRetainer({ kind: 'tail', maxBytes: 64 * 1024 })
-  const header = Buffer.alloc(8)
-  let headerBytes = 0
-  let remaining = 0
-  let output = stdout
-
-  try {
-    // Upgrade detaches the HTTP parser and gives us bytes it already read from the socket.
-    if (head.length > 0) socket.unshift(head)
-    for await (const chunk of addAbortSignal(signal, socket) as AsyncIterable<Buffer>) {
-      let offset = 0
-      while (offset < chunk.length) {
-        if (remaining === 0) {
-          const copied = chunk.copy(header, headerBytes, offset, offset + header.length - headerBytes)
-          offset += copied
-          headerBytes += copied
-          if (headerBytes < header.length) break
-          const stream = header[0]
-          if ((stream !== 1 && stream !== 2) || header.readUIntBE(1, 3) !== 0) {
-            throw new DockerRequestError(operation, 'invalid_response', {})
-          }
-          output = stream === 1 ? stdout : stderr
-          remaining = header.readUInt32BE(4)
-          headerBytes = 0
-        }
-        const size = Math.min(remaining, chunk.length - offset)
-        if (size > 0) output.push(Uint8Array.from(chunk.subarray(offset, offset + size)))
-        remaining -= size
-        offset += size
-      }
-    }
-    if (headerBytes !== 0 || remaining !== 0) throw new DockerRequestError(operation, 'invalid_response', {})
-    const out = stdout.finish()
-    const err = stderr.finish()
-    return { stdout: { text: out.text, truncated: out.truncated }, stderr: { text: err.text, truncated: err.truncated } }
-  } finally {
-    socket.destroy()
-  }
-}
-
 /** Send workspace sandbox operations to a local Engine using API v1.51. */
 export class DockerEngine {
   /**
    * @param config - Trusted deployment settings.
    * @param cancellation - Optional cancellation in addition to each request's deadline.
    */
-  constructor(private readonly config: ResolvedConfig, private readonly cancellation?: AbortSignal) {}
+  constructor(private readonly config: ResolvedConfig, private readonly cancellation?: AbortSignal) {
+    if (config.termGraceMs >= config.cleanupTimeoutMs) throw new Error('termGraceMs must be smaller than cleanupTimeoutMs')
+  }
 
   /** Create without starting the sandbox. The Engine must already have the pinned image.
    * @param spec - Create request with a validated bind source.
@@ -155,70 +150,161 @@ export class DockerEngine {
     await this.send('POST', `${containerPath(id)}/start`, [204, 304])
   }
 
-  /** Register a foreground process that inherits the container identity. No process starts here.
+  /** Register the immutable image supervisor. No user command or supervisor starts here.
    * @param id - Full ID of the container selected by the Runner.
-   * @param argv - Executable and arguments to pass to Docker as separate strings.
+   * @param executionId - Execution identity bound to this supervisor's control channel.
    * @param deadline - Signal for the execution's remaining wait budget.
    * @returns The full exec ID reported by Docker.
    */
-  async createExec(id: DockerContainerId, argv: readonly string[], deadline: AbortSignal): Promise<DockerExecId> {
+  async createExec(id: DockerContainerId, executionId: SandboxExecutionId, deadline: AbortSignal): Promise<DockerExecId> {
     const path = `${containerPath(id)}/exec`
+    executionIdSchema.parse(executionId)
     const body = JSON.stringify({
-      Cmd: argv, WorkingDir: '/workspace', AttachStdin: false, AttachStdout: true, AttachStderr: true,
+      Cmd: [
+        '/usr/local/bin/python3', '-I', '-B', '/opt/agentrush/sandbox-runner/supervisor.py',
+        `--execution-id=${executionId}`, '--run-wait-ms', String(this.config.requestTimeoutMs),
+        '--cleanup-timeout-ms', String(this.config.cleanupTimeoutMs), '--term-grace-ms', String(this.config.termGraceMs),
+      ],
+      WorkingDir: '/workspace', AttachStdin: true, AttachStdout: true, AttachStderr: true,
       Tty: false, Privileged: false,
     })
     const result = await this.send('POST', path, [201], body, deadline)
     return decode(execIdResponse, result.body, `POST ${path}`).Id
   }
 
-  /** Start one exec, drain its separate output streams, and confirm its exit with Inspect.
-   * A failed Start or Inspect can leave the outcome unknown. Cancellation closes the connection only.
+  /** Start one supervisor, recheck admission after ready, and send at most one run and one cancel.
+   * Completion requires finished, stream EOF and Inspect confirming supervisor exit zero.
+   * Cancellation keeps reading until cleanup confirmation or the independent cleanup deadline.
    * @param id - Full ID of the exec returned by Create.
    * @param container - Full ID of the container used to create the exec.
-   * @param deadline - Signal for the execution's remaining wait budget.
-   * @returns The confirmed exit code and the last 64 KiB of each stream with truncation flags.
+   * @param spec - Original command deadline, normalized argv and captured generation check.
+   * @returns Per-execution cancellation and a result that preserves the original Bash status.
    */
-  async startExec(id: DockerExecId, container: DockerContainerId, deadline: AbortSignal): Promise<DockerExecResult> {
+  startExec(id: DockerExecId, container: DockerContainerId, spec: DockerExecRequest): DockerExecSession {
     const path = `/exec/${fullId.parse(id)}`
     const operation = `POST ${path}/start`
     const body = JSON.stringify({ Detach: false, Tty: false })
-    const signal = this.cancellation === undefined ? deadline : AbortSignal.any([deadline, this.cancellation])
-    const output = await new Promise<Awaited<ReturnType<typeof readExecOutput>>>((resolve, reject) => {
-      signal.throwIfAborted()
-      const req = request({
-        socketPath: this.config.dockerSocket,
-        agent: false,
-        path: `${apiVersion}${path}/start`,
-        method: 'POST',
-        headers: { ...jsonHeaders(body), Connection: 'Upgrade', Upgrade: 'tcp' },
-        signal,
-      })
-      req.once('upgrade', (response, socket, head) => {
-        if (response.statusCode !== 101 || response.headers.upgrade?.toLowerCase() !== 'tcp') {
-          socket.destroy()
-          reject(new DockerRequestError(operation, 'invalid_response', {}))
-          return
-        }
-        void readExecOutput(socket, head, signal, operation).then(resolve, reject)
-      })
-      req.once('response', (response) => {
-        response.destroy()
-        reject(new DockerRequestError(operation, 'engine', { status: response.statusCode }))
-      })
-      req.once('error', reject)
-      req.end(body)
-    }).catch((cause: unknown) => {
-      if (cause instanceof DockerRequestError) throw cause
-      throw new DockerRequestError(operation, 'transport', { cause })
-    })
-
-    const inspectPath = `${path}/json`
-    const result = await this.send('GET', inspectPath, [200], undefined, deadline)
-    const inspected = decode(execInspection, result.body, `GET ${inspectPath}`)
-    if (inspected.ID !== id || inspected.ContainerID !== container || inspected.Running || inspected.ExitCode === null) {
-      throw new DockerRequestError(`GET ${inspectPath}`, 'invalid_response', {})
+    const lifetime = new AbortController()
+    const { signal } = lifetime
+    let settled = false
+    let failure: unknown
+    let socket: Duplex | undefined
+    let pendingCheck: Promise<void> | undefined
+    let cancellation: { reason: SupervisorCancelReason; sent: boolean } | undefined
+    let ready = false
+    let until = spec.expiresAt + this.config.cleanupTimeoutMs
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let readyTimer: ReturnType<typeof setTimeout> | undefined
+    const fail = (cause: unknown) => {
+      if (settled || signal.aborted) return
+      failure = cause
+      lifetime.abort(cause)
     }
-    return { exitCode: inspected.ExitCode, ...output }
+    const bound = (deadline: number) => {
+      until = Math.min(until, deadline)
+      clearTimeout(timer)
+      timer = setTimeout(() => { fail(new Error('Supervisor cleanup or confirmation deadline elapsed')) }, Math.max(0, Math.ceil(until - performance.now())))
+      timer.unref()
+    }
+    const protocol = new SupervisorProtocol(spec.executionId, () => {
+      ready = true
+      clearTimeout(readyTimer)
+      if (cancellation) sendCancel()
+      else pendingCheck = prepare().catch(fail)
+    }, (finished) => {
+      bound(performance.now() + this.config.cleanupTimeoutMs)
+      spec.onFinished?.(finished)
+    })
+    const sendCancel = () => {
+      if (!socket || !ready || !cancellation || cancellation.sent || protocol.isFinished) return
+      protocol.cancelSent()
+      cancellation.sent = true
+      socket.write(encodeCancel(spec.executionId, cancellation.reason))
+    }
+    const cancel = (reason: SupervisorCancelReason) => {
+      if (settled || signal.aborted || cancellation || protocol.isFinished) return
+      cancellation = { reason, sent: false }
+      bound(performance.now() + this.config.cleanupTimeoutMs)
+      try { sendCancel() } catch (cause) { fail(cause) }
+    }
+    const prepare = async () => {
+      await spec.beforeRun(signal)
+      if (settled || signal.aborted || !protocol.canRun) return
+      const remaining = Math.floor(spec.expiresAt - performance.now())
+      if (remaining < 1) { cancel('timeout'); return }
+      const run = encodeRun(spec.executionId, spec.argv, remaining)
+      protocol.runSent()
+      spec.onRun?.()
+      // The queue contains at most one bounded run and one cancel; drain must not block control or reads.
+      socket?.write(run)
+    }
+    const stop = () => { fail(this.cancellation?.reason) }
+    this.cancellation?.addEventListener('abort', stop, { once: true })
+    const result = (async (): Promise<SupervisorResult> => {
+      try {
+        encodeRun(spec.executionId, spec.argv, 60_000)
+        const remaining = spec.expiresAt - performance.now()
+        if (remaining <= 0) throw new Error('Command deadline elapsed before supervisor Start')
+        if (this.cancellation?.aborted) stop()
+        signal.throwIfAborted()
+        bound(until)
+        readyTimer = setTimeout(() => { fail(new Error('Timed out waiting for supervisor ready')) }, Math.ceil(Math.min(remaining, this.config.requestTimeoutMs)))
+        readyTimer.unref()
+        await new Promise<void>((resolve, reject) => {
+          spec.beforeStart()
+          const req = request({
+            socketPath: this.config.dockerSocket, agent: false, path: `${apiVersion}${path}/start`, method: 'POST',
+            headers: { ...jsonHeaders(body), Connection: 'Upgrade', Upgrade: 'tcp' }, signal,
+          })
+          req.once('upgrade', (response, connection, head) => {
+            socket = connection
+            if (response.statusCode !== 101 || response.headers.upgrade?.toLowerCase() !== 'tcp') {
+              connection.destroy()
+              reject(new DockerRequestError(operation, 'invalid_response', {}))
+              return
+            }
+            void (async () => {
+              // Attach the iterator's error handling before parsing a head that may trigger control writes.
+              if (head.length > 0) connection.unshift(head)
+              for await (const chunk of addAbortSignal(signal, connection) as AsyncIterable<Buffer>) protocol.push(chunk)
+              resolve()
+            })().catch(reject)
+          })
+          req.once('response', (response) => {
+            response.destroy()
+            reject(new DockerRequestError(operation, 'engine', { status: response.statusCode }))
+          })
+          req.once('error', reject)
+          req.end(body)
+        })
+        const completion = protocol.finish()
+        const inspectPath = `${path}/json`
+        while (true) {
+          const reply = await this.send('GET', inspectPath, [200], undefined, signal)
+          const inspected = decode(execInspection, reply.body, `GET ${inspectPath}`)
+          if (inspected.ID !== id || inspected.ContainerID !== container || (!inspected.Running && inspected.ExitCode !== 0)) {
+            throw new DockerRequestError(`GET ${inspectPath}`, 'invalid_response', {})
+          }
+          if (!inspected.Running) return completion
+          await delay(10, undefined, { signal })
+        }
+      } catch (cause) {
+        const error = failure ?? cause
+        if (error instanceof DockerRequestError) throw error
+        throw new DockerRequestError(operation, error instanceof SupervisorProtocolError ? 'invalid_response' : 'transport', {
+          cause: error, ...(protocol.diagnostics ? { diagnostics: protocol.diagnostics } : {}),
+        })
+      } finally {
+        settled = true
+        clearTimeout(timer)
+        clearTimeout(readyTimer)
+        this.cancellation?.removeEventListener('abort', stop)
+        lifetime.abort()
+        socket?.destroy()
+        await pendingCheck
+      }
+    })()
+    return { result, cancel, interrupt: () => { fail(new Error('Container generation is being removed')) } }
   }
 
   /** Inspect one exact container.

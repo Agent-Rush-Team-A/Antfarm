@@ -168,7 +168,9 @@ Provider selection, probing, caching, and backend-specific enforcement reports b
 
 `RunningSandbox` includes the full Docker container ID. `ClosedSandbox` confirms the container is absent. `SandboxStatus` also covers opening, closing, and pending cleanup. See the [Docker Runner reference](../../packages/sandbox/sandbox-runner/README.md) for deployment and lifecycle behavior.
 
-`SandboxExecutionRequest` supplies a container generation, an execution ID, canonical command arguments, and a wait budget. `SandboxExecutionResult` carries the execution ID, confirmed exit code, and retained stdout and stderr with truncation flags.
+`SandboxExecutionIdentity` binds an execution ID to its expected full container ID. `SandboxExecutionRequest` adds canonical command arguments and a command budget. `SandboxExecutionResult` carries the execution ID, confirmed exit code, and retained stdout and stderr with truncation flags.
+
+`SandboxCancellationResult` acknowledges a requested cancellation or an already settled execution; it does not confirm the termination reason or cleanup. `SandboxExecutionError.execution` carries `SandboxExecutionFailure`: the execution/container identity, observed reason, independently confirmed cleanup, and Bash status when known. Unknown results and executions interrupted by generation removal are distinct failures. The [Runner reference](../../packages/sandbox/sandbox-runner/README.md) owns cancellation, recovery and retry behavior.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -252,14 +254,23 @@ async open(workspaceId: WorkspaceId, directory: string): Promise<RunningSandbox>
  */
 async status(workspaceId: WorkspaceId): Promise<SandboxStatus>
 
-/** Run a foreground command on the expected workspace container. Distinct execution IDs can run concurrently.
+/** Run a supervised command on the expected workspace container. Distinct execution IDs can run concurrently.
  * Matching retries share the pending or stored result, including failures.
- * An unconfirmed Start reserves the container for cleanup. Caller disconnects do not cancel the operation.
+ * Confirmed per-command cleanup keeps the container usable. An unknown result freezes and removes its generation.
+ * Caller disconnects do not cancel the operation; accepted failures include independent cleanup details.
  * @param workspaceId - Workspace registry identity.
  * @param request - Validated arguments and expected generation from the trusted caller.
  * @returns The confirmed exit code and retained output for the caller's execution ID.
  */
 async execute(workspaceId: WorkspaceId, request: SandboxExecutionRequest): Promise<SandboxExecutionResult>
+
+/** Request cancellation of an existing command without waiting for cleanup or changing its first accepted reason.
+ * Repeated requests share its control channel; a settled command is left unchanged, even in a blocked generation.
+ * @param workspaceId - Workspace registry identity.
+ * @param request - Execution identity and the original expected container.
+ * @returns Whether cancellation is requested or the original result is already settled.
+ */
+cancel(workspaceId: WorkspaceId, request: SandboxExecutionIdentity): SandboxCancellationResult
 
 /** Close the current generation. Acknowledging deletion alone does not release its slot.
  * @param workspaceId - Workspace registry identity.

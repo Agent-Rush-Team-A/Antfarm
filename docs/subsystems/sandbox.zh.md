@@ -168,7 +168,9 @@ interface ConfinedArgv {
 
 `RunningSandbox` 包含完整的 Docker 容器 ID。`ClosedSandbox` 表示已确认容器不存在。`SandboxStatus` 还包含开启中、关闭中和待清理状态。部署和生命周期行为见 [Docker Runner 参考](../../packages/sandbox/sandbox-runner/README.zh.md)。
 
-`SandboxExecutionRequest` 包含容器代次、执行 ID、规范化的命令参数和等待时限。`SandboxExecutionResult` 包含执行 ID、确认后的退出码，以及各自带有截断标记的 stdout 和 stderr。
+`SandboxExecutionIdentity` 将执行 ID 绑定到预期的完整容器 ID。`SandboxExecutionRequest` 另外包含规范化命令参数和命令预算。`SandboxExecutionResult` 包含执行 ID、确认后的退出码，以及各自带有截断标记的 stdout 和 stderr。
+
+`SandboxCancellationResult` 表示取消已请求或执行已经结算，不确认结束原因或清理结果。`SandboxExecutionError.execution` 提供 `SandboxExecutionFailure`：执行/容器身份、已观察到的原因、独立确认的清理状态，以及已知时的 Bash 状态。结果不明与整代删除所中断的执行使用不同错误。[Runner 参考](../../packages/sandbox/sandbox-runner/README.zh.md)说明取消、回收和重试行为。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -252,14 +254,23 @@ async open(workspaceId: WorkspaceId, directory: string): Promise<RunningSandbox>
  */
 async status(workspaceId: WorkspaceId): Promise<SandboxStatus>
 
-/** Run a foreground command on the expected workspace container. Distinct execution IDs can run concurrently.
+/** Run a supervised command on the expected workspace container. Distinct execution IDs can run concurrently.
  * Matching retries share the pending or stored result, including failures.
- * An unconfirmed Start reserves the container for cleanup. Caller disconnects do not cancel the operation.
+ * Confirmed per-command cleanup keeps the container usable. An unknown result freezes and removes its generation.
+ * Caller disconnects do not cancel the operation; accepted failures include independent cleanup details.
  * @param workspaceId - Workspace registry identity.
  * @param request - Validated arguments and expected generation from the trusted caller.
  * @returns The confirmed exit code and retained output for the caller's execution ID.
  */
 async execute(workspaceId: WorkspaceId, request: SandboxExecutionRequest): Promise<SandboxExecutionResult>
+
+/** Request cancellation of an existing command without waiting for cleanup or changing its first accepted reason.
+ * Repeated requests share its control channel; a settled command is left unchanged, even in a blocked generation.
+ * @param workspaceId - Workspace registry identity.
+ * @param request - Execution identity and the original expected container.
+ * @returns Whether cancellation is requested or the original result is already settled.
+ */
+cancel(workspaceId: WorkspaceId, request: SandboxExecutionIdentity): SandboxCancellationResult
 
 /** Close the current generation. Acknowledging deletion alone does not release its slot.
  * @param workspaceId - Workspace registry identity.
