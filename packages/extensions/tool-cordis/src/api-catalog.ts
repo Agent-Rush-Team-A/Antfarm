@@ -2585,6 +2585,31 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'sandboxRunner',
+    summary: 'Coordinates one container generation per workspace, with two slots per deployment.',
+    description: 'Coordinates one container generation per workspace, with two slots per deployment.',
+    methods: [
+      {
+        signature: 'async open(workspaceId: WorkspaceId, directory: string): Promise<RunningSandbox>',
+        description: 'Open or reuse the workspace sandbox. A conflicting request never queues for a slot.',
+        parameters: [{ name: 'workspaceId', description: 'Workspace registry identity.' }, { name: 'directory', description: 'Existing workspace directory in the deployment\'s data root.' }],
+        returns: 'The confirmed running generation.',
+      },
+      {
+        signature: 'async status(workspaceId: WorkspaceId): Promise<SandboxStatus>',
+        description: 'Query the current generation without interpreting an uncertain create as absent. Disposal waits for in-flight queries.',
+        parameters: [{ name: 'workspaceId', description: 'Workspace registry identity.' }],
+        returns: 'The observed sandbox state.',
+      },
+      {
+        signature: 'async close(workspaceId: WorkspaceId): Promise<ClosedSandbox>',
+        description: 'Close the current generation. Acknowledging deletion alone does not release its slot.',
+        parameters: [{ name: 'workspaceId', description: 'Workspace registry identity.' }],
+        returns: 'Closed after Docker confirms the generation is absent.',
+      },
+    ],
+  },
+  {
     key: 'schedule',
     summary: 'Shared management service; reads and management writes never activate a Session, and only delivery creates or resumes one.',
     description: 'Shared management service; reads and management writes never activate a Session, and only delivery creates or resumes one.\n\n`sessionPersistence` supplies header-only target validation and the `session/flush` listener that acknowledges durable inbox delivery through `ctx.sessions.flush()`.',
@@ -5839,6 +5864,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ClientArtifactBaseline {\n    readonly path: string;\n    readonly mtimeMs: number;\n    readonly ctimeMs: number;\n    readonly size: number;\n}',
   },
   {
+    name: 'ClosedSandbox',
+    declaration: 'export interface ClosedSandbox {\n    readonly state: \'closed\';\n}',
+  },
+  {
     name: 'CollectedOutput',
     declaration: 'export interface CollectedOutput {\n    text: string;\n    truncated: boolean;\n    spillPath?: string;\n}',
   },
@@ -6253,6 +6282,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'DirectoryRegistrationHandle',
     declaration: 'export interface DirectoryRegistrationHandle {\n    (): void;\n    replace(entries: readonly LlmConfigurableProvider[]): void;\n}',
+  },
+  {
+    name: 'DockerContainerId',
+    declaration: 'export type DockerContainerId = Branded<\'DockerContainerId\'>;',
   },
   {
     name: 'Domain',
@@ -8047,6 +8080,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface RunnerFailureRule {\n    allowedExitCodes?: readonly number[];\n    fatalSignatures: readonly string[];\n    informationalLines?: readonly string[];\n}',
   },
   {
+    name: 'RunningSandbox',
+    declaration: 'export interface RunningSandbox {\n    readonly state: \'running\';\n    readonly containerId: DockerContainerId;\n}',
+  },
+  {
     name: 'SandboxEnforcement',
     declaration: 'export type SandboxEnforcement = \'full\' | \'partial\';',
   },
@@ -8065,6 +8102,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SandboxPolicyRequest',
     declaration: 'export interface SandboxPolicyRequest {\n    session?: Session;\n    mode?: SandboxMode;\n}',
+  },
+  {
+    name: 'SandboxStatus',
+    declaration: 'export type SandboxStatus = RunningSandbox | ClosedSandbox | {\n    readonly state: \'starting\' | \'closing\' | \'cleanup_required\';\n};',
   },
   {
     name: 'SaveFileAttachment',

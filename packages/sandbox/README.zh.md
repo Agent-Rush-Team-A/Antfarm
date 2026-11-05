@@ -22,13 +22,14 @@ kind: "package-group"
 <a id="packages"></a>
 ## 包
 
-四个包承担隔离角色；完整约定和逐调用策略语义以子系统参考文档为准。
+四个包提供宿主隔离，逐调用策略以子系统参考文档为准。独立的工作区 Runner 有自己的 Docker 接口。
 
 | 包 | 职责 | ctx key |
 |---|---|---|
 | [`sandbox/`](sandbox/README.zh.md) | 隔离服务约定：模式、强制执行、逐调用策略与升权词汇 | `ctx.sandbox` |
 | [`sandbox-local/`](sandbox-local/README.zh.md) | 各平台隔离后端：Linux 先使用 bwrap，再使用 Landlock；macOS 使用 Seatbelt；Windows 使用受限令牌 | 注册到 `ctx.sandbox` |
 | [`sandbox-policy/`](sandbox-policy/README.zh.md) | 共享策略归属：供所有实施隔离的家族使用的部署默认值与逐会话模式覆盖 | `ctx.sandboxPolicy` |
+| [`sandbox-runner/`](sandbox-runner/README.zh.md) | 为独立部署提供 Docker Engine 操作和工作区目录挂载 | `ctx.sandboxRunner` |
 | [`sandbox-windows-acl/`](sandbox-windows-acl/README.zh.md) | Windows 写入限制：受限子进程只能写入工作区与私有临时目录 | —（由 `sandbox-local` 挂载为 win32 后端） |
 
 -----

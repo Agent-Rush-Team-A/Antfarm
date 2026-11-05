@@ -1,0 +1,12 @@
+{
+  "name": "agentrush-sandbox-runner-profile",
+  "private": true,
+  "dependencies": {
+    "@deepseek-ai/dsh-sandbox-runner": "*"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": []
+    }
+  }
+}

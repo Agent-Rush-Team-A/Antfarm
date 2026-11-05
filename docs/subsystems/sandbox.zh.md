@@ -164,6 +164,10 @@ interface ConfinedArgv {
 
 提供方选择、探测、缓存和后端特定的强制执行报告归[本地提供方](../../packages/sandbox/sandbox-local/README.zh.md)所有。
 
+## 工作区容器
+
+`RunningSandbox` 包含完整的 Docker 容器 ID。`ClosedSandbox` 表示已确认容器不存在。`SandboxStatus` 还包含开启中、关闭中和待清理状态。部署和生命周期行为见 [Docker Runner 参考](../../packages/sandbox/sandbox-runner/README.zh.md)。
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -225,4 +229,35 @@ overrideOf(session: Session): SandboxMode | undefined
 Types: [Session](session.zh.md)
 
 Source: [`packages/sandbox/sandbox-policy/src/index.ts`](../../packages/sandbox/sandbox-policy/src/index.ts)
+
+<a id="ctxsandboxrunner--sandboxrunner"></a>
+
+### `ctx.sandboxRunner` — `SandboxRunner`
+
+Coordinates one container generation per workspace, with two slots per deployment.
+
+```ts cordis-catalog
+/** Open or reuse the workspace sandbox. A conflicting request never queues for a slot.
+ * @param workspaceId - Workspace registry identity.
+ * @param directory - Existing workspace directory in the deployment's data root.
+ * @returns The confirmed running generation.
+ */
+async open(workspaceId: WorkspaceId, directory: string): Promise<RunningSandbox>
+
+/** Query the current generation without interpreting an uncertain create as absent. Disposal waits for in-flight queries.
+ * @param workspaceId - Workspace registry identity.
+ * @returns The observed sandbox state.
+ */
+async status(workspaceId: WorkspaceId): Promise<SandboxStatus>
+
+/** Close the current generation. Acknowledging deletion alone does not release its slot.
+ * @param workspaceId - Workspace registry identity.
+ * @returns Closed after Docker confirms the generation is absent.
+ */
+async close(workspaceId: WorkspaceId): Promise<ClosedSandbox>
+```
+
+Types: [WorkspaceId](workspace.zh.md)
+
+Source: [`packages/sandbox/sandbox-runner/src/index.ts`](../../packages/sandbox/sandbox-runner/src/index.ts)
 <!-- END GENERATED cordis-surface -->
