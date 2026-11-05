@@ -310,7 +310,7 @@ export function gatesForMode(selected: Mode): Gate[] {
     case 'ci-primary':
       return ciPrimaryGates()
     case 'ci-linux-primary':
-      return [...ciPrimaryGates(), webSnapshotGate(['build'])]
+      return [...ciPrimaryGates(), sandboxRunnerProfileGate(), webSnapshotGate(['build'])]
     case 'ci-static':
       return ciStaticGates({ ownsBuild: false })
     case 'ci-lint-contracts-ready':
@@ -546,6 +546,7 @@ function ciConsumerGates(): Gate[] {
     'doc-typecheck',
     'node-next-types',
     'built-bin-smoke',
+    'sandbox-runner-profile',
   ]
   return [
     ciArtifactBuildGate(),
@@ -566,6 +567,7 @@ function ciConsumerGates(): Gate[] {
       needs: builtTree,
     }),
     builtBinSmokeGate(builtTree),
+    sandboxRunnerProfileGate(),
   ]
 }
 
@@ -931,6 +933,18 @@ function builtBinSmokeGate(needs: string[] = ['build']): Gate {
     needs,
     env: { DSH_EXAMPLE_MODE: 'lib' },
   })
+}
+
+function sandboxRunnerProfileGate(): Gate {
+  const spec = 'apps/cli/tests/profiles/sandbox-runner/socket.built.test.mjs'
+  return {
+    id: 'sandbox-runner-profile',
+    label: 'Sandbox Runner profile',
+    displayCommand: `node --test ${spec}`,
+    command: process.execPath,
+    args: ['--test', spec],
+    needs: ['build'],
+  }
 }
 
 /**

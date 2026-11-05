@@ -164,6 +164,10 @@ The [local provider](../../packages/sandbox/sandbox-local/README.md) owns operat
 
 Provider selection, probing, caching, and backend-specific enforcement reports belong to the [local provider](../../packages/sandbox/sandbox-local/README.md).
 
+## Workspace containers
+
+`RunningSandbox` includes the full Docker container ID. `ClosedSandbox` confirms the container is absent. `SandboxStatus` also covers opening, closing, and pending cleanup. See the [Docker Runner reference](../../packages/sandbox/sandbox-runner/README.md) for deployment and lifecycle behavior.
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -225,4 +229,35 @@ overrideOf(session: Session): SandboxMode | undefined
 Types: [Session](session.md)
 
 Source: [`packages/sandbox/sandbox-policy/src/index.ts`](../../packages/sandbox/sandbox-policy/src/index.ts)
+
+<a id="ctxsandboxrunner--sandboxrunner"></a>
+
+### `ctx.sandboxRunner` — `SandboxRunner`
+
+Coordinates one container generation per workspace, with two slots per deployment.
+
+```ts cordis-catalog
+/** Open or reuse the workspace sandbox. A conflicting request never queues for a slot.
+ * @param workspaceId - Workspace registry identity.
+ * @param directory - Existing workspace directory in the deployment's data root.
+ * @returns The confirmed running generation.
+ */
+async open(workspaceId: WorkspaceId, directory: string): Promise<RunningSandbox>
+
+/** Query the current generation without interpreting an uncertain create as absent. Disposal waits for in-flight queries.
+ * @param workspaceId - Workspace registry identity.
+ * @returns The observed sandbox state.
+ */
+async status(workspaceId: WorkspaceId): Promise<SandboxStatus>
+
+/** Close the current generation. Acknowledging deletion alone does not release its slot.
+ * @param workspaceId - Workspace registry identity.
+ * @returns Closed after Docker confirms the generation is absent.
+ */
+async close(workspaceId: WorkspaceId): Promise<ClosedSandbox>
+```
+
+Types: [WorkspaceId](workspace.md)
+
+Source: [`packages/sandbox/sandbox-runner/src/index.ts`](../../packages/sandbox/sandbox-runner/src/index.ts)
 <!-- END GENERATED cordis-surface -->
