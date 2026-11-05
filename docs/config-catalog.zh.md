@@ -2998,13 +2998,17 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-sandbox-runner`
 
-- `source`: [`packages/sandbox/sandbox-runner/src/config.ts:30`](../packages/sandbox/sandbox-runner/src/config.ts)
+- `source`: [`packages/sandbox/sandbox-runner/src/config.ts:34`](../packages/sandbox/sandbox-runner/src/config.ts)
 
 ```ts config-catalog
-/** Deployment settings after the Loader applies the request deadline default. */
+/** Deployment settings after the Loader applies timing defaults. */
 export type ResolvedConfig = Config & {
-  /** Effective Docker request deadline, in milliseconds. */
+  /** Effective Docker JSON request deadline, in milliseconds. */
   requestTimeoutMs: number
+  /** Effective supervisor cleanup budget, in milliseconds. */
+  cleanupTimeoutMs: number
+  /** Effective shared SIGTERM grace, in milliseconds. */
+  termGraceMs: number
 }
 
 /** Settings owned by the Runner deployment, not by workspace callers. */
@@ -3023,8 +3027,12 @@ export interface Config {
   uid: number
   /** Non-root numeric GID inside the container. */
   gid: number
-  /** Total deadline for a Docker request, in milliseconds. */
+  /** Total deadline for a Docker JSON request, in milliseconds. */
   requestTimeoutMs?: number
+  /** Supervisor cleanup and result-confirmation budget, in milliseconds. */
+  cleanupTimeoutMs?: number
+  /** Shared SIGTERM grace, strictly smaller than cleanupTimeoutMs. */
+  termGraceMs?: number
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-sandbox-runner -->

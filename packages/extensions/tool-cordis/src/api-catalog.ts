@@ -2602,6 +2602,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'The observed sandbox state.',
       },
       {
+        signature: 'async execute(workspaceId: WorkspaceId, request: SandboxExecutionRequest): Promise<SandboxExecutionResult>',
+        description: 'Run a supervised command on the expected workspace container. Distinct execution IDs can run concurrently. Matching retries share the pending or stored result, including failures. Confirmed per-command cleanup keeps the container usable. An unknown result freezes and removes its generation. Caller disconnects do not cancel the operation; accepted failures include independent cleanup details.',
+        parameters: [{ name: 'workspaceId', description: 'Workspace registry identity.' }, { name: 'request', description: 'Validated arguments and expected generation from the trusted caller.' }],
+        returns: 'The confirmed exit code and retained output for the caller\'s execution ID.',
+      },
+      {
+        signature: 'cancel(workspaceId: WorkspaceId, request: SandboxExecutionIdentity): SandboxCancellationResult',
+        description: 'Request cancellation of an existing command without waiting for cleanup or changing its first accepted reason. Repeated requests share its control channel; a settled command is left unchanged, even in a blocked generation.',
+        parameters: [{ name: 'workspaceId', description: 'Workspace registry identity.' }, { name: 'request', description: 'Execution identity and the original expected container.' }],
+        returns: 'Whether cancellation is requested or the original result is already settled.',
+      },
+      {
         signature: 'async close(workspaceId: WorkspaceId): Promise<ClosedSandbox>',
         description: 'Close the current generation. Acknowledging deletion alone does not release its slot.',
         parameters: [{ name: 'workspaceId', description: 'Workspace registry identity.' }],
@@ -6288,6 +6300,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type DockerContainerId = Branded<\'DockerContainerId\'>;',
   },
   {
+    name: 'DockerExecOutput',
+    declaration: 'export interface DockerExecOutput {\n    readonly text: string;\n    readonly truncated: boolean;\n}',
+  },
+  {
+    name: 'DockerExecResult',
+    declaration: 'export interface DockerExecResult {\n    readonly exitCode: number;\n    readonly stdout: DockerExecOutput;\n    readonly stderr: DockerExecOutput;\n}',
+  },
+  {
     name: 'Domain',
     declaration: 'export interface Domain<S extends DomainSpec> {\n    readonly name: string;\n    readonly global: DomainGlobalHandleOf<S>;\n    table<N extends keyof S[\'tables\'] & string>(name: N): KvTable<TableKeyOf<S, N>, TableValueOf<S, N>>;\n    close(): Promise<void>;\n}',
   },
@@ -8084,12 +8104,32 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface RunningSandbox {\n    readonly state: \'running\';\n    readonly containerId: DockerContainerId;\n}',
   },
   {
+    name: 'SandboxCancellationResult',
+    declaration: 'export interface SandboxCancellationResult {\n    readonly executionId: SandboxExecutionId;\n    readonly containerId: DockerContainerId;\n    readonly cancellation: \'requested\' | \'settled\';\n}',
+  },
+  {
     name: 'SandboxEnforcement',
     declaration: 'export type SandboxEnforcement = \'full\' | \'partial\';',
   },
   {
+    name: 'SandboxExecutionId',
+    declaration: 'export type SandboxExecutionId = Branded<\'SandboxExecutionId\'>;',
+  },
+  {
+    name: 'SandboxExecutionIdentity',
+    declaration: 'export interface SandboxExecutionIdentity {\n    readonly executionId: SandboxExecutionId;\n    readonly expectedContainerId: DockerContainerId;\n}',
+  },
+  {
     name: 'SandboxExecutionPolicy',
     declaration: 'export interface SandboxExecutionPolicy {\n    mode: SandboxMode;\n    workspaceRoot: string;\n    additionalWritableRoots?: readonly string[];\n    sessionId?: SessionId;\n}',
+  },
+  {
+    name: 'SandboxExecutionRequest',
+    declaration: 'export interface SandboxExecutionRequest extends SandboxExecutionIdentity {\n    readonly argv: readonly string[];\n    readonly timeoutMs: number;\n}',
+  },
+  {
+    name: 'SandboxExecutionResult',
+    declaration: 'export interface SandboxExecutionResult extends DockerExecResult {\n    readonly executionId: SandboxExecutionId;\n}',
   },
   {
     name: 'SandboxMode',
