@@ -252,6 +252,8 @@ flowchart LR
   svc_workspaceSandbox["ctx.workspaceSandbox<br/>Authorized workspace sandboxes"]
   pkg_sandbox_runner["sandbox-runner"]
   svc_sandboxRunner["ctx.sandboxRunner<br/>Docker workspace lifecycle"]
+  svc_sandboxRunnerClient["ctx.sandboxRunnerClient<br/>Local Runner transport"]
+  svc_sandboxConversation["ctx.sandboxConversation<br/>Message-bound sandbox permission"]
   pkg_user_approval["user-approval"]
   svc_approval["ctx.approval<br/>Approval seam"]
   pkg_permission_presets["permission-presets"]
@@ -394,6 +396,8 @@ flowchart LR
   pkg_fs_sandbox --> svc_fs
   pkg_fs_ssh --> svc_fs
   pkg_goal --> svc_goals
+  pkg_harness_sandbox --> svc_sandboxConversation
+  pkg_harness_sandbox --> svc_sandboxRunnerClient
   pkg_harness_sandbox --> svc_workspaceSandbox
   pkg_headless --> svc_headlessStartup
   pkg_hmr --> svc_hmr
@@ -749,8 +753,10 @@ flowchart LR
 | `ctx.terminals` | `seam` | [`terminal`](../packages/terminal/terminal) | [`terminal-bash`](../packages/terminal/terminal-bash) | [`tool-terminal`](../packages/experimental/tool-terminal) | - | 注册表负责精确到 Agent 的会话身份和清理；后端负责终端机制，tool-terminal 则提供限定于所有者作用域的模型接口。 |
 | `ctx.sandbox` | `seam` | [`sandbox`](../packages/sandbox/sandbox) | [`sandbox-local`](../packages/sandbox/sandbox-local), [`sandbox-ssh`](../packages/ssh/sandbox-ssh) | [`bash-sandbox`](../packages/shell/bash-sandbox), [`terminal-bash`](../packages/terminal/terminal-bash) | - | 消费方交出即将执行 spawn 的确切 argv；与配套子进程提供方共享执行环境的后端按每次调用的策略包装该 argv，并报告强制执行情况。 |
 | `ctx.sandboxPolicy` | `core` | [`sandbox-policy`](../packages/sandbox/sandbox-policy) | - | [`bash-sandbox`](../packages/shell/bash-sandbox), [`fs-sandbox`](../packages/fs/fs-sandbox), [`terminal-bash`](../packages/terminal/terminal-bash) | - | 统一保存部署默认模式和工作区根目录；只有沙箱执行器和提供方读取该服务（工具层使用它同时导出的纯 `sandbox/mode` 折叠区）。两类强制执行组件都读取该服务，因此 bash 与 fs 不会限制到不同的根目录。 |
-| `ctx.workspaceSandbox` | `service` | [`harness-sandbox`](../packages/sandbox/harness-sandbox) | - | - | - | 每次独立 Runner 生命周期请求前核验原生用户归属和持久目录。 |
+| `ctx.workspaceSandbox` | `service` | [`harness-sandbox`](../packages/sandbox/harness-sandbox) | - | - | - | Runner 生命周期请求前核验原生归属；开启时还会验证持久工作区目录。 |
 | `ctx.sandboxRunner` | `service` | [`sandbox-runner`](../packages/sandbox/sandbox-runner) | - | - | - | 独立部署通过本机 Unix socket 开启、查询和关闭 Docker 工作区容器。 |
+| `ctx.sandboxRunnerClient` | `service` | [`harness-sandbox`](../packages/sandbox/harness-sandbox) | - | - | - | 通过固定本机 socket 发出有界的生命周期、执行和取消请求；调用方负责用户授权。 |
+| `ctx.sandboxConversation` | `service` | [`harness-sandbox`](../packages/sandbox/harness-sandbox) | - | - | - | 已鉴权的 prompt 接纳准备工作区并绑定原消息和 Agent turn；关闭撤销旧代许可。 |
 | `ctx.approval` | `seam` | [`user-approval`](../packages/interaction/user-approval) | - | [`tools`](../packages/core/tools), [`tool-bash`](../packages/shell/tool-bash), [`acp`](../packages/acp/acp) | - | 一次性权限决策通过 `approval/request` waterfall（瀑布式事件）分派；回答方是监听器（即 ACP 为自身 agent 提供的桥接），没有回答方时以 `unavailable` 关闭失败。 |
 | `ctx.permissionPresets` | `core` | [`permission-presets`](../packages/interaction/permission-presets) | - | - | - | 面向用户的预设表（`workspace-write`／`danger-full-access`），将沙箱模式与审批策略选项组合在一起；一次切换会写入一个 `permission/preset` 事件，并贯通到两个选项事件。 |
 | `ctx.ptcRuntime` | `seam` | [`ptc-runtime`](../packages/ptc-runtime/ptc-runtime) | [`ptc-runtime-node`](../packages/ptc-runtime/ptc-runtime-node), [`experimental-ptc-runtime-python`](../packages/experimental/ptc-runtime-python) | [`tool-executor-ptc`](../packages/core/tool-executor-ptc), [`workflow-ptc`](../packages/workflow/workflow-ptc) | - | 使用 Host 提供的异步绑定运行程序；tool-executor-ptc 负责 PTC 呈现，workflow-ptc 负责工作流编排。 |
