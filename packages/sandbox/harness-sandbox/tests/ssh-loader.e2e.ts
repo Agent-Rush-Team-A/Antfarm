@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { describe, expect, test } from 'vitest'
+import { z } from 'zod'
 
 const bindings = process.env.DSH_WORKSPACE_SSH_TEST_BINDINGS
 describe.skipIf(bindings === undefined || process.platform === 'win32')('Workspace SSH Loader acceptance', () => {
@@ -40,6 +41,7 @@ describe.skipIf(bindings === undefined || process.platform === 'win32')('Workspa
       row('session-projection', '@deepseek-ai/dsh-session-projection'),
       row('system-prompt', '@deepseek-ai/dsh-system-prompt', {}),
       row('fs', '@deepseek-ai/dsh-fs-local'),
+      row('fs-observation-policy', '@deepseek-ai/dsh-fs-observation-policy'),
       row('working-directory', '@deepseek-ai/dsh-working-directory', { modelDirectory: '/workspace' }),
       row('tools', '@deepseek-ai/dsh-tools'),
       row('native-executor', '@deepseek-ai/dsh-tool-executor-native'),
@@ -53,6 +55,7 @@ describe.skipIf(bindings === undefined || process.platform === 'win32')('Workspa
       row('session-controller', '@deepseek-ai/dsh-api-session-controller', { nativeOpen: false }),
       row('sandbox-conversation', '@deepseek-ai/dsh-harness-sandbox/conversation'),
       row('sandbox-bash', '@deepseek-ai/dsh-harness-sandbox/bash'),
+      row('sandbox-files', '@deepseek-ai/dsh-harness-sandbox/files'),
       row('acceptance', pathToFileURL(join(import.meta.dirname, 'fixtures/ssh-loader.ts')).href),
     ].join('')
     await writeFile(join(profile, 'cordis.patch.yml'), patch)
@@ -68,13 +71,30 @@ describe.skipIf(bindings === undefined || process.platform === 'win32')('Workspa
       let report: { ok: boolean; error?: string; checks: string[]; output: unknown; unload: { host: string; pid: number } } | undefined
       for (let attempt = 0; attempt < 1500; attempt++) {
         const raw = await readFile(reportFile, 'utf8').catch(() => undefined)
-        if (raw !== undefined) { report = JSON.parse(raw); break }
+        if (raw !== undefined) {
+          const parsed = z.discriminatedUnion('ok', [
+            z.object({
+              ok: z.literal(true), checks: z.array(z.string()), output: z.unknown(),
+              unload: z.object({ host: z.string(), pid: z.number().int().positive() }),
+            }),
+            z.object({ ok: z.literal(false), error: z.string() }),
+          ]).parse(JSON.parse(raw))
+          if (!parsed.ok) throw new Error(`${parsed.error}\n${diagnostics}`)
+          report = parsed
+          break
+        }
         if (child.exitCode !== null) throw new Error(`dsh stopped before SSH acceptance: ${diagnostics}`)
         await new Promise<void>(done => setTimeout(done, 50))
       }
       expect(report, diagnostics).toBeDefined()
       expect(report?.ok, `${report?.error ?? ''}\n${diagnostics}`).toBe(true)
       expect(report?.checks.length).toBeGreaterThanOrEqual(20)
+      expect(report?.checks).toEqual(expect.arrayContaining([
+        'Native read streams a file larger than the whole-file RPC budget',
+        'Native write confirmation retains its exact format',
+        'Native edit refuses a stale observed version',
+        'Another Workspace cannot replace the first Workspace file',
+      ]))
       expect(report?.output).toEqual([{ type: 'text', text: 'output\n[stderr]\ndiagnostic\n[exit code: 7]' }])
       unload = report?.unload
       console.info('SSH acceptance:', report?.checks)
