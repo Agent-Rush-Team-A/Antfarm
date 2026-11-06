@@ -7,7 +7,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { DiffCallView, DiffResultView, ToolResult } from '@deepseek-ai/dsh-tools'
+import type { DiffCallView, DiffResultView, ToolResult, ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-fs'
 import { computeHunkDiffs, diffsFromMeta } from './diff.ts'
 import { remediateFsError } from './error.ts'
@@ -72,8 +72,12 @@ export function formatEditOutput(displayPath: string, replaceAll: boolean): stri
  * Register the `edit` tool and its scope-aware system-prompt guidance.
  * @param ctx - the plugin context; registrations are effects scoped to it, and execution uses its `fs` service.
  * @param sandbox - the shared sandbox-escalation API (advertisement, mode stamping, denial mapping).
+ * @param register - optional operation owner; defaults to the context tool registry.
  */
-export function applyEditTool(ctx: Context, sandbox: FsSandboxController): void {
+export function applyEditTool(
+  ctx: Context, sandbox: FsSandboxController,
+  register: (definition: ToolDefinition) => void = (definition) => { ctx.tools.register(definition) },
+): void {
   ctx.systemPrompt.section({
     name: 'tool:edit',
     order: ctx.systemPrompt.getSectionOrder('TOOL_EDIT'),
@@ -82,7 +86,7 @@ export function applyEditTool(ctx: Context, sandbox: FsSandboxController): void 
       : 'Read a file before editing it unless you just created or edited it in this session.',
   })
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'edit',
     description: 'Edit an existing UTF-8 text file by replacing literal text.',
     parameters: {

@@ -6,7 +6,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { GenericCallView, ReadResultView, ToolResult } from '@deepseek-ai/dsh-tools'
+import type { GenericCallView, ReadResultView, ToolResult, ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-fs'
 import { buildWindow, formatReadOutput, langFromPath, readMetaFromMeta } from './read-render.ts'
 import { resolveRegularReadTarget } from './read-target.ts'
@@ -64,8 +64,12 @@ export function parseReadArgs(args: { file_path: string; offset?: number; limit?
  * Register the `read` tool and its scope-aware system-prompt guidance.
  * @param ctx - the plugin context; registrations are effects scoped to it, and execution uses its `fs` service.
  * @param caps - the deployment's resolved read caps (plugin config after defaulting).
+ * @param register - optional operation owner; defaults to the context tool registry.
  */
-export function applyReadTool(ctx: Context, caps: ReadToolCaps): void {
+export function applyReadTool(
+  ctx: Context, caps: ReadToolCaps,
+  register: (definition: ToolDefinition) => void = (definition) => { ctx.tools.register(definition) },
+): void {
   ctx.systemPrompt.section({
     name: 'tool:read',
     order: ctx.systemPrompt.getSectionOrder('TOOL_READ'),
@@ -74,7 +78,7 @@ export function applyReadTool(ctx: Context, caps: ReadToolCaps): void {
       : 'Use the read tool — not shell commands like cat, sed, head, or tail — to inspect text files. Use offset and limit to read a line range or continue a large file.',
   })
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'read',
     description: 'Read a UTF-8 text file and return line-numbered content.',
     parameters: {
