@@ -1,3 +1,4 @@
+import type { WorkspaceArtifactFailureReason } from '@deepseek-ai/dsh-api-workspace-artifacts/types'
 /**
  * ui-workspace contracts. Two registrations share this package:
  *
@@ -323,6 +324,8 @@ export type SessionRowActionProps<Injected extends object = object> =
 
 /** One transient Workspace notice rendered by the overlay toast entry. */
 export type RowToast =
+  | { kind: 'downloaded'; name: string }
+  | { kind: 'downloadFailed'; reason: WorkspaceArtifactFailureReason }
   | { kind: 'uploaded'; name: string }
   | { kind: 'uploadFailed'; reason: WorkspaceUploadFailureReason | 'unknown'; stored: boolean }
   | { kind: 'archived'; sessionId: SessionId }
