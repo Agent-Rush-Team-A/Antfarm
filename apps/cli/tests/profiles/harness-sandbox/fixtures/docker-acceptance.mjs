@@ -24,8 +24,10 @@ const data = join(root, 'workspaces'), apiDir = join(root, 'api')
 const runnerSocket = join(apiDir, 'runner.sock'), harnessSocket = join(apiDir, 'harness.sock')
 const image = 'agentrush-sandbox@sha256:6410324ee0ef8f3f1609a0056234e52b6fc0345ab4a2c754051f0931faafcb98'
 const uid = 10001, gid = 10001
+// Lifecycle waits must cover the Runner's 10-second Docker request budget.
+const mutationTimeoutMs = 15_000
 const evidenceDir = process.env.M5_EVIDENCE_DIR ?? '/evidence'
-const evidence = { deployment, root, image, node: process.version, checks: [], requests: [], workspaces: [], artifacts: {}, cleanup: {} }
+const evidence = { deployment, root, image, node: process.version, mutationTimeoutMs, checks: [], requests: [], workspaces: [], artifacts: {}, cleanup: {} }
 const children = []
 const faults = []
 const allFaults = []
@@ -145,7 +147,7 @@ try {
   const patch = join(root, 'model.patch.yml')
   await writeFile(patch, JSON.stringify([{ insert: [{ id: 'docker-model', name: new URL('./docker-model.mjs', import.meta.url).href }] },
     { id: 'agent-default-model', config: { provider: 'docker-acceptance', model: 'fixture' } }, { id: 'session-title', disabled: true },
-    { id: 'workspace-sandbox', config: { socketPath: harnessSocket, workspaceRoot: data, mutationTimeoutMs: 3000, queryTimeoutMs: 5000, execTimeoutMs: 30_000, cancelTimeoutMs: 10_000 } }]))
+    { id: 'workspace-sandbox', config: { socketPath: harnessSocket, workspaceRoot: data, mutationTimeoutMs, queryTimeoutMs: 5000, execTimeoutMs: 30_000, cancelTimeoutMs: 10_000 } }]))
   const denial = start('docker-denial', ['--input-type=module', '-e', "import{connect}from'node:net';connect('/var/run/docker.sock').on('connect',()=>process.exit(9)).on('error',e=>{console.log(e.code);process.exit(e.code==='EACCES'?0:8)})"], {}, { uid, gid })
   assert.deepEqual(await denial.exited, [0, null]); assert.match(denial.log, /EACCES/); children.splice(children.indexOf(denial), 1)
   const web = start('harness', [join(repo, 'apps/cli/lib/bin.js'), '--profile', 'web', '--patch', join(repo, 'apps/cli/config/examples/harness-sandbox.patch.yml'), '--patch', patch, '--host', '127.0.0.1', '--port', '0', '--no-open'], {
@@ -355,7 +357,8 @@ try {
   assert.equal((await container(alice.workspace)).Id, fullId)
   evidence.checks.push('Actual per-generation record 129 was refused as execution_limit; message preparation reused the existing container without retry, new ID or automatic recycle')
   stage = 'known delayed PUT drained before successful close'
-  assert.equal((await manage(alice, 'close')).ok, true)
+  const beforeOpeningRaces = await manage(alice, 'close')
+  assert.equal(beforeOpeningRaces.ok, true, JSON.stringify(beforeOpeningRaces))
   const knownPut = intercept(entry => entry.method === 'PUT' && entry.path.includes(alice.workspace.workspaceId))
   const knownPrompt = prompt(alice, a, 'known-delayed-put', args('touch known-must-not-run'))
   await knownPut.seen.promise
@@ -407,6 +410,7 @@ try {
   process.exitCode = 1
 } finally {
   for (const fault of allFaults) fault.release.resolve()
+  await Promise.allSettled([...proxyPending])
   for (const entry of [...children].reverse()) {
     if (entry.child.exitCode !== null) continue
     entry.child.kill('SIGTERM')
