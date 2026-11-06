@@ -804,6 +804,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'The one home for the deployment default mode + workspace root; only the sandboxed executor and provider read the service (the tool layers use the pure `sandbox/mode` fold it also exports). Both enforcing families read it so bash and fs cannot confine to different roots.',
   },
   {
+    key: 'workspaceSandbox',
+    pkg: 'harness-sandbox',
+    title: 'Authorized workspace sandboxes',
+    mode: 'service',
+    note: 'Native ownership checks precede Runner lifecycle requests; opening also validates the persistent workspace directory.',
+  },
+  {
     key: 'sandboxRunner',
     pkg: 'sandbox-runner',
     title: 'Docker workspace lifecycle',

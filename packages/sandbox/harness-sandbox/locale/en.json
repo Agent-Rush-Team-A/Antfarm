@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "description": "Authorize workspace lifecycle operations through the independent local Runner.",
+    "title": "Workspace sandbox management"
+  }
+}

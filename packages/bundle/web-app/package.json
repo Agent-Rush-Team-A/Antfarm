@@ -206,7 +206,8 @@
     "@deepseek-ai/dsh-client-ui-context-menu": "workspace:*",
     "@deepseek-ai/dsh-client-ui-file-actions": "workspace:*",
     "@deepseek-ai/dsh-api-multiuser": "workspace:*",
-    "@deepseek-ai/dsh-api-workspace-upload": "workspace:*"
+    "@deepseek-ai/dsh-api-workspace-upload": "workspace:*",
+    "@deepseek-ai/dsh-harness-sandbox": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",

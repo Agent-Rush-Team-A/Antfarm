@@ -1,0 +1,40 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/sandbox/harness-sandbox/README.md
+/:
+  en: 1fec02d4ce5eb0fa
+  zh: 15da94265b27c163
+/deepseek-ai-dsh-harness-sandbox:
+  en: ca75baea6594ad66
+  zh: 478e602b53732af8
+/deepseek-ai-dsh-harness-sandbox/summary:
+  en: 3298464f886935a5
+  zh: dcb6cba4fa6f0cd8
+/deepseek-ai-dsh-harness-sandbox/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 3d8cf8aeb7cfa49b
+/deepseek-ai-dsh-harness-sandbox/use-this-package:
+  en: 0c583635255b1956
+  zh: d87dd5057265b492
+/deepseek-ai-dsh-harness-sandbox/use-this-package/integration-handoff:
+  en: 6231a02d76bb211e
+  zh: 3844e30c733a464e
+/deepseek-ai-dsh-harness-sandbox/understand-the-implementation:
+  en: 5462d94378d2d2d2
+  zh: 3b4c6d16934c68c7
+/deepseek-ai-dsh-harness-sandbox/further-exploration:
+  en: b177c772c8d3b308
+  zh: 8469c1d9ca228f76
+/deepseek-ai-dsh-harness-sandbox/model-experience:
+  en: 8dafd192d7119e13
+  zh: 90c003b05282d9b7
+/deepseek-ai-dsh-harness-sandbox/model-experience/kv-cache-effect:
+  en: 250edfa035cce333
+  zh: a37d0a118c98d11e
+/deepseek-ai-dsh-harness-sandbox/known-limitations-and-deferred-work:
+  en: 8ff695615086c029
+  zh: cff18e3f3eedaba4
+/deepseek-ai-dsh-harness-sandbox/known-limitations-and-deferred-work/dev-note:
+  en: e67f633dc6fe7773
+  zh: 8ec3e73528ddb1a6

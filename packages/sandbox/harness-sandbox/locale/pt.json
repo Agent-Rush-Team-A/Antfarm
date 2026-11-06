@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "description": "Autoriza operações por um Runner local independente.",
+    "title": "Gestão de sandboxes dos espaços de trabalho"
+  }
+}

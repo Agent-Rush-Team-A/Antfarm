@@ -1635,6 +1635,35 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-goal -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-harness-sandbox -->
+<a id="deepseek-aidsh-harness-sandbox"></a>
+
+## `@deepseek-ai/dsh-harness-sandbox`
+
+- `inject`: `multiuser` · `remoteAccess` · `typert` · `workspaceRegistry`
+- `source`: [`packages/sandbox/harness-sandbox/src/index.ts:21`](../packages/sandbox/harness-sandbox/src/index.ts)
+
+```ts config-catalog
+/** Deployment-trusted Runner settings and the existing multiuser workspace root. */
+export interface Config extends RunnerConfig {
+  /** Absolute root shared with multiuser allocation and the independent Runner. */
+  workspaceRoot: string
+}
+
+/** Settings supplied by the Harness deployment, never by workspace callers. */
+export interface RunnerConfig {
+  /** Absolute path to the local Runner socket. */
+  socketPath: string
+  /** Total GET deadline, including connection and response body; defaults to 15,000 ms. */
+  queryTimeoutMs?: number
+  /** Total PUT/DELETE deadline; defaults to 120,000 ms for multi-request Runner operations. */
+  mutationTimeoutMs?: number
+  /** Maximum response body in bytes, including error responses; defaults to 8192. */
+  maxResponseBytes?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-harness-sandbox -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-headless -->
 <a id="deepseek-aidsh-headless"></a>
 

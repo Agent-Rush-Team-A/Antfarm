@@ -379,6 +379,7 @@ flowchart TD
     pkg_ptc_runtime_node["ptc-runtime-node"]
   end
   subgraph group_sandbox["packages/sandbox"]
+    pkg_harness_sandbox["harness-sandbox"]
     pkg_sandbox["sandbox"]
     pkg_sandbox_local["sandbox-local"]
     pkg_sandbox_policy["sandbox-policy"]
@@ -655,6 +656,7 @@ flowchart TD
   pkg_lsp_stdio --> pkg_lsp
   pkg_lsp_stdio --> pkg_subprocess
   pkg_lsp_stdio --> pkg_timeout
+  pkg_harness_sandbox --> pkg_workspace
   pkg_sandbox_runner --> pkg_workspace
   pkg_bash_local --> pkg_shell
   pkg_bash_local --> pkg_subprocess
@@ -1747,6 +1749,7 @@ flowchart TD
 | [`experimental-speech-to-text-sensevoice`](../packages/experimental/speech-to-text-sensevoice) | `experimental` | [`experimental-speech-to-text`](../packages/experimental/speech-to-text), [`subprocess`](../packages/subprocess/subprocess) |
 | [`hook-protocol`](../packages/experimental/hook-protocol) | `experimental` | [`session`](../packages/core/session), [`shell`](../packages/shell/shell) |
 | [`lsp-stdio`](../packages/lsp/lsp-stdio) | `lsp` | [`brand`](../packages/util/brand), [`fs`](../packages/fs/fs), [`llm`](../packages/llm/llm), [`lsp`](../packages/lsp/lsp), [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout) |
+| [`harness-sandbox`](../packages/sandbox/harness-sandbox) | `sandbox` | [`workspace`](../packages/workspace/workspace) |
 | [`sandbox-runner`](../packages/sandbox/sandbox-runner) | `sandbox` | [`workspace`](../packages/workspace/workspace) |
 | [`bash-local`](../packages/shell/bash-local) | `shell` | [`shell`](../packages/shell/shell), [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout) |
 | [`pwsh-local`](../packages/shell/pwsh-local) | `shell` | [`shell`](../packages/shell/shell), [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout) |

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "description": "Autorisiert Workspace-Vorgänge über einen unabhängigen lokalen Runner.",
+    "title": "Workspace-Sandbox-Verwaltung"
+  }
+}
