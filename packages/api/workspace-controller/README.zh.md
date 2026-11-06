@@ -8,7 +8,7 @@ kind: "package-reference"
 
 ## 概述
 
-`@deepseek-ai/dsh-api-workspace-controller` 拥有 Host 的 `ctx.workspaceController` 服务和生成的 Client `ctx.remote.workspace` namespace。它的 Remote 方法负责创建、重命名、移除和重排 Workspace，在 Workspace 内重排 Session，归档与取消归档 Session，以及跟随完整的 Workspace 投影。当 Client 必须修改或跟随 Workspace 导航时，请通过 API 网关使用它。本包同时拥有 `ctx.directoryPickerController` 与生成的 `ctx.remote.directoryPicker` namespace，因为它承载的选目录 seam 是抽象的，自身从不作为 Loader entry。
+`@deepseek-ai/dsh-api-workspace-controller` 拥有 Host 的 `ctx.workspaceController` 和生成的 Client `ctx.remote.workspace` namespace。它的 Remote 方法负责创建、重命名、删除和重排 Workspace，在 Workspace 内重排 Session，归档、取消归档、置顶与取消置顶 Session，以及跟随完整投影。多用户创建只接受 `title`：Host 经 `dsh-api-multiuser` 分配私有目录，归属提交后 Workspace 才进入该账号的流。本包同时拥有 `ctx.directoryPickerController` 与生成的 `ctx.remote.directoryPicker` namespace，因为它承载的选目录 seam 是抽象的，自身从不作为 Loader entry。
 
 ## 目录
 
@@ -16,6 +16,8 @@ kind: "package-reference"
 - [模型体验](#model-experience)
 - [已知限制与延期工作](#known-limitations-and-deferred-work)
 - [开发备注](#dev-note)
+
+多用户基线设置 `creationMode: "allocated"`；Client 保留此标记，使工作区创建省略路径，启动时也不会调用仅限 owner 的默认目录初始化接口。
 
 -----
 

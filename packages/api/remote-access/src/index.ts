@@ -198,7 +198,6 @@ export class RemoteAccessService extends TypertRemoteService {
    */
   decide(request: RemoteAccessRequest<Principal>): RemoteAccessDecision {
     const { principal, action } = request
-    // oxlint-disable-next-line typescript/no-unnecessary-condition -- other packages merge non-owner kinds into PrincipalMap.
     if (principal.kind === 'owner' || action === FOLLOW_ACTION) return ALLOW
     const entry = this.policies.get(principal.kind)
     if (entry === undefined) return NO_ALLOW
@@ -251,7 +250,6 @@ export class RemoteAccessService extends TypertRemoteService {
    * @returns the owner baseline for the owner; otherwise the principal's current grants.
    */
   snapshotFor(principal: Principal): RemoteAccessBaseline {
-    // oxlint-disable-next-line typescript/no-unnecessary-condition -- other packages merge non-owner kinds into PrincipalMap.
     if (principal.kind === 'owner') return OWNER_BASELINE
     return { type: 'baseline', owner: false, grants: this.grantsFor(principal) }
   }

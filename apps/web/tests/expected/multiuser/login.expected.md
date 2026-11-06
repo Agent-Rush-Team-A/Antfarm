@@ -1,0 +1,9 @@
+- main:
+  - heading "Sign in" [level=1]
+  - paragraph: Use your team account.
+  - text: Username
+  - textbox "Username"
+  - text: Password
+  - textbox "Password"
+  - button "Sign in"
+  - alert

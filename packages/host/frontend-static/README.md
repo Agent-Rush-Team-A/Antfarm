@@ -20,6 +20,8 @@ Serve the built Web shell to browsers from its configured distribution directory
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
 
+Personalized index responses use `Cache-Control: no-store` and vary by Cookie. In multiuser mode, Connection can redirect an unauthenticated browser to the account provider's public login page.
+
 -----
 
 <a id="use-this-package"></a>
@@ -43,7 +45,7 @@ Requests are served from the dist root (the directory containing `distIndex`). T
 
 The served HTML carries one document base, `<base href="./">`, ahead of every injected resource row, so it freezes the entry directory the page was loaded from: the shell's own app-directory-relative references and the Host's plugin-resource rows both resolve under the mount that served the page. The same index therefore serves the origin root and whatever mount a prefix-stripping proxy owns; this plugin renders it only for the dist root and the configured index path.
 
-HTTP root and configured-index requests call `ctx.connection.authorizeIndex` before reading HTML. A valid process token receives a 303 redirect plus the persistent browser cookie; an existing valid cookie serves the index; every other index request receives the Connection-owned 401 response. Non-index files remain public static assets. Connection owns the token, cookie, expiry, and signing-record semantics.
+HTTP root and configured-index requests call `ctx.connection.admitIndex` before reading HTML. The local owner composition answers with a token redirect, a cookie-authenticated index, or the Connection-owned 401; a multiuser composition answers with the authenticated or anonymous Peer and leaves the login document to that page. Non-index files remain public static assets. Connection owns token, cookie, expiry, admission-provider, and signing-record semantics.
 
 Browsers revalidate every served file except the index. Such a response carries `cache-control: no-cache` and a weak ETag built from a SHA-1 of the file's bytes, so a file whose content changes gets a new ETag even when its name stays the same; a request whose `If-None-Match` equals the current ETag receives an empty 304. The rendered index carries no cache headers.
 
@@ -61,7 +63,7 @@ Traversal returns 403 rather than an error page. An absent or non-file target in
 
 ### Design concept
 
-The package is one function plugin around `serveStatic`, which maps a Fetch `Request` to a `Response`: `apply` resolves the dist root from `distIndex` and registers a fallback resource under an effect scope. For each request the resource passes `serveStatic` an `authorizeIndex` closure, which runs `ctx.connection.authorizeIndex` only when no Peer came with the request, and a `renderIndex` closure that runs `ctx.webServer.renderIndex` over the raw `index.html` for that Peer or the browser Peer and splices the document base in after the opening head tag (after the raw taps, so it precedes their markup too). The seat is single-owner by the webserver's contract — a second registration throws — and effect-scoped, so disposing the fiber releases the seat.
+The package is one function plugin around `serveStatic`, which maps a Fetch `Request` to a `Response`: `apply` resolves the dist root from `distIndex` and registers a fallback resource under an effect scope. For each request the resource passes `serveStatic` an `admitIndex` closure, which runs `ctx.connection.admitIndex` only when no Peer came with the request, and a `renderIndex` closure that runs `ctx.webServer.renderIndex` over the raw `index.html` for the admitted Peer and splices the document base in after the opening head tag (after the raw taps, so it precedes their markup too). The seat is single-owner by the webserver's contract — a second registration throws — and effect-scoped, so disposing the fiber releases the seat.
 
 ### The traversal fence
 

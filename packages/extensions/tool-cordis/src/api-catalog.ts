@@ -805,6 +805,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'true only when the frontend may serve index.html.',
       },
       {
+        signature: 'admitIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): { readonly serve: boolean; readonly peer: PeerScope }',
+        description: 'Admit one frontend index request and name the Peer its injected state speaks for. A refusal has already written its response through `response`.',
+        parameters: [{ name: 'request', description: 'root or configured-index HTTP request.' }, { name: 'response', description: 'response owned when the result is not served.' }],
+        returns: 'the render Peer, or serve false after the refusal was written.',
+      },
+      {
+        signature: 'installAdmissionProvider(provider: ConnectionAdmissionProvider): () => Promise<void>',
+        description: 'Install the authentication provider of a multiuser composition. The caller owns the provider\'s lifetime; installing a second provider fails.',
+        parameters: [{ name: 'provider', description: 'credential verification, Peer creation, and index admission.' }],
+        returns: 'disposer restoring Connection\'s deny-all multiuser state.',
+      },
+      {
+        signature: 'isTrusted(request: ConnectionTrustRequest): boolean',
+        description: 'Apply only the Host/Origin fence to another public Web route.',
+        parameters: [{ name: 'request', description: 'request headers from the HTTP or upgrade request.' }],
+        returns: 'whether the request authority and Origin are trusted.',
+      },
+      {
         signature: 'authenticatedUrl(baseUrl: string): string',
         description: 'Add the fresh process token to an ordinary Web application URL.',
         parameters: [{ name: 'baseUrl', description: 'clean application URL whose authority and mount are preserved.' }],
@@ -2116,6 +2134,98 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'multiuser',
+    summary: 'Account and ownership service installed by the multiuser composition.',
+    description: 'Account and ownership service installed by the multiuser composition.',
+    methods: [
+      {
+        signature: 'provisionUser(username: string, password: string): Promise<MultiuserUser>',
+        description: 'Create one account through an explicit provisioning step. Existing names are never overwritten and passwords are never reset implicitly.',
+        parameters: [{ name: 'username', description: 'display name users type at login.' }, { name: 'password', description: 'plaintext to hash once; never stored.' }],
+        returns: 'the public account.',
+        throws: ['Error when the name is invalid or already provisioned.'],
+      },
+      {
+        signature: 'disableUser(userId: UserId): Promise<boolean>',
+        description: 'Disable one account and revoke every login it still holds.',
+        parameters: [{ name: 'userId', description: 'account identity.' }],
+        returns: 'whether the account existed.',
+      },
+      {
+        signature: 'async login(username: string, password: string, rateKey: string): Promise<LoginOutcome>',
+        description: 'Validate one account password and issue a persistent login.',
+        parameters: [{ name: 'username', description: 'submitted account name.' }, { name: 'password', description: 'submitted password.' }, { name: 'rateKey', description: 'caller identity used for the attempt window.' }],
+        returns: 'a token on success, or a stable failure reason.',
+      },
+      {
+        signature: 'async logout(token: string | undefined): Promise<boolean>',
+        description: 'Revoke the login named by a token. Repeating the call is harmless and never affects another login.',
+        parameters: [{ name: 'token', description: 'browser token from the request cookie.' }],
+        returns: 'whether a live login was revoked.',
+      },
+      {
+        signature: 'authenticateToken(token: string | undefined): AuthenticatedLogin | undefined',
+        description: 'Read the account and login behind a token without changing state.',
+        parameters: [{ name: 'token', description: 'browser token from the request cookie.' }],
+        returns: 'the live login, or undefined when the token is unknown, expired, revoked, or disabled.',
+      },
+      {
+        signature: 'admit(request: { readonly headers: AdmissionHeaders }, _secure: boolean): PeerAdmission',
+        description: 'Admit only a live login and reuse its connection scope.',
+        parameters: [{ name: 'request', description: 'request headers after the trust fence.' }, { name: '_secure', description: 'listener TLS state; credentials have the same validity on both carriers.' }],
+        returns: 'the authenticated Peer or a 401 refusal.',
+      },
+      {
+        signature: 'admitIndex(request: { readonly headers: AdmissionHeaders }, _secure: boolean): ConnectionIndexAdmission',
+        description: 'Render an authenticated page or redirect to the public login document.',
+        parameters: [{ name: 'request', description: 'index request headers after the trust fence.' }, { name: '_secure', description: 'listener TLS state.' }],
+        returns: 'the authenticated Peer or a login-page redirect.',
+      },
+      {
+        signature: 'ownsWorkspace(userId: UserId, workspaceId: WorkspaceId): boolean',
+        description: 'Check live account ownership of a registered workspace.',
+        parameters: [{ name: 'userId', description: 'account identity.' }, { name: 'workspaceId', description: 'workspace identity.' }],
+        returns: 'false for deleted workspaces, disabled accounts, or absent ownership.',
+      },
+      {
+        signature: 'ownsSession(userId: UserId, sessionId: SessionId): boolean',
+        description: 'Check access through the session\'s authoritative workspace membership.',
+        parameters: [{ name: 'userId', description: 'account identity.' }, { name: 'sessionId', description: 'session identity.' }],
+        returns: 'whether the account owns the session\'s live workspace.',
+      },
+      {
+        signature: 'ownedWorkspaces(userId: UserId): readonly WorkspaceId[]',
+        description: 'Enumerate ownership bindings for one account.',
+        parameters: [{ name: 'userId', description: 'account identity.' }],
+        returns: 'workspace identities whose conditions are rechecked by the policy.',
+      },
+      {
+        signature: 'ownedSessions(userId: UserId): readonly SessionId[]',
+        description: 'Enumerate sessions in the account\'s owned workspaces.',
+        parameters: [{ name: 'userId', description: 'account identity.' }],
+        returns: 'current session identities from committed workspace membership.',
+      },
+      {
+        signature: 'createUserWorkspace(userId: UserId, title?: string): Promise<Workspace>',
+        description: 'Allocate a private directory and register one workspace owned by `userId`. The ownership row commits before the workspace becomes accessible. If it fails, the registration is withdrawn and the new empty directory removed.',
+        parameters: [{ name: 'userId', description: 'authenticated account identity.' }, { name: 'title', description: 'optional display title.' }],
+        returns: 'the committed workspace.',
+      },
+      {
+        signature: 'async forgetWorkspace(workspaceId: WorkspaceId): Promise<void>',
+        description: 'Drop ownership when its workspace registration is deleted.',
+        parameters: [{ name: 'workspaceId', description: 'deleted workspace identity.' }],
+        returns: 'resolution after the owner row is gone.',
+      },
+      {
+        signature: 'ownerOfWorkspace(workspaceId: WorkspaceId): string | undefined',
+        description: 'Read a workspace\'s stored owner identity.',
+        parameters: [{ name: 'workspaceId', description: 'workspace identity.' }],
+        returns: 'the owning account id, or undefined when no ownership row exists.',
+      },
+    ],
+  },
+  {
     key: 'officeToPdf',
     summary: 'A provider lifetime owns all converters, queued calls, and temporary files.',
     description: 'A provider lifetime owns all converters, queued calls, and temporary files.',
@@ -2725,7 +2835,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'search\') async search(request: SessionSearchRequest, signal: AbortSignal): Promise<SessionSearchValue>',
-        description: 'Search visible Session content without resuming an Agent. A non-owner receives only the hits whose Session `allows()` admits; `hasMore` describes the bounded result before that filtering.',
+        description: 'Search visible Session content without resuming an Agent. A non-owner receives only the hits whose Session `allows()` admits; `hasMore` describes the authorized result before the response limit.',
         parameters: [{ name: 'request', description: 'literal message-content query.' }, { name: 'signal', description: 'cancellation for list and search reads.' }],
         returns: 'authorized bounded Session search results.',
       },
@@ -4526,7 +4636,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Host service backing the generated `ctx.remote.workspace` namespace.',
     methods: [
       {
-        signature: '@Remote(\'create\') create(request: WorkspaceCreateRequest): Promise<WorkspaceCreateValue>',
+        signature: '@Remote(\'create\') async create(request: WorkspaceCreateRequest): Promise<WorkspaceCreateValue>',
         description: 'Create or idempotently resolve one Workspace over an existing directory.',
         parameters: [{ name: 'request', description: 'directory path to register.' }],
         returns: 'the Workspace and whether this call created it.',
@@ -4550,13 +4660,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'deletion confirmation.',
       },
       {
-        signature: '@Remote(\'insertBefore\') insertBefore(request: WorkspaceInsertBeforeRequest): Promise<WorkspaceOrderValue>',
+        signature: '@Remote({ resources: { workspace: (request: WorkspaceInsertBeforeRequest) => [ request.workspaceId, ...request.beforeWorkspaceId === undefined ? [] : [request.beforeWorkspaceId], ], }, }) insertBefore(request: WorkspaceInsertBeforeRequest): Promise<WorkspaceOrderValue>',
         description: 'Move one Workspace within the registry display order.',
         parameters: [{ name: 'request', description: 'moved Workspace and optional anchor.' }],
         returns: 'the complete resulting Workspace order.',
       },
       {
-        signature: '@Remote(\'insertSessionBefore\') insertSessionBefore(request: WorkspaceInsertSessionBeforeRequest): Promise<WorkspaceValue>',
+        signature: '@Remote({ resources: { session: (request: WorkspaceInsertSessionBeforeRequest) => [ request.sessionId, ...request.beforeSessionId === undefined ? [] : [request.beforeSessionId], ], }, }) insertSessionBefore(request: WorkspaceInsertSessionBeforeRequest): Promise<WorkspaceValue>',
         description: 'Move one accounted Session within a Workspace.',
         parameters: [{ name: 'request', description: 'Workspace, Session, and optional anchor identities.' }],
         returns: 'the updated Workspace projection.',
@@ -5728,6 +5838,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AttachmentId = Branded<\'AttachmentId\'>;',
   },
   {
+    name: 'AuthenticatedLogin',
+    declaration: 'export interface AuthenticatedLogin {\n    readonly user: MultiuserUser;\n    readonly record: LoginSessionRecord;\n}',
+  },
+  {
     name: 'AuthorizationEntry',
     declaration: 'export interface AuthorizationEntry {\n    key: CredentialKey;\n    label: string;\n    methods: readonly AuthorizationMethod[];\n    inFlight: boolean;\n}',
   },
@@ -5980,6 +6094,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ConnectionAdmission = {\n    readonly peer: PeerScope;\n    readonly release: () => Promise<void>;\n} | {\n    readonly rejection: 401 | 403 | 409;\n};',
   },
   {
+    name: 'ConnectionAdmissionProvider',
+    declaration: 'export interface ConnectionAdmissionProvider {\n    admit(request: ConnectionTrustRequest, secure: boolean): PeerAdmission;\n    admitIndex(request: ConnectionTrustRequest, secure: boolean): ConnectionIndexAdmission;\n}',
+  },
+  {
     name: 'ConnectionFetchHandler',
     declaration: 'export interface ConnectionFetchHandler {\n    requestBodyMode(request: {\n        readonly method: string;\n        readonly url: URL;\n    }): ConnectionRequestBodyMode;\n    fetch(request: Request, peer: PeerScope): Promise<Response>;\n}',
   },
@@ -5990,6 +6108,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ConnectionFetchRoute',
     declaration: 'export interface ConnectionFetchRoute {\n    readonly path: string;\n    readonly methods: readonly ConnectionFetchMethod[];\n    readonly requestBody: ConnectionRequestBodyMode;\n    readonly fetch: (request: Request) => Promise<Response>;\n}',
+  },
+  {
+    name: 'ConnectionIndexAdmission',
+    declaration: 'export type ConnectionIndexAdmission = {\n    readonly serve: true;\n    readonly peer: PeerScope;\n} | {\n    readonly serve: false;\n    readonly rejection: 401 | 403;\n} | {\n    readonly serve: false;\n    readonly redirect: string;\n};',
   },
   {
     name: 'ConnectionIndexRequest',
@@ -7068,6 +7190,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type LogExporterOptions = Omit<OTLPExporterNodeConfigBase, \'selfObsMeterProvider\'> & {\n    url: string;\n};',
   },
   {
+    name: 'LoginOutcome',
+    declaration: 'export type LoginOutcome = {\n    readonly ok: true;\n    readonly token: string;\n    readonly expiresAt: number;\n    readonly user: MultiuserUser;\n} | {\n    readonly ok: false;\n    readonly reason: \'invalid\' | \'disabled\' | \'rate-limited\';\n    readonly retryAfterMs?: number;\n};',
+  },
+  {
+    name: 'LoginSessionRecord',
+    declaration: 'export interface LoginSessionRecord {\n    readonly id: string;\n    readonly tokenHash: string;\n    readonly userId: string;\n    readonly createdAt: string;\n    readonly expiresAt: string;\n    readonly revokedAt?: string | undefined;\n}',
+  },
+  {
     name: 'LspHover',
     declaration: 'export interface LspHover {\n    readonly contents: string;\n    readonly range?: LspRange;\n}',
   },
@@ -7412,6 +7542,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ModTier = \'prepend\' | \'user\' | \'append\' | \'builtin\' | \'core\';',
   },
   {
+    name: 'MultiuserUser',
+    declaration: 'export interface MultiuserUser {\n    readonly userId: UserId;\n    readonly username: string;\n}',
+  },
+  {
     name: 'NativeFileApplication',
     declaration: 'export interface NativeFileApplication {\n    readonly id: string;\n    readonly name: string;\n    readonly default: boolean;\n    readonly icon: string | null;\n}',
   },
@@ -7709,7 +7843,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PrincipalMap',
-    declaration: 'export interface PrincipalMap {\n    owner: {\n        readonly kind: \'owner\';\n    };\n}',
+    declaration: 'export interface PrincipalMap {\n    owner: {\n        readonly kind: \'owner\';\n    };\n    user: {\n        readonly kind: \'user\';\n        readonly userId: UserId;\n    };\n    anonymous: {\n        readonly kind: \'anonymous\';\n    };\n}',
   },
   {
     name: 'ProductEvent',
@@ -10000,6 +10134,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface UpdateTeamTaskRequest {\n    readonly taskId: TeamTaskId;\n    readonly expectedRevision: number;\n    readonly action: TeamTaskAction;\n    readonly subject?: string;\n    readonly description?: string;\n    readonly blockedBy?: readonly TeamTaskId[];\n    readonly writeScopes?: readonly string[];\n    readonly owner?: SessionId;\n}',
   },
   {
+    name: 'UserId',
+    declaration: 'export type UserId = Branded<\'UserId\'>;',
+  },
+  {
     name: 'UserMessage',
     declaration: 'export interface UserMessage extends MessageBase {\n    readonly role: \'user\';\n}',
   },
@@ -10221,7 +10359,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WorkspaceBaseline',
-    declaration: 'export interface WorkspaceBaseline {\n    readonly items: readonly WorkspaceView[];\n    readonly archivedSessionIds: readonly SessionId[];\n    readonly pinnedSessionIds: readonly SessionId[];\n}',
+    declaration: 'export interface WorkspaceBaseline {\n    readonly creationMode?: \'allocated\';\n    readonly items: readonly WorkspaceView[];\n    readonly archivedSessionIds: readonly SessionId[];\n    readonly pinnedSessionIds: readonly SessionId[];\n}',
   },
   {
     name: 'WorkspaceByteRange',
@@ -10241,7 +10379,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WorkspaceCreateRequest',
-    declaration: 'export interface WorkspaceCreateRequest {\n    readonly path: string;\n}',
+    declaration: 'export interface WorkspaceCreateRequest {\n    readonly path?: string;\n    readonly title?: string;\n}',
   },
   {
     name: 'WorkspaceCreateValue',

@@ -2023,6 +2023,11 @@
     },
     {
       "doc": "docs/subsystems/typert.md",
+      "symbol": "UserId",
+      "source": "packages/typert/protocol/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/typert.md",
       "symbol": "PrincipalMap",
       "source": "packages/typert/protocol/src/types.ts"
     },

@@ -61,9 +61,16 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
   }
 }
 
-/** Existing directory requested for Workspace adoption. */
+/**
+ * Workspace creation request. The owner composition adopts an existing
+ * directory through `path`; a multiuser account supplies only `title` and the
+ * Host allocates its private directory.
+ */
 export interface WorkspaceCreateRequest {
-  readonly path: string
+  /** Existing directory in the local owner composition. */
+  readonly path?: string
+  /** Display title for a Host-allocated multiuser workspace. */
+  readonly title?: string
 }
 
 /** Created or previously registered Workspace. */
@@ -151,6 +158,8 @@ export interface WorkspacePinValue {
 
 /** Complete reconnect baseline for Workspace browser state. */
 export interface WorkspaceBaseline {
+  /** The server allocates directories; omission keeps the local directory picker. */
+  readonly creationMode?: 'allocated'
   readonly items: readonly WorkspaceView[]
   readonly archivedSessionIds: readonly SessionId[]
   /** Registry-global pin set, most recently pinned first. */

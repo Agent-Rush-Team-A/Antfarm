@@ -295,3 +295,58 @@ describe('Session fork failures', () => {
     await ctx.fiber.dispose()
   })
 })
+
+describe('multiuser Session creation', () => {
+  const user = { kind: 'user', userId: 'user-alice' } as const
+  const owned = {
+    id: 'workspace-owned' as WorkspaceId,
+    path: '/workspace-owned',
+    sessionIds: [] as SessionId[],
+    attachSession: () => Promise.resolve(),
+  }
+
+  it('rejects cwd and missing workspace targets before creating anything', async () => {
+    const ctx = await baseContext()
+    ctx.provide('multiuser', { ownsWorkspace: () => true, ownsSession: () => true } as never)
+    ctx.provide('workspaceRegistry', { get: () => owned, list: () => [owned] } as never)
+    const createSession = vi.fn()
+    const controller = new SessionCommandController(ctx, controllerAgents(ctx, { createSession }), '/default')
+
+    await expectFailure(controller.create({ cwd: '/tmp' }, user as never), 'gateway/bad-request')
+    await expectFailure(controller.create({}, user as never), 'gateway/bad-request')
+    expect(createSession).not.toHaveBeenCalled()
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects a workspace or reusable session the account does not own', async () => {
+    const ctx = await baseContext()
+    const access = { ownsWorkspace: (): boolean => false, ownsSession: (): boolean => false }
+    ctx.provide('multiuser', access as never)
+    ctx.provide('workspaceRegistry', { get: () => owned, list: () => [owned] } as never)
+    const createSession = vi.fn()
+    const controller = new SessionCommandController(ctx, controllerAgents(ctx, { createSession }), '/default')
+
+    await expectFailure(controller.create({ workspaceId: owned.id }, user as never), 'workspace/not-found')
+    access.ownsWorkspace = () => true
+    await expectFailure(controller.create({
+      workspaceId: owned.id,
+      sessionId: SessionId('session-bob'),
+    }, user as never), 'session/not-found')
+    expect(createSession).not.toHaveBeenCalled()
+    await ctx.fiber.dispose()
+  })
+
+  it('creates only inside an owned workspace', async () => {
+    const ctx = await baseContext()
+    ctx.provide('multiuser', { ownsWorkspace: () => true, ownsSession: () => true } as never)
+    ctx.provide('workspaceRegistry', { get: () => owned, list: () => [owned] } as never)
+    const createSession = vi.fn(publishedSession(ctx, SessionId('owned-session')))
+    const controller = new SessionCommandController(ctx, controllerAgents(ctx, { createSession }), '/default')
+
+    await expect(controller.create({ workspaceId: owned.id }, user as never)).resolves.toEqual({
+      sessionId: 'owned-session',
+    })
+    expect(createSession.mock.calls[0]?.[0]?.cwd).toBe('/workspace-owned')
+    await ctx.fiber.dispose()
+  })
+})

@@ -300,6 +300,6 @@ describe('real Loader composition', () => {
     expect(html.headers.get('etag')).toMatch(/^W\//)
     expect(await html.text()).toBe('<body>preview</body>')
     const index = await loaded.webServer.readResource(new Request(`${base}/`), reader)
-    expect([index.status, index.headers.get('cache-control'), index.headers.get('etag')]).toEqual([200, null, null])
+    expect([index.status, index.headers.get('cache-control'), index.headers.get('etag')]).toEqual([200, 'no-store', null])
   })
 })

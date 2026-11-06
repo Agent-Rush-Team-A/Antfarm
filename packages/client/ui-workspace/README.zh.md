@@ -22,6 +22,8 @@ kind: "package-reference"
 - [已知限制与延期工作](#known-limitations-and-deferred-work)
 - [开发备注](#dev-note)
 
+在多用户部署中，**添加工作区**由服务器分配私有目录并打开其 Session，不显示目录选择器，也不会自动创建 owner 的默认工作区。
+
 -----
 
 <a id="use-this-package"></a>

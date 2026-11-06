@@ -8,6 +8,7 @@
     "rewriteRelativeImportExtensions": false
   },
   "include": [
+    "apps/web/tests/multiuser.e2e.ts",
     "apps/web/tests/sidebar-drawer.e2e.ts",
     "apps/web/tests/creation-recommendations.e2e.ts",
     "apps/web/tests/plugin-recommendations.e2e.ts",
@@ -376,6 +377,7 @@
     { "path": "./packages/api/workspace-files/tsconfig.host.json" },
     { "path": "./packages/api/settings-controller" },
     { "path": "./packages/api/remote-access/tsconfig.host.json" },
+    { "path": "./packages/api/multiuser/tsconfig.host.json" },
     { "path": "./packages/api/workspace-controller/tsconfig.host.json" },
     { "path": "./packages/typert/loader" },
     { "path": "./packages/session/session-persistence" },

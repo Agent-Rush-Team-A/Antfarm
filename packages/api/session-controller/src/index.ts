@@ -284,14 +284,15 @@ export class SessionController extends TypertRemoteService {
   /**
    * Search visible Session content without resuming an Agent. A non-owner
    * receives only the hits whose Session `allows()` admits; `hasMore`
-   * describes the bounded result before that filtering.
+   * describes the authorized result before the response limit.
    * @param request - literal message-content query.
    * @param signal - cancellation for list and search reads.
    * @returns authorized bounded Session search results.
    */
   @Remote('search')
   async search(request: SessionSearchRequest, signal: AbortSignal): Promise<SessionSearchValue> {
-    const result = await this.listState.search(request.query, signal)
+    const result = await this.listState.search(request.query, signal,
+      sessionId => this.ctx.remoteAccess.allows({ kind: 'session', id: sessionId }))
     return { ...result, items: result.items.filter(item => this.ctx.remoteAccess.allows({ kind: 'session', id: item.sessionId })) }
   }
 
@@ -302,7 +303,8 @@ export class SessionController extends TypertRemoteService {
    */
   @Remote('create')
   create(request: SessionCreateRequest): Promise<SessionCreateValue> {
-    return this.commands.create(request)
+    const principal = principalOf(this.ctx.invocation)
+    return this.commands.create(request, principal?.kind === 'user' ? principal : undefined)
   }
 
   /**
@@ -312,7 +314,8 @@ export class SessionController extends TypertRemoteService {
    */
   @Remote('selectModel')
   selectModel(request: SessionSelectModelRequest): Promise<SessionSelectModelValue> {
-    return this.commands.selectModel(request)
+    const principal = principalOf(this.ctx.invocation)
+    return this.commands.selectModel(request, principal?.kind === 'user' ? principal : undefined)
   }
 
   /**

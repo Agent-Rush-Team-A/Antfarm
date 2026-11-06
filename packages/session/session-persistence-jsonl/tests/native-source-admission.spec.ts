@@ -67,6 +67,21 @@ describe.each(modes)('native message-source admission ($compression, $access)', 
     expect(await readFile(path)).toEqual(bytes)
   })
 
+  it.each([
+    { label: 'historical owner', source: { kind: 'user', rpcId: 'owner-prompt' } },
+    { label: 'account', source: { kind: 'user', rpcId: 'account-prompt', principal: { kind: 'user', userId: 'alice' } } },
+    { label: 'anonymous', source: { kind: 'user', rpcId: 'anonymous-prompt', principal: { kind: 'anonymous' } } },
+  ])('preserves $label attribution without installing account services', async ({ source }) => {
+    const { ctx, path, bytes, event } = await stored(source)
+    const handle = await ctx.sessionPersistence.open(id, access)
+    try {
+      expect((await handle.read()).events[0]).toEqual(event)
+    } finally {
+      await handle.close()
+    }
+    expect(await readFile(path)).toEqual(bytes)
+  })
+
   it('leaves unknown ignorable queued payloads opaque', async () => {
     const { ctx, path, bytes, event } = await stored(null, 'external/inbox', true)
     const handle = await ctx.sessionPersistence.open(id, access)

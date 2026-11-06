@@ -130,9 +130,40 @@ export type ConnectionAdmission =
   | { readonly rejection: 401 | 403 | 409 }
 
 /**
- * Handler invoked after Connection has decoded the transport envelope.
- * `peer` is the Peer the carrier admitted or the in-process caller supplied.
+ * Admission answer for one frontend index request. A provider that serves the
+ * page returns the Peer its injected state speaks for; a refusal names the
+ * status the caller must send without rendering the index.
  */
+export type ConnectionIndexAdmission =
+  | { readonly serve: true; readonly peer: PeerScope }
+  | { readonly serve: false; readonly rejection: 401 | 403 }
+  | { readonly serve: false; readonly redirect: string }
+
+/**
+ * Authentication policy a multiuser composition installs in Connection. The
+ * provider owns credential verification, Peer creation, and login revocation;
+ * Connection only applies the Host/Origin fence before asking it.
+ */
+export interface ConnectionAdmissionProvider {
+  /**
+   * Admit one RPC, Fetch, or upgrade request.
+   * @param request - request headers after the Host/Origin fence.
+   * @param secure - whether the receiving listener serves TLS.
+   * @returns the live Peer, or the status refusing the request.
+   */
+  admit(request: ConnectionTrustRequest, secure: boolean): PeerAdmission
+
+  /**
+   * Answer one frontend index request. A provider can redirect to its public
+   * login document or serve the page for an authenticated Peer.
+   * @param request - root or configured-index request after the Host/Origin fence.
+   * @param secure - whether the receiving listener serves TLS.
+   * @returns the render Peer or the status refusing the request.
+   */
+  admitIndex(request: ConnectionTrustRequest, secure: boolean): ConnectionIndexAdmission
+}
+
+/** Handler invoked after Connection decodes the envelope; the Peer fixes caller identity. */
 export type ConnectionRpcHandler = (
   endpoint: string,
   payload: unknown,
@@ -264,6 +295,30 @@ export interface HostConnectionHandle {
    * @returns true only when the frontend may serve index.html.
    */
   authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean
+
+  /**
+   * Admit one frontend index request and name the Peer its injected state
+   * speaks for. A refusal has already written its response through `response`.
+   * @param request - root or configured-index HTTP request.
+   * @param response - response owned when the result is not served.
+   * @returns the render Peer, or serve false after the refusal was written.
+   */
+  admitIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): { readonly serve: boolean; readonly peer: PeerScope }
+
+  /**
+   * Install the authentication provider of a multiuser composition. The
+   * caller owns the provider's lifetime; installing a second provider fails.
+   * @param provider - credential verification, Peer creation, and index admission.
+   * @returns disposer restoring Connection's deny-all multiuser state.
+   */
+  installAdmissionProvider(provider: ConnectionAdmissionProvider): () => Promise<void>
+
+  /**
+   * Apply only the Host/Origin fence to another public Web route.
+   * @param request - request headers from the HTTP or upgrade request.
+   * @returns whether the request authority and Origin are trusted.
+   */
+  isTrusted(request: ConnectionTrustRequest): boolean
 
   /**
    * Add the fresh process token to an ordinary Web application URL.

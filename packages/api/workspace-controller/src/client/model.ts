@@ -30,6 +30,8 @@ export type WorkspaceListPhase = 'pending' | 'ready'
 
 /** Immutable Client Workspace state. */
 export interface WorkspaceSnapshot {
+  /** Allocated workspaces do not accept a client-supplied directory. */
+  readonly creationMode?: 'allocated'
   readonly items: readonly WorkspaceView[]
   /** Complete registry-global archive set in Host order. */
   readonly archivedSessionIds: WorkspaceArchiveValue['archivedSessionIds']
@@ -63,6 +65,7 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
   private items: readonly WorkspaceView[] = []
   private archivedSessionIds: WorkspaceArchiveValue['archivedSessionIds'] = []
   private pinnedSessionIds: WorkspacePinValue['pinnedSessionIds'] = []
+  private creationMode: WorkspaceSnapshot['creationMode']
   private state: WorkspaceSnapshot['state'] = 'loading'
   private phase: WorkspaceListPhase = 'pending'
   private error: RemoteFailure | null = null
@@ -262,6 +265,7 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
    * @param baseline - complete Workspace and archive projection.
    */
   replaceBaseline(baseline: WorkspaceBaseline): void {
+    this.creationMode = baseline.creationMode
     this.orderFrameGeneration++
     this.archiveRequestSeq++
     this.pinRequestSeq++
@@ -347,6 +351,7 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
 
   private buildSnapshot(): WorkspaceSnapshot {
     return {
+      ...(this.creationMode === undefined ? {} : { creationMode: this.creationMode }),
       items: this.items,
       archivedSessionIds: this.archivedSessionIds,
       pinnedSessionIds: this.pinnedSessionIds,

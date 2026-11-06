@@ -41,6 +41,7 @@ export type {
   Principal,
   PrincipalMap,
   RemoteDecoded,
+  UserId,
   RemoteErrorCode,
   RemoteErrorDetailsMap,
   RemoteFailure,

@@ -8,7 +8,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`@deepseek-ai/dsh-api-workspace-controller` owns the Host `ctx.workspaceController` service and the generated Client `ctx.remote.workspace` namespace. Its Remote methods create, rename, remove, and reorder Workspaces, reorder Sessions within a Workspace, archive and unarchive Sessions from Workspace navigation, and follow the complete Workspace projection. Use it through API Gateway when a Client must change or follow Workspace navigation. The package also owns `ctx.directoryPickerController` and the generated `ctx.remote.directoryPicker` namespace, because the directory-picking seam it carries is abstract and never a Loader entry of its own.
+`@deepseek-ai/dsh-api-workspace-controller` owns Host `ctx.workspaceController` and the generated Client `ctx.remote.workspace` namespace. Its Remote methods create, rename, delete, and reorder Workspaces; reorder Sessions within a Workspace; archive, unarchive, pin, and unpin Sessions; and follow the complete projection. Multiuser creation accepts only `title`: the Host allocates a private directory through `dsh-api-multiuser`, and the Workspace enters the account's stream only after ownership commits. The package also owns `ctx.directoryPickerController` and the generated `ctx.remote.directoryPicker` namespace because its picking seam is abstract and never a Loader entry.
 
 ## Table of Contents
 
@@ -16,6 +16,8 @@ English | [中文](README.zh.md)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
+
+A multiuser baseline sets `creationMode: "allocated"`; the Client preserves this flag so workspace creation omits a path and startup does not call the owner-only default-directory initializer.
 
 -----
 
