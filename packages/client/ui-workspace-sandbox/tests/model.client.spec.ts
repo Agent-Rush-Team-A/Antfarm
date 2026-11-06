@@ -26,7 +26,8 @@ function fixture() {
   const api = { open: vi.fn<SandboxApi['open']>().mockResolvedValue(value('running')),
     status: vi.fn<SandboxApi['status']>().mockResolvedValue(value('closed')),
     close: vi.fn<SandboxApi['close']>().mockResolvedValue(value('closed')) }
-  const model = new SandboxModel(api, generations, 100)
+  const allowed = vi.fn(() => true)
+  const model = new SandboxModel(api, generations, 100, allowed)
   models.push(model)
   const controller = new AbortController()
   controllers.push(controller)
@@ -34,7 +35,7 @@ function fixture() {
   const following = (async () => {
     for await (const frame of model.watch(workspaceId, controller.signal)) if (frame.ok) seen.push(frame.value)
   })()
-  return { api, model, generations, controller, seen, following }
+  return { api, model, generations, controller, seen, following, allowed }
 }
 
 test('polls current status without opening and stops after its last holder leaves', async () => {
@@ -57,11 +58,11 @@ test('a failed query preserves the last state and never guesses closed', async (
   await flush()
   f.api.status.mockRejectedValue(new Error('/private/runner/socket'))
   await vi.advanceTimersByTimeAsync(100)
-  expect(f.seen.at(-1)).toMatchObject({ state: 'running', failure: { operation: 'status', reason: 'request_failed' } })
+  expect(f.seen.at(-1)).toMatchObject({ state: 'running', statusFailure: { operation: 'status', reason: 'request_failed' } })
   expect(JSON.stringify(f.seen)).not.toContain('/private')
   f.api.status.mockResolvedValue(value('closed'))
   await vi.advanceTimersByTimeAsync(100)
-  expect(f.seen.at(-1)).toMatchObject({ state: 'closed', failure: undefined })
+  expect(f.seen.at(-1)).toMatchObject({ state: 'closed', statusFailure: undefined })
 })
 
 test('one admitted opening publishes progress and refreshes after confirmation', async () => {
@@ -134,4 +135,63 @@ test('replacement connection discards a delayed old query and repulls', async ()
   complete(value('closed'))
   await flush()
   expect(f.seen.at(-1)).toMatchObject({ state: 'running', connected: true })
+})
+
+test('permission withdrawal clears observations and prevents all management calls', async () => {
+  const f = fixture()
+  await flush()
+  const queries = f.api.status.mock.calls.length
+  f.allowed.mockReturnValue(false)
+  f.model.refresh(workspaceId)
+  expect(await f.model.change(workspaceId, 'open')).toMatchObject({ reason: 'denied', outcomeUnknown: false })
+  expect(await f.model.change(workspaceId, 'close')).toMatchObject({ reason: 'denied', outcomeUnknown: false })
+  await flush()
+  expect(f.seen.at(-1)).toMatchObject({ state: undefined, statusFailure: { reason: 'denied' } })
+  expect(f.api.status).toHaveBeenCalledTimes(queries)
+  expect(f.api.open).not.toHaveBeenCalled()
+  expect(f.api.close).not.toHaveBeenCalled()
+})
+
+test('a later query failure cannot erase an unknown mutation result', async () => {
+  const f = fixture()
+  await flush()
+  f.api.open.mockResolvedValue({ ok: false, error: new RemoteError('sandbox/failed', 'private details',
+    { reason: 'runner_outcome_unknown', outcomeUnknown: true }) })
+  await f.model.change(workspaceId, 'open')
+  f.api.status.mockRejectedValue(new Error('offline'))
+  await vi.advanceTimersByTimeAsync(100)
+  expect(f.seen.at(-1)).toMatchObject({ failure: { outcomeUnknown: true }, statusFailure: { operation: 'status' } })
+  f.api.status.mockResolvedValue(value('closing'))
+  await vi.advanceTimersByTimeAsync(100)
+  expect(f.seen.at(-1)).toMatchObject({ state: 'closing', failure: { outcomeUnknown: true }, statusFailure: undefined })
+  expect(f.api.open).toHaveBeenCalledTimes(1)
+})
+
+test('a failed close stays closing and permits an explicit retry', async () => {
+  const f = fixture()
+  await flush()
+  f.api.status.mockResolvedValue(value('closing'))
+  f.api.close.mockResolvedValueOnce({ ok: false, error: new RemoteError('sandbox/failed', 'private details',
+    { reason: 'sandbox_cleanup_required', outcomeUnknown: false }) })
+  expect(await f.model.change(workspaceId, 'close')).toMatchObject({ reason: 'sandbox_cleanup_required' })
+  await flush()
+  expect(f.seen.at(-1)?.state).toBe('closing')
+  f.api.status.mockResolvedValue(value('closed'))
+  expect(await f.model.change(workspaceId, 'close')).toBeUndefined()
+  await flush()
+  expect(f.seen.at(-1)).toMatchObject({ state: 'closed', failure: undefined })
+})
+
+test('an opening response from a lost connection cannot publish running or retry', async () => {
+  const f = fixture()
+  await flush()
+  const completion = Promise.withResolvers<RemoteResult<SandboxValue>>()
+  f.api.open.mockImplementation(() => completion.promise)
+  const opening = f.model.change(workspaceId, 'open')
+  f.generations.set(undefined)
+  completion.resolve(value('running'))
+  expect(await opening).toMatchObject({ reason: 'disconnected', outcomeUnknown: true })
+  await flush()
+  expect(f.seen.at(-1)).toMatchObject({ connected: false, state: undefined })
+  expect(f.api.open).toHaveBeenCalledTimes(1)
 })

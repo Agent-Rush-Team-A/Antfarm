@@ -10,6 +10,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { sandboxAddress } from './address.ts'
 import type { SandboxModel } from './model.ts'
 import type {} from './locales.ts'
+import { failureKey } from './failure-key.ts'
 import css from './Panel.module.css'
 
 /** User actions captured by the plugin; components never access services. */
@@ -60,11 +61,15 @@ export function SandboxOverlay(props: OverlayProps) {
   const workspaceId = props.useSelection(id => id)
   const workspace = props.useWorkspaces(snapshot => snapshot.items.find(row => row.workspaceId === workspaceId))
   return workspaceId === null || workspace === undefined ? null
-    : <SandboxPanel key={workspaceId} {...props} workspaceId={workspaceId} displayTitle={workspace.title} />
+    : <SandboxPanel key={workspaceId} {...props} workspaceId={workspaceId} displayTitle={workspace.title || props.t('untitled')} />
 }
 
 /** @param props - Captured workspace, resource hook, access hooks and actions. @returns Status, safe controls and close confirmation. */
 export function SandboxPanel(props: PanelProps) {
+  return props.useWorkspaceAccess(props.workspaceId, 'workspaceSandbox/status') ? <PanelBody {...props} /> : null
+}
+
+function PanelBody(props: PanelProps) {
   const { workspaceId, t } = props
   const resource = props.useResource<'workspacesandbox'>(sandboxAddress(workspaceId))
   const view = resource.value
@@ -73,29 +78,38 @@ export function SandboxPanel(props: PanelProps) {
   const closeAllowed = props.useWorkspaceAccess(workspaceId, 'workspaceSandbox/close')
   const [confirmClose, setConfirmClose] = useState(false)
   const busy = view?.pending !== undefined || state === 'starting'
+  const problem = view?.failure ?? view?.statusFailure
+  const unknown = problem?.outcomeUnknown === true
+  const unavailable = view?.connected !== true || resource.status !== 'live' || view.statusFailure !== undefined
+  const disabled = busy || unavailable || unknown
+  const stateLabel = state === undefined ? t(problem === undefined && resource.status !== 'failed' ? 'loading' : 'unconfirmed') : t(state)
   return <Modal open onClose={props.dismiss} closeLabel={t('dismiss')} title={t('title')} className={css.dialog}>
     <div className={css.panel}>
       <p className={css.workspace}>{props.displayTitle}</p>
       <div className={css.status} role="status" aria-live="polite">
-        {t(state === undefined ? 'loading' : state)}
+        {view?.connected === false ? t('disconnectedStatus') : unknown ? t('unconfirmed')
+          : view?.statusFailure !== undefined && state !== undefined ? t('staleState', { state: stateLabel }) : stateLabel}
       </div>
       <p className={css.note}>{t('retained')}</p>
-      {(resource.status === 'failed' || view?.failure !== undefined) && <p role="alert">{t('failed')}</p>}
+      {(resource.status === 'failed' || problem !== undefined) && <p role="alert">
+        {t(problem === undefined ? 'failed' : failureKey(problem))}
+      </p>}
       {confirmClose && state !== 'closed' ? <div className={css.confirm}>
         <p>{t('confirmNote')}</p>
         <div className={css.actions}>
-          <Button variant="outline" disabled={busy || !closeAllowed} onClick={() => {
+          <Button variant="outline" disabled={disabled || !closeAllowed} onClick={() => {
             setConfirmClose(false); props.change(workspaceId, 'close')
           }}>{t('confirmClose')}</Button>
           <Button variant="outline" onClick={() => { setConfirmClose(false) }}>{t('cancel')}</Button>
         </div>
       </div> : <div className={css.actions}>
-        {state === 'closed' && <Button disabled={busy || !openAllowed} onClick={() => { props.change(workspaceId, 'open') }}>
+        {state === 'closed' && <Button disabled={disabled || !openAllowed} onClick={() => { props.change(workspaceId, 'open') }}>
           {t('open')}
         </Button>}
-        {state !== undefined && state !== 'closed' && <Button variant="outline" disabled={busy || !closeAllowed}
-          onClick={() => { setConfirmClose(true) }}>{t('close')}</Button>}
-        <Button variant="outline" disabled={busy} onClick={() => { props.refresh(workspaceId) }}>{t('refresh')}</Button>
+        {state !== undefined && state !== 'closed' && <Button variant="outline" disabled={disabled || !closeAllowed}
+          onClick={() => { setConfirmClose(true) }}>{t(state === 'cleanup_required' ? 'cleanup' : state === 'closing' ? 'retryClose' : 'close')}</Button>}
+        <Button variant="outline" disabled={busy || view?.connected !== true}
+          onClick={() => { props.refresh(workspaceId) }}>{t('refresh')}</Button>
       </div>}
     </div>
   </Modal>

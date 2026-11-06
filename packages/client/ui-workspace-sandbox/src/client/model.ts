@@ -11,7 +11,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface ResourceProtocolMap { /** Authenticated workspace sandbox observation. */ workspacesandbox: SandboxView }
 }
 
-
 /** The three authenticated operations, without paths or container identifiers. */
 export type SandboxApi = Record<'open' | 'status' | 'close',
   (workspaceId: WorkspaceId, signal: AbortSignal) => Promise<RemoteResult<SandboxValue>>>
@@ -27,6 +26,7 @@ export interface SandboxView {
   readonly state: SandboxValue['state'] | undefined
   readonly pending: 'open' | 'close' | undefined
   readonly failure: SandboxFailure | undefined
+  readonly statusFailure: SandboxFailure | undefined
   readonly connected: boolean
 }
 
@@ -43,7 +43,8 @@ interface RecordState {
 function failure(error: unknown, operation: SandboxFailure['operation']): SandboxFailure {
   const remote = remoteErrorOf(error)
   if (remote?.code === 'sandbox/failed') return { reason: remote.details.reason, operation, outcomeUnknown: remote.details.outcomeUnknown }
-  return { reason: remote?.code === 'remote-access/denied' ? 'denied' : 'request_failed', operation,
+  if (remote?.code === 'remote-access/denied') return { reason: 'denied', operation, outcomeUnknown: false }
+  return { reason: 'request_failed', operation,
     outcomeUnknown: operation !== 'status' }
 }
 
@@ -61,9 +62,11 @@ export class SandboxModel {
    * @param api - Authenticated Harness callbacks.
    * @param generations - Active connection identity.
    * @param pollIntervalMs - Delay after a completed query.
+   * @param allowed - Current workspace permission, read again at operation boundaries.
    */
   constructor(private readonly api: SandboxApi, private readonly generations: ConnectionGenerationState,
-    private readonly pollIntervalMs: number) {
+    private readonly pollIntervalMs: number,
+    private readonly allowed: (id: WorkspaceId, operation: 'open' | 'status' | 'close') => boolean) {
     this.unsubscribe = generations.subscribe(() => {
       for (const [id, record] of this.records) {
         const pending = record.store.getSnapshot().pending
@@ -72,7 +75,8 @@ export class SandboxModel {
         record.mutation = undefined
         record.store.set({ workspaceId: id, state: undefined, pending: undefined,
           connected: generations.getSnapshot() !== undefined,
-          failure: pending === undefined ? undefined : { reason: 'disconnected', operation: pending, outcomeUnknown: true } })
+          failure: pending === undefined ? undefined : { reason: 'disconnected', operation: pending, outcomeUnknown: true },
+          statusFailure: undefined })
         if (record.holders > 0) this.refresh(id)
         else this.records.delete(id)
       }
@@ -92,14 +96,16 @@ export class SandboxModel {
     let changed = true
     let wake: (() => void) | undefined
     const notify = (): void => { changed = true; wake?.() }
+    const isActive = (): boolean => !signal.aborted && !this.disposed
+    const hasChanged = (): boolean => changed
     const unsubscribe = record.store.subscribe(notify)
     signal.addEventListener('abort', notify, { once: true })
     if (record.holders === 1) this.refresh(workspaceId)
     try {
-      while (!signal.aborted && !this.disposed) {
-        if (!changed) await new Promise<void>((resolve) => { wake = resolve })
+      while (isActive()) {
+        if (!hasChanged()) await new Promise<void>((resolve) => { wake = resolve })
         wake = undefined
-        if (signal.aborted || this.disposed) break
+        if (!isActive()) break
         changed = false
         yield { ok: true, value: record.store.getSnapshot() }
       }
@@ -122,17 +128,22 @@ export class SandboxModel {
     const record = this.records.get(workspaceId)
     if (this.disposed || !record || record.holders === 0 || record.mutation || this.generations.getSnapshot() === undefined) return
     this.stop(record)
+    if (!this.allowed(workspaceId, 'status')) {
+      record.store.set({ ...record.store.getSnapshot(), state: undefined,
+        statusFailure: { reason: 'denied', operation: 'status', outcomeUnknown: false } })
+      return
+    }
     const revision = record.revision
     const controller = record.query = new AbortController()
-    this.track((async () => {
+    void this.track((async () => {
       try {
         const result = await this.api.status(workspaceId, controller.signal)
-        if (controller.signal.aborted || record.revision !== revision) return
+        if (controller.signal.aborted || record.revision !== revision || !this.allowed(workspaceId, 'status')) return
         const view = record.store.getSnapshot()
         record.store.set({ ...view, state: result.ok ? result.value.state : view.state,
-          failure: result.ok ? (view.failure?.operation === 'status' ? undefined : view.failure) : failure(result.error, 'status') })
+          statusFailure: result.ok ? undefined : failure(result.error, 'status') })
       } catch (error) {
-        if (!controller.signal.aborted) record.store.set({ ...record.store.getSnapshot(), failure: failure(error, 'status') })
+        if (!controller.signal.aborted) record.store.set({ ...record.store.getSnapshot(), statusFailure: failure(error, 'status') })
       } finally {
         if (!controller.signal.aborted && record.revision === revision) {
           record.query = undefined
@@ -143,15 +154,17 @@ export class SandboxModel {
   }
 
   /**
-   * Submit one user action and retain its result until settlement.
+   * Submit one authorized user action and retain its result until settlement.
    * @param workspaceId - Workspace selected by the user.
    * @param operation - Explicit user gesture; mutations are never retried automatically.
    * @returns Failure for localized feedback, or undefined after confirmation.
    */
   async change(workspaceId: WorkspaceId, operation: 'open' | 'close'): Promise<SandboxFailure | undefined> {
+    if (this.disposed) return { reason: 'disconnected', operation, outcomeUnknown: false }
+    if (!this.allowed(workspaceId, operation)) return { reason: 'denied', operation, outcomeUnknown: false }
     const record = this.record(workspaceId)
     if (record.mutation) return { reason: 'busy', operation, outcomeUnknown: false }
-    if (this.disposed || this.generations.getSnapshot() === undefined) return { reason: 'disconnected', operation, outcomeUnknown: false }
+    if (this.generations.getSnapshot() === undefined) return { reason: 'disconnected', operation, outcomeUnknown: false }
     this.stop(record)
     const controller = record.mutation = new AbortController()
     record.store.set({ ...record.store.getSnapshot(), pending: operation, failure: undefined })
@@ -159,7 +172,10 @@ export class SandboxModel {
       let problem: SandboxFailure | undefined
       try {
         const result = await this.api[operation](workspaceId, controller.signal)
-        if (controller.signal.aborted) return { reason: 'disconnected', operation, outcomeUnknown: true } as const
+        if (controller.signal.aborted || !this.allowed(workspaceId, operation)) {
+          problem = { reason: 'disconnected', operation, outcomeUnknown: true }
+          return problem
+        }
         if (result.ok) record.store.set({ ...record.store.getSnapshot(), state: result.value.state })
         else problem = failure(result.error, operation)
       } catch (error) {
@@ -194,7 +210,8 @@ export class SandboxModel {
     if (!record) {
       record = { holders: 0, revision: 0, timer: undefined, query: undefined, mutation: undefined,
         store: createSnapshotStore<SandboxView>({ workspaceId: id,
-          state: undefined, pending: undefined, failure: undefined, connected: this.generations.getSnapshot() !== undefined }) }
+          state: undefined, pending: undefined, failure: undefined, statusFailure: undefined,
+          connected: this.generations.getSnapshot() !== undefined }) }
       this.records.set(id, record)
     }
     return record
