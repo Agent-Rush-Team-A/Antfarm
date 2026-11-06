@@ -8,6 +8,7 @@
     "rewriteRelativeImportExtensions": false
   },
   "include": [
+    "apps/web/tests/workspace-upload.e2e.ts",
     "apps/web/tests/multiuser.e2e.ts",
     "apps/web/tests/sidebar-drawer.e2e.ts",
     "apps/web/tests/creation-recommendations.e2e.ts",

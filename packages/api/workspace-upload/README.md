@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Uploads browser files into the root of an authorized registered workspace. The optional Linux Host service checks resource access, bounds streamed bytes, and preserves existing files.
+Uploads browser files into the root of an authorized registered workspace. The optional Linux Host service checks resource access, bounds streamed bytes, and preserves existing files. The workspace UI supplies the browser action when this capability is mounted.
 
 ## Table of Contents
 
@@ -22,7 +22,7 @@ Uploads browser files into the root of an authorized registered workspace. The o
 <a id="use-this-package"></a>
 ## Use this package
 
-Load the [opt-in upload overlay](../../../apps/cli/config/examples/workspace-upload.patch.yml) through a Web profile. It requires Connection, Remote Access, Typert, Workspace Controller and Workspace Registry. It is absent from default profiles.
+Load the [upload guide and opt-in overlay](../../../docs/user/workspace-upload.md) through a Web profile. It requires Connection, Remote Access, Typert, Workspace Controller and Workspace Registry. It is absent from default profiles.
 
 | Config | Default | Meaning |
 |---|---|---|
@@ -41,7 +41,7 @@ The published file inherits the workspace directory's group and uses mode `0660`
 
 Success returns `{ ok: true, value: { name, bytes } }` after cleanup. Failures return `{ ok: false, error: { reason, stored } }`; internal paths and causes stay in Host logs. `stored` becomes true only after publication. A cleanup failure can therefore report a committed file. The browser reports lost confirmations as unknown and asks the user to check the workspace before retrying. Existing entries are never replaced.
 
-The Client provider exposes `ctx.workspaceUploads.uploadFile(workspaceId, file, signal)` only while this plugin is mounted. Limit reads and byte transfers share caller and provider cancellation. Cancellation during the limit read returns `cancelled` before sending bytes, including when the Gateway returns a failure result. The document-relative HTTP route preserves deployment URL prefixes. Browser withdrawal aborts and drains its transfers.
+The Client provider exposes `ctx.workspaceUploads.uploadFile(workspaceId, file, signal)` only while this plugin is mounted. The workspace UI consumes this service rather than treating a generated Remote stub as capability availability. Limit reads and byte transfers share caller and provider cancellation. Cancellation during the limit read returns `cancelled` before sending bytes, including when the Gateway returns a failure result. The document-relative HTTP route preserves deployment URL prefixes. Browser withdrawal aborts and drains its transfers.
 
 Every operation owns its descriptors and staging directory. Disconnect, peer revocation and service unload cancel blocked body reads; unload drains admitted operations before releasing the provider. A cancellation racing successful publication does not remove the committed file.
 
@@ -73,4 +73,4 @@ Independent. Upload does not change the model request prefix.
 <a id="dev-note"></a>
 ### Dev Note
 
-[Storage tests](tests/storage.spec.ts) exercise binary preservation, collisions, path replacement, limits and cleanup. [Host route tests](tests/upload.host.spec.ts) exercise real Connection admission, streamed bodies and owned-workspace authorization.
+[Storage tests](tests/storage.spec.ts) exercise binary preservation, collisions, path replacement, limits and cleanup. [Web acceptance](../../../apps/web/tests/workspace-upload.e2e.ts) exercises the real Loader, two-account isolation, visible outcomes and cancellation. Set `DSH_WORKSPACE_UPLOAD_DOCKER_IMAGE` to a local immutable image ID containing Bash to additionally verify container reads and shared-group writes.

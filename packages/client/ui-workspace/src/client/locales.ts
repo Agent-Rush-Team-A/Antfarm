@@ -6,6 +6,18 @@
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
+  'upload.action': '上传到工作区',
+  'upload.pending': '正在上传到工作区',
+  'upload.success': '“{name}”已上传到工作区',
+  'upload.exists': '同名文件已存在，请重命名后上传',
+  'upload.tooLarge': '文件过大，请选择较小的文件',
+  'upload.invalidName': '文件名无效，请重命名后上传',
+  'upload.denied': '无法上传到此工作区，请刷新并检查权限',
+  'upload.cancelled': '上传已取消，请重新选择文件',
+  'upload.failed': '上传失败，请重试',
+  'upload.unknown': '无法确认上传结果，请检查工作区后再试',
+  'upload.storedWarning': '文件已上传，但清理失败，请联系管理员',
+
   'defaultWorkspace.failed': '无法创建默认工作区，请通过“选择工作区”选择文件夹',
   'draft.workspaceRequired': '请先选择工作区',
   'draft.initializationFailed': '暂时无法填入草稿，请稍后重试',
@@ -132,6 +144,18 @@ export type WorkspaceKey = keyof typeof zh
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
+  'upload.action': 'Upload to workspace',
+  'upload.pending': 'Uploading to workspace',
+  'upload.success': 'Uploaded “{name}” to workspace',
+  'upload.exists': 'A file with this name already exists. Rename it before uploading.',
+  'upload.tooLarge': 'File is too large. Choose a smaller file.',
+  'upload.invalidName': 'Invalid filename. Rename the file before uploading.',
+  'upload.denied': 'Cannot upload to this workspace. Refresh and check your access.',
+  'upload.cancelled': 'Upload cancelled. Choose the file again.',
+  'upload.failed': 'Upload failed. Try again.',
+  'upload.unknown': 'Upload result could not be confirmed. Check the workspace before retrying.',
+  'upload.storedWarning': 'File uploaded, but cleanup failed. Contact your administrator.',
+
   'defaultWorkspace.failed': 'Unable to create default workspace. Use Choose workspace to select a folder.',
   'draft.workspaceRequired': 'Choose a workspace first.',
   'draft.initializationFailed': 'Could not fill the draft. Please try again shortly.',
@@ -255,6 +279,18 @@ export const en = {
 
 /** Japanese copy, checked against the English keys. */
 export const ja = {
+  'upload.action': 'ワークスペースにアップロード',
+  'upload.pending': 'ワークスペースにアップロード中',
+  'upload.success': '「{name}」をワークスペースにアップロードしました',
+  'upload.exists': '同名のファイルがあります。名前を変更してアップロードしてください。',
+  'upload.tooLarge': 'ファイルが大きすぎます。小さいファイルを選択してください。',
+  'upload.invalidName': 'ファイル名が無効です。名前を変更してアップロードしてください。',
+  'upload.denied': 'このワークスペースにアップロードできません。更新して権限を確認してください。',
+  'upload.cancelled': 'アップロードを中止しました。ファイルを再選択してください。',
+  'upload.failed': 'アップロードに失敗しました。再試行してください。',
+  'upload.unknown': 'アップロード結果を確認できません。再試行前にワークスペースを確認してください。',
+  'upload.storedWarning': 'ファイルはアップロードされましたが、後処理に失敗しました。管理者に連絡してください。',
+
   'defaultWorkspace.failed': 'デフォルトのワークスペースを作成できません。ワークスペースを選択してフォルダーを選んでください。',
   'draft.workspaceRequired': '先にワークスペースを選択してください。',
   'draft.initializationFailed': '下書きを埋め込めませんでした。しばらくしてからもう一度お試しください。',
@@ -378,6 +414,18 @@ export const ja = {
 
 /** Spanish dictionary, checked against the English keys. */
 export const es = {
+  'upload.action': 'Subir al espacio de trabajo',
+  'upload.pending': 'Subiendo al espacio de trabajo',
+  'upload.success': '«{name}» subido al espacio de trabajo',
+  'upload.exists': 'Ya existe un archivo con este nombre. Cámbialo antes de subirlo.',
+  'upload.tooLarge': 'El archivo es demasiado grande. Elige uno más pequeño.',
+  'upload.invalidName': 'Nombre de archivo no válido. Cámbialo antes de subirlo.',
+  'upload.denied': 'No se puede subir a este espacio. Actualiza y comprueba tus permisos.',
+  'upload.cancelled': 'Subida cancelada. Vuelve a elegir el archivo.',
+  'upload.failed': 'Error al subir. Inténtalo de nuevo.',
+  'upload.unknown': 'No se pudo confirmar la subida. Comprueba el espacio antes de reintentar.',
+  'upload.storedWarning': 'Archivo subido, pero falló la limpieza. Contacta con tu administrador.',
+
   'defaultWorkspace.failed': 'No se puede crear el espacio de trabajo predeterminado. Utilice Elegir espacio de trabajo para seleccionar una carpeta.',
   'draft.workspaceRequired': 'Elija un espacio de trabajo primero.',
   'draft.initializationFailed': 'No se pudo completar el borrador. Inténtelo de nuevo en breve.',
@@ -501,6 +549,18 @@ export const es = {
 
 /** French dictionary, checked against the English keys. */
 export const fr = {
+  'upload.action': 'Importer dans l’espace de travail',
+  'upload.pending': 'Importation en cours',
+  'upload.success': '« {name} » importé dans l’espace de travail',
+  'upload.exists': 'Un fichier porte déjà ce nom. Renommez-le avant de l’importer.',
+  'upload.tooLarge': 'Le fichier est trop volumineux. Choisissez un fichier plus petit.',
+  'upload.invalidName': 'Nom de fichier invalide. Renommez-le avant de l’importer.',
+  'upload.denied': 'Importation impossible. Actualisez et vérifiez vos droits d’accès.',
+  'upload.cancelled': 'Importation annulée. Sélectionnez à nouveau le fichier.',
+  'upload.failed': 'Échec de l’importation. Réessayez.',
+  'upload.unknown': 'Résultat non confirmé. Vérifiez l’espace de travail avant de réessayer.',
+  'upload.storedWarning': 'Fichier importé, mais le nettoyage a échoué. Contactez votre administrateur.',
+
   'defaultWorkspace.failed': 'Impossible de créer un espace de travail par défaut. Utilisez Choisir un espace de travail pour sélectionner un dossier.',
   'draft.workspaceRequired': "Choisissez d'abord un espace de travail.",
   'draft.initializationFailed': 'Impossible de remplir le projet. Veuillez réessayer sous peu.',
@@ -624,6 +684,18 @@ export const fr = {
 
 /** German dictionary, checked against the English keys. */
 export const de = {
+  'upload.action': 'In Arbeitsbereich hochladen',
+  'upload.pending': 'Wird in Arbeitsbereich hochgeladen',
+  'upload.success': '„{name}“ in Arbeitsbereich hochgeladen',
+  'upload.exists': 'Eine Datei mit diesem Namen existiert bereits. Benennen Sie sie vor dem Hochladen um.',
+  'upload.tooLarge': 'Die Datei ist zu groß. Wählen Sie eine kleinere Datei.',
+  'upload.invalidName': 'Ungültiger Dateiname. Benennen Sie die Datei vor dem Hochladen um.',
+  'upload.denied': 'Hochladen nicht möglich. Aktualisieren Sie die Seite und prüfen Sie Ihre Zugriffsrechte.',
+  'upload.cancelled': 'Hochladen abgebrochen. Wählen Sie die Datei erneut.',
+  'upload.failed': 'Hochladen fehlgeschlagen. Versuchen Sie es erneut.',
+  'upload.unknown': 'Ergebnis nicht bestätigt. Prüfen Sie den Arbeitsbereich vor einem erneuten Versuch.',
+  'upload.storedWarning': 'Datei hochgeladen, aber Bereinigung fehlgeschlagen. Wenden Sie sich an Ihren Administrator.',
+
   'defaultWorkspace.failed': 'Der Standardarbeitsbereich kann nicht erstellt werden. Verwenden Sie „Arbeitsbereich auswählen“, um einen Ordner auszuwählen.',
   'draft.workspaceRequired': 'Wählen Sie zunächst einen Arbeitsbereich.',
   'draft.initializationFailed': 'Der Entwurf konnte nicht ausgefüllt werden. Bitte versuchen Sie es in Kürze noch einmal.',
@@ -747,6 +819,18 @@ export const de = {
 
 /** Russian dictionary, checked against the English keys. */
 export const ru = {
+  'upload.action': 'Загрузить в рабочую область',
+  'upload.pending': 'Загрузка в рабочую область',
+  'upload.success': '«{name}» загружен в рабочую область',
+  'upload.exists': 'Файл с таким именем уже существует. Переименуйте его перед загрузкой.',
+  'upload.tooLarge': 'Файл слишком большой. Выберите файл поменьше.',
+  'upload.invalidName': 'Недопустимое имя файла. Переименуйте его перед загрузкой.',
+  'upload.denied': 'Загрузка недоступна. Обновите страницу и проверьте права доступа.',
+  'upload.cancelled': 'Загрузка отменена. Выберите файл заново.',
+  'upload.failed': 'Не удалось загрузить файл. Повторите попытку.',
+  'upload.unknown': 'Результат загрузки не подтверждён. Проверьте рабочую область перед повторной попыткой.',
+  'upload.storedWarning': 'Файл загружен, но очистка не удалась. Обратитесь к администратору.',
+
   'defaultWorkspace.failed': 'Невозможно создать рабочую область по умолчанию. Используйте «Выбрать рабочее пространство», чтобы выбрать папку.',
   'draft.workspaceRequired': 'Сначала выберите рабочее место.',
   'draft.initializationFailed': 'Не удалось заполнить черновик. Пожалуйста, повторите попытку в ближайшее время.',
@@ -870,6 +954,18 @@ export const ru = {
 
 /** Portuguese dictionary, checked against the English keys. */
 export const pt = {
+  'upload.action': 'Enviar para o espaço de trabalho',
+  'upload.pending': 'Enviando para o espaço de trabalho',
+  'upload.success': '“{name}” enviado para o espaço de trabalho',
+  'upload.exists': 'Já existe um arquivo com este nome. Renomeie-o antes de enviar.',
+  'upload.tooLarge': 'O arquivo é muito grande. Escolha um arquivo menor.',
+  'upload.invalidName': 'Nome de arquivo inválido. Renomeie-o antes de enviar.',
+  'upload.denied': 'Não é possível enviar. Atualize a página e verifique seu acesso.',
+  'upload.cancelled': 'Envio cancelado. Escolha o arquivo novamente.',
+  'upload.failed': 'Falha no envio. Tente novamente.',
+  'upload.unknown': 'Não foi possível confirmar o envio. Verifique o espaço antes de tentar novamente.',
+  'upload.storedWarning': 'Arquivo enviado, mas a limpeza falhou. Contate seu administrador.',
+
   'defaultWorkspace.failed': 'Não foi possível criar o espaço de trabalho padrão. Use Escolher espaço de trabalho para selecionar uma pasta.',
   'draft.workspaceRequired': 'Escolha um espaço de trabalho primeiro.',
   'draft.initializationFailed': 'Não foi possível preencher o rascunho. Por favor, tente novamente em breve.',

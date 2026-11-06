@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-将浏览器文件上传到已授权注册工作区的根目录。可选的 Linux Host 服务检查资源权限，限制流式接收的字节数，并保留现有文件。
+将浏览器文件上传到已授权注册工作区的根目录。可选的 Linux Host 服务检查资源权限，限制流式接收的字节数，并保留现有文件。挂载此能力后，工作区界面提供浏览器上传入口。
 
 ## 目录
 
@@ -22,7 +22,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-通过 Web profile 加载[可选上传覆盖配置](../../../apps/cli/config/examples/workspace-upload.patch.yml)。依赖 Connection、Remote Access、Typert、Workspace Controller 和 Workspace Registry。默认 profile 不启用此服务。
+通过 Web profile 加载[上传指南与可选覆盖配置](../../../docs/user/workspace-upload.zh.md)。依赖 Connection、Remote Access、Typert、Workspace Controller 和 Workspace Registry。默认 profile 不启用此服务。
 
 | 配置 | 默认值 | 含义 |
 |---|---|---|
@@ -41,7 +41,7 @@ kind: "package-reference"
 
 成功清理后返回 `{ ok: true, value: { name, bytes } }`。失败返回 `{ ok: false, error: { reason, stored } }`；内部路径和原因仅记录在 Host 日志中。`stored` 只在发布后变为 true，因此清理失败可能对应已提交文件。浏览器将丢失确认的结果报告为未知，并要求用户检查工作区后再重试。始终不替换现有目录项。
 
-Client 服务只在本插件挂载时提供 `ctx.workspaceUploads.uploadFile(workspaceId, file, signal)`。限制查询与文件传输共享调用者和 provider 的取消信号。限制查询期间取消会在发送字节前返回 `cancelled`，包括 Gateway 返回失败结果的情况。相对文档的 HTTP 路径保留部署 URL 前缀。浏览器端卸载会中止并等待上传结束。
+Client 服务只在本插件挂载时提供 `ctx.workspaceUploads.uploadFile(workspaceId, file, signal)`。工作区界面消费此服务，不将生成的 Remote 调用存根视为能力可用性。限制查询与文件传输共享调用者和 provider 的取消信号。限制查询期间取消会在发送字节前返回 `cancelled`，包括 Gateway 返回失败结果的情况。相对文档的 HTTP 路径保留部署 URL 前缀。浏览器端卸载会中止并等待上传结束。
 
 每项操作持有自己的描述符和暂存目录。连接断开、Peer 撤销和服务卸载均会取消阻塞的请求体读取；卸载会等待已接纳操作结束后释放服务。与成功发布竞态的取消不会删除已提交文件。
 
@@ -73,4 +73,4 @@ Client 服务只在本插件挂载时提供 `ctx.workspaceUploads.uploadFile(wor
 <a id="dev-note"></a>
 ### 开发备注
 
-[存储测试](tests/storage.spec.ts)验证二进制保真、重名、路径替换、大小限制和清理。[Host 路由测试](tests/upload.host.spec.ts)验证真实 Connection 接纳、流式请求体和工作区归属授权。
+[存储测试](tests/storage.spec.ts)验证二进制保真、重名、路径替换、大小限制和清理。[Web 验收](../../../apps/web/tests/workspace-upload.e2e.ts)验证真实 Loader、双账号隔离、可见结果和取消。将 `DSH_WORKSPACE_UPLOAD_DOCKER_IMAGE` 设置为包含 Bash 的本地不可变镜像 ID，还可验证容器读取和共享组写入。
