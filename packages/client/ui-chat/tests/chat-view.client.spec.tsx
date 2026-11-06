@@ -2615,7 +2615,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     const statuses = view.getAllByRole('status')
     expect(statuses.map(status => status.textContent)).toEqual([
-      '本轮运行失败API 密钥无效AUTH',
+      '本轮运行失败模型服务拒绝了 API 密钥，请更新凭证并确认推理权限AUTH',
       '本轮运行失败plugin exploded',
       '本轮运行失败当前请求的额度已用尽QUOTA',
       '本轮运行失败当前请求的额度已用尽ACCOUNT_QUOTA',
@@ -2626,6 +2626,19 @@ describe('ChatView', () => {
     expect(view.queryByRole('alert')).toBeNull()
     expect(view.queryByRole('dialog')).toBeNull()
     expect(view.queryByRole('button', { name: '去充值' })).toBeNull()
+  })
+
+  it('guides users to personal credentials and distinguishes provider outages from missing keys', () => {
+    const h = makeHarness({ nodes: [
+      user(1, 'try'), turnError(2, 'PERSONAL_CREDENTIAL_MISSING'), turnError(3, 'SERVER'),
+      turnError(4, 'TIMEOUT'), turnError(5, 'TRANSPORT'), turnError(6, 'RATE_LIMIT'),
+    ] })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getAllByRole('status').map(status => status.textContent)).toEqual([
+      '本轮运行失败此模型需要个人凭证，请打开“我的凭证”按服务要求保存密钥PERSONAL_CREDENTIAL_MISSING',
+      ...['SERVER', 'TIMEOUT', 'TRANSPORT'].map(code => '本轮运行失败模型服务暂时不可用，请稍后重试；持续失败请联系管理员' + code),
+      '本轮运行失败模型服务请求过于频繁，请稍后重试RATE_LIMIT',
+    ])
   })
 
   it('renders the max-tokens notice with localized guidance, distinct from turn errors', () => {

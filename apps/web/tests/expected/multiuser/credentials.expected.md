@@ -9,9 +9,9 @@
   - text: Credential value
   - textbox "Credential value":
     - /placeholder: Paste the API key or access token from your provider
-  - paragraph: Enter only the secret itself, without Bearer, a curl command or JSON.
+  - paragraph: Enter only the secret itself. For Vultr, the key must have Cloud Inference access; cloud management access alone is not enough.
   - button "Save credential"
-  - paragraph: Connected services use your own credentials. Select the matching provider and model in the conversation.
+  - paragraph: Save Vultr inference credentials as Vultr API Key. Models are visible before saving a key; calls use only your own credential.
   - paragraph: Storage checks do not validate access to an external service.
   - button "Refresh"
   - list:

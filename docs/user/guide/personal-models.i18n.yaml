@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for personal-models.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/user/guide/personal-models.md
+/:
+  en: ae53c6005391067f
+  zh: 8fd61893bb80f6d0
+/personal-model-credentials:
+  en: a6511efa81a4d979
+  zh: 7ed3440b1f61fe14
+/personal-model-credentials/choose-a-model:
+  en: fe90e0a9ca4d3db0
+  zh: 39de84ce3abcff90
+/personal-model-credentials/save-your-credential:
+  en: dc54afd23a631e02
+  zh: f2f92c6fd0ad44d5
+/personal-model-credentials/retain-deployment-data:
+  en: bb3058b0b4d94b64
+  zh: 857403f98811d663
+/personal-model-credentials/configure-the-directory:
+  en: a38e88561cd8046f
+  zh: 8d3b3e9b5fee3d87

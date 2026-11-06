@@ -47,7 +47,7 @@ pnpm exec tsx scripts/multiuser-provision.ts --storage-root "$DSH_HOME/storages"
 pnpm run start:web --no-open
 ```
 
-打开 `http://127.0.0.1:3080/` 并使用该账号登录。Antfarm 的 `start:web` 和 `dev:web` 命令默认加载账号登录、工作区上传、文件列表和下载，URL 无需启动 token。重启时沿用同一 `DSH_HOME`，不用再次初始化账号。工作区默认位于 `$DSH_HOME/workspaces`；部署时可将 `DSH_MULTIUSER_WORKSPACE_ROOT` 设为绝对路径。`start:web` 复用已构建的 Web 产物；`dev:web` 在启动前构建。底层 `pnpm dsh web` 命令保留上游 profile 的默认行为。
+打开 `http://127.0.0.1:3080/` 并使用该账号登录。Antfarm 的 `start:web` 和 `dev:web` 命令默认加载账号登录、工作区上传、文件列表、下载和[个人模型凭证](docs/user/guide/personal-models.zh.md)，URL 无需启动 token。重启时沿用同一 `DSH_HOME`，不用再次初始化账号。工作区默认位于 `$DSH_HOME/workspaces`；部署时可将 `DSH_MULTIUSER_WORKSPACE_ROOT` 设为绝对路径。`start:web` 复用已构建的 Web 产物；`dev:web` 在启动前构建。底层 `pnpm dsh web` 命令保留上游 profile 的默认行为。
 
 在沙箱 Bash 接入完成前，Agent 工具执行仍不可用。可选沙箱管理见[部署指南](docs/user/guide/workspace-sandboxes.zh.md)。
 

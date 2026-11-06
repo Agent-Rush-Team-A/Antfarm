@@ -348,8 +348,10 @@ export interface Config {
 ```ts config-catalog
 /** Host deployment values; no secret is stored in plugin configuration. */
 export interface Config {
-  /** Absolute path of a provisioned private 32-byte file outside workspace mounts. */
+  /** Absolute path of a private 32-byte master-key file outside workspace mounts. */
   encryptionKeyFile: string
+  /** Create a missing key only when the persisted credential table is empty. @default false */
+  initializeKeyIfEmpty?: boolean
   /** Maximum UTF-8 secret bytes. @default 16384 */
   maxCredentialBytes?: number
   /** Maximum credentials per account. @default 64 */
