@@ -356,7 +356,6 @@ export interface Config {
   maxCredentialBytes?: number
   /** Maximum credentials per account. @default 64 */
   maxRecordsPerUser?: number
-
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-user-credentials -->
@@ -5101,6 +5100,7 @@ export interface Config {
 | `@deepseek-ai/dsh-client-ui-skill` | — | [`packages/client/ui-skill/src/index.ts`](../packages/client/ui-skill/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-subagent` | — | [`packages/client/ui-subagent/src/index.ts`](../packages/client/ui-subagent/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-tool` | — | [`packages/client/ui-tool/src/index.ts`](../packages/client/ui-tool/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-user-credentials` | — | [`packages/client/ui-user-credentials/src/index.ts`](../packages/client/ui-user-credentials/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-user-questions` | — | [`packages/client/ui-user-questions/src/index.ts`](../packages/client/ui-user-questions/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-workflow-run` | — | [`packages/client/ui-workflow-run/src/index.ts`](../packages/client/ui-workflow-run/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-workspace` | — | [`packages/client/ui-workspace/src/index.ts`](../packages/client/ui-workspace/src/index.ts) |

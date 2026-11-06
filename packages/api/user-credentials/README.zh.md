@@ -44,9 +44,11 @@ pnpm exec tsx scripts/user-credentials-key.ts --path "$DSH_HOME/secrets/user-cre
         encryptionKeyFile: /absolute/private/secrets/user-credentials.key
         maxCredentialBytes: 16384
         maxRecordsPerUser: 64
+- id: ui-user-credentials
+  disabled: false
 ```
 
-`maxCredentialBytes` 限制凭证值的 UTF-8 字节数；`maxRecordsPerUser` 限制每个账号的记录数量，包括并发新增。记录名称非空且最多 128 个字符。主密钥路径必须在工作区挂载目录外，包括父目录包含符号链接的情况。存储也必须路由到工作区挂载目录之外的 Host 私有目录。
+`maxCredentialBytes` 限制凭证值的 UTF-8 字节数；`maxRecordsPerUser` 限制每个账号的记录数量，包括并发新增。记录名称非空且最多 128 个字符。主密钥路径必须在工作区挂载目录外，包括父目录包含符号链接的情况。存储也必须路由到工作区挂载目录之外的 Host 私有目录。多用户测试 overlay 从 `DSH_USER_CREDENTIALS_KEY_FILE` 读取密钥路径。
 
 <a id="api-behavior"></a>
 ## API 行为
@@ -69,6 +71,7 @@ AES-256-GCM 将用户 ID、记录 ID 与加密版本绑定到每条记录，每�
 ## 延伸阅读
 
 - [多用户账号](../multiuser/README.zh.md) — 认证与登录撤销。
+- [个人凭证界面](../../client/ui-user-credentials/README.zh.md) — 浏览器入口与表单行为。
 
 <a id="model-experience"></a>
 ## 模型体验

@@ -468,7 +468,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'api-user-credentials',
     title: 'Personal credential management',
     mode: 'service',
-    consumers: ['api-gateway'],
+    consumers: ['client-ui-user-credentials'],
     note: 'Authenticated accounts manage only their own encrypted Host records; workspace permissions do not grant credential access.',
   },
   {

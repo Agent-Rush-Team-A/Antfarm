@@ -44,9 +44,11 @@ Mount the plugin after account authentication is configured:
         encryptionKeyFile: /absolute/private/secrets/user-credentials.key
         maxCredentialBytes: 16384
         maxRecordsPerUser: 64
+- id: ui-user-credentials
+  disabled: false
 ```
 
-`maxCredentialBytes` bounds UTF-8 secret bytes; `maxRecordsPerUser` bounds account records, including concurrent creates. The record name is nonempty and at most 128 characters. The key path must be outside workspace mounts, including when parent directories contain symbolic links. Storage must also be routed to a private Host directory outside workspace mounts.
+`maxCredentialBytes` bounds UTF-8 secret bytes; `maxRecordsPerUser` bounds account records, including concurrent creates. The record name is nonempty and at most 128 characters. The key path must be outside workspace mounts, including when parent directories contain symbolic links. Storage must also be routed to a private Host directory outside workspace mounts. The multiuser test overlay reads the key path from `DSH_USER_CREDENTIALS_KEY_FILE`.
 
 <a id="api-behavior"></a>
 ## API behavior
@@ -69,6 +71,7 @@ AES-256-GCM authenticates each record's user ID, record ID and encryption versio
 ## Further Exploration
 
 - [Multiuser accounts](../multiuser/README.md) — authentication and login revocation.
+- [Personal credential UI](../../client/ui-user-credentials/README.md) — browser entry and form behavior.
 
 <a id="model-experience"></a>
 ## Model Experience
