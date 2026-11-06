@@ -339,6 +339,25 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-terminal-controller -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-api-workspace-artifacts -->
+<a id="deepseek-aidsh-api-workspace-artifacts"></a>
+
+## `@deepseek-ai/dsh-api-workspace-artifacts`
+
+- `inject`: `connection` · `remoteAccess` · `typert` · `workspaceRegistry` · `workspaceController`
+- `source`: [`packages/api/workspace-artifacts/src/index.ts:17`](../packages/api/workspace-artifacts/src/index.ts)
+
+```ts config-catalog
+/** Limits for bounded listing metadata and complete browser downloads. */
+export interface Config {
+  /** Maximum directory entries inspected per request, including omitted entries. */
+  readonly maxEntries?: number
+  /** Inclusive byte cap for one download; larger files are refused. */
+  readonly maxDownloadBytes?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-workspace-artifacts -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-api-workspace-controller -->
 <a id="deepseek-aidsh-api-workspace-controller"></a>
 

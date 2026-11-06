@@ -125,6 +125,7 @@ flowchart TD
     pkg_api_session_controller["api-session-controller"]
     pkg_api_settings_controller["api-settings-controller"]
     pkg_api_terminal_controller["api-terminal-controller"]
+    pkg_api_workspace_artifacts["api-workspace-artifacts"]
     pkg_api_workspace_controller["api-workspace-controller"]
     pkg_api_workspace_files["api-workspace-files"]
     pkg_api_workspace_upload["api-workspace-upload"]
@@ -685,6 +686,10 @@ flowchart TD
   pkg_goal --> pkg_session
   pkg_goal --> pkg_session_projection
   pkg_goal --> pkg_typert_protocol
+  pkg_api_workspace_artifacts --> pkg_api_remote_access
+  pkg_api_workspace_artifacts --> pkg_api_workspace_controller
+  pkg_api_workspace_artifacts --> pkg_client_connection
+  pkg_api_workspace_artifacts --> pkg_workspace
   pkg_api_workspace_upload --> pkg_api_remote_access
   pkg_api_workspace_upload --> pkg_api_workspace_controller
   pkg_api_workspace_upload --> pkg_client_connection
@@ -1759,6 +1764,7 @@ flowchart TD
 | [`llm-retry`](../packages/llm/llm-retry) | `llm` | [`agent`](../packages/core/agent), [`brand`](../packages/util/brand), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`timeout`](../packages/util/timeout) |
 | [`agent-default-model`](../packages/core/agent-default-model) | `core` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm) |
 | [`goal`](../packages/goal/goal) | `goal` | [`agent`](../packages/core/agent), [`brand`](../packages/util/brand), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`typert-protocol`](../packages/typert/protocol) |
+| [`api-workspace-artifacts`](../packages/api/workspace-artifacts) | `api` | [`api-remote-access`](../packages/api/remote-access), [`api-workspace-controller`](../packages/api/workspace-controller), [`client-connection`](../packages/client/connection), [`workspace`](../packages/workspace/workspace) |
 | [`api-workspace-upload`](../packages/api/workspace-upload) | `api` | [`api-remote-access`](../packages/api/remote-access), [`api-workspace-controller`](../packages/api/workspace-controller), [`client-connection`](../packages/client/connection), [`workspace`](../packages/workspace/workspace) |
 | [`file-reference`](../packages/context/file-reference) | `context` | [`agent`](../packages/core/agent) |
 | [`harness-dev-context`](../packages/context/harness-dev-context) | `context` | [`agent`](../packages/core/agent), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`system-prompt`](../packages/core/system-prompt) |

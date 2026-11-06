@@ -1,0 +1,7 @@
+# Linux opt-in: the registered workspace parent must be trusted.
+- insert:
+    - id: workspace-artifacts
+      name: '@deepseek-ai/dsh-api-workspace-artifacts'
+      config:
+        maxEntries: 2000
+        maxDownloadBytes: 33554432
