@@ -57,6 +57,7 @@
   ],
   "references": [
     { "path": "./packages/api/workspace-upload/tsconfig.client.json" },
+    { "path": "./packages/api/workspace-artifacts/tsconfig.client.json" },
     { "path": "./packages/experimental/client-ui-action-cards" },
     { "path": "./packages/experimental/client-ui-creation-recommendations" },
     { "path": "./packages/experimental/client-ui-plugin-recommendations" },

@@ -32,6 +32,7 @@ import jobRemote from '@deepseek-ai/dsh-api-job-controller/remote'
 import workspaceRemote from '@deepseek-ai/dsh-api-workspace-controller/remote'
 import terminalRemote from '@deepseek-ai/dsh-api-terminal-controller/remote'
 import workspaceUploadRemote from '@deepseek-ai/dsh-api-workspace-upload/remote'
+import workspaceArtifactsRemote from '@deepseek-ai/dsh-api-workspace-artifacts/remote'
 import workspaceFilesRemote from '@deepseek-ai/dsh-api-workspace-files/remote'
 import webRemote from '@deepseek-ai/dsh-web/remote'
 import type { ClientRemote } from '@deepseek-ai/dsh-api-gateway/client'
@@ -82,6 +83,8 @@ export type {} from '@deepseek-ai/dsh-api-workspace-controller/remote'
 export type * from '@deepseek-ai/dsh-api-workspace-controller/types'
 export type {} from '@deepseek-ai/dsh-api-workspace-upload/remote'
 export type * from '@deepseek-ai/dsh-api-workspace-upload/types'
+export type {} from '@deepseek-ai/dsh-api-workspace-artifacts/remote'
+export type * from '@deepseek-ai/dsh-api-workspace-artifacts/types'
 export type {} from '@deepseek-ai/dsh-api-workspace-files/remote'
 export type * from '@deepseek-ai/dsh-api-workspace-files/types'
 export type {} from '@deepseek-ai/dsh-api-terminal-controller/remote'
@@ -207,7 +210,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       messageFeedbackRemote, sessionFeedbackRemote,
       fileUploadsRemote, sessionReferencesRemote,
       permissionPresetsRemote, subagentsRemote, sessionRemote, jobRemote, workspaceRemote, workspaceFilesRemote,
-      workspaceUploadRemote, terminalRemote,
+      workspaceUploadRemote, workspaceArtifactsRemote, terminalRemote,
       officeToPdfRemote, userQuestionsRemote, webRemote,
     ]) {
       disposers.push(await ctx.remote.$mount(contribution))
