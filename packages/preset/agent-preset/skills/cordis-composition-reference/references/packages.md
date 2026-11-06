@@ -365,7 +365,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 
 | Package | Config | Description |
 |---|---|---|
-| `@deepseek-ai/dsh-harness-sandbox` | yes | Authorized workspace sandbox lifecycle management over a local Runner |
+| `@deepseek-ai/dsh-harness-sandbox` | yes | Authorized workspace execution over local Runner or independently bound SSH instances |
 | `@deepseek-ai/dsh-sandbox-local` | yes | Local process-sandbox backends for the DeepSeek Harness sandbox seam: bwrap, the npm-distributed landlock-run launcher, macOS Seatbelt, or the Windows ACL restricted-token runner — functionally probed, fail-closed |
 | `@deepseek-ai/dsh-sandbox-policy` | yes | Per-call sandbox policy resolver and current model context: deployment fallbacks plus each session's mode and workspace root, shared by every enforcing capability family |
 | `@deepseek-ai/dsh-sandbox-runner` | yes | Docker workspace sandbox lifecycle for an independent Runner deployment |
@@ -449,7 +449,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 
 | Package | Config | Description |
 |---|---|---|
-| `@deepseek-ai/dsh-fs-ssh` | no | Filesystem provider over the shared POSIX SSH helper |
+| `@deepseek-ai/dsh-fs-ssh` | yes | Filesystem provider over the shared POSIX SSH helper |
 | `@deepseek-ai/dsh-sandbox-ssh` | no | Remote POSIX sandbox argv provider over the shared SSH helper |
 | `@deepseek-ai/dsh-ssh` | yes | Shared OpenSSH connection and versioned POSIX remote helper |
 | `@deepseek-ai/dsh-subprocess-ssh` | no | Subprocess and terminal provider over the shared POSIX SSH helper |

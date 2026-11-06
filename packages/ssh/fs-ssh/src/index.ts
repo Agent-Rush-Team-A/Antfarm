@@ -1,6 +1,8 @@
 /** Filesystem provider preserving remote identities and helper-owned atomic mutations. */
 import { posix } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { Context } from '@deepseek-ai/cordis'
+import schema from '@deepseek-ai/schemastery'
 import { FS_ERROR_CODES, FileSystem, FsError } from '@deepseek-ai/dsh-fs'
 import type { FsDeleteOutcome, FsMoveOutcome, FsDirEntry, FsEditOutcome, FsEditRequest, FsErrorCode, FsInfo, FsPathInfo, FsTarget, FsVersion, FsWriteIntent, FsWriteOutcome } from '@deepseek-ai/dsh-fs'
 import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
@@ -12,9 +14,20 @@ import { z } from 'zod'
 
 const errorCodes = new Set<string>(FS_ERROR_CODES)
 
+/** Text-read restrictions for the SSH filesystem provider. */
+export interface Config {
+  /** Pin text reads inside the negotiated workspace; requires Linux procfs. Defaults to false. */
+  confineTextReads?: boolean
+}
+
 /** Remote filesystem paired with the SSH subprocess and sandbox providers. */
 export class SshFileSystem extends FileSystem {
   static inject = ['ssh', 'sandboxPolicy']
+  static Config: schema<Config> = schema.object({
+    confineTextReads: schema.boolean().default(false),
+  })
+
+  constructor(ctx: Context, private readonly config: Config) { super(ctx) }
 
   override get sandboxMode(): SandboxMode { return this.ctx.sandboxPolicy.defaultMode }
 
@@ -42,11 +55,11 @@ export class SshFileSystem extends FileSystem {
   }
 
   override readText(target: FsTarget, signal?: AbortSignal): Promise<string> {
-    return this.call('fs.readText', { target }, z.string(), signal)
+    return this.call('fs.readText', this.textRequest(target), z.string(), signal)
   }
 
   override async streamText(target: FsTarget, signal?: AbortSignal): Promise<AsyncIterable<string>> {
-    const id = await this.call('fs.stream', { target }, textStreamIdSchema, signal)
+    const id = await this.call('fs.stream', this.textRequest(target), textStreamIdSchema, signal)
     const call = this.call.bind(this)
     return (async function* () {
       let ended = false
@@ -111,6 +124,10 @@ export class SshFileSystem extends FileSystem {
   ): Promise<FsMoveOutcome> {
     const policy = sandboxPolicy ?? this.ctx.sandboxPolicy.resolve()
     return await this.call('fs.move', { source, destination, options, policy }, moveResultSchema, signal) as FsMoveOutcome
+  }
+
+  private textRequest(target: FsTarget): { target: FsTarget; workspaceOnly?: true } {
+    return this.config.confineTextReads ? { target, workspaceOnly: true } : { target }
   }
 
   private async call<T>(method: string, params: unknown, schema: z.ZodType<T>, signal?: AbortSignal): Promise<T> {

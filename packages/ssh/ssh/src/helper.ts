@@ -16,6 +16,7 @@ import type { SandboxExecutionPolicy, SandboxPolicy } from '@deepseek-ai/dsh-san
 import { z } from 'zod'
 import { SshRpcPeer, RemoteOperationError, SSH_MAX_PROCESS_HANDLES, SSH_MAX_TEXT_STREAMS, SSH_PROTOCOL_VERSION } from './protocol.ts'
 import { RemoteProcesses } from './helper-processes.ts'
+import { streamWorkspaceText } from './helper-workspace-text.ts'
 import { hunkSchema, moveOptionsSchema, versionGuardSchema, editSchema, environmentSchema, intentSchema, policySchema, processIdSchema, remotePath, targetSchema, textStreamIdSchema } from './schemas.ts'
 import type { SshTextStreamId } from './schemas.ts'
 
@@ -166,13 +167,19 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
       return method === 'fs.resolve' ? ctx.fs.resolve(input.path, { cwd: input.cwd ?? workspace, signal }) : await ctx.fs.lstat(input.path, { cwd: input.cwd ?? workspace }, signal) ?? null
     }
     if (method === 'fs.stat' || method === 'fs.list' || method === 'fs.readText' || method === 'fs.stream') {
-      const target = asTarget(z.object({ target: targetSchema }).strict().parse(raw).target)
+      const input = (method === 'fs.readText' || method === 'fs.stream'
+        ? z.object({ target: targetSchema, workspaceOnly: z.boolean().optional() }).strict()
+        : z.object({ target: targetSchema }).strict()).parse(raw)
+      const target = asTarget(input.target)
+      const textStream = (cancellation: AbortSignal) => 'workspaceOnly' in input && input.workspaceOnly === true
+        ? streamWorkspaceText(ctx.fs, workspace, target, cancellation)
+        : ctx.fs.streamText(target, cancellation)
       if (method === 'fs.stat') return await ctx.fs.stat(target, signal) ?? null
       if (method === 'fs.list') return ctx.fs.listDir(target, signal)
       if (method === 'fs.stream') {
         if (iterators.size >= SSH_MAX_TEXT_STREAMS) throw new Error('SSH text stream limit reached')
         const controller = new AbortController()
-        const stream = await ctx.fs.streamText(target, AbortSignal.any([signal, controller.signal]))
+        const stream = await textStream(AbortSignal.any([signal, controller.signal]))
         const iterator = stream[Symbol.asyncIterator]()
         try {
           signal.throwIfAborted()
@@ -186,7 +193,7 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
           throw error
         }
       }
-      const stream = await ctx.fs.streamText(target, signal)
+      const stream = await textStream(signal)
       let text = ''
       let bytes = 0
       for await (const chunk of stream) {

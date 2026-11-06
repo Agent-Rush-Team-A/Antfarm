@@ -25,7 +25,9 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this provider with [`dsh-ssh`](../ssh/README.md) and `sandboxPolicy`; use its paired SSH subprocess and sandbox providers for execution. This provider has no configuration fields: connection identity and the default workspace belong to `dsh-ssh`, while file-effect mode belongs to `sandboxPolicy`.
+Mount this provider with [`dsh-ssh`](../ssh/README.md) and `sandboxPolicy`; use its paired SSH subprocess and sandbox providers for execution. Connection identity and the default workspace belong to `dsh-ssh`, while file-effect mode belongs to `sandboxPolicy`.
+
+`confineTextReads` defaults to false. When enabled, `readText()` and `streamText()` acquire regular files below the handshake's canonical workspace using pinned directory and file descriptors. Symlink replacements cannot redirect an accepted read outside that root. This option requires a current Linux helper with accessible `/proc/self/fd`; unsupported helpers or hosts fail without an unrestricted retry. It does not confine metadata, directory listings or byte reads; consumers must authorize those operations separately.
 
 `resolve()` canonicalizes paths on the remote host. `processPath()` and `fileUrl()` name files in that same remote namespace; they do not grant host-side access. File URLs encode literal percent signs, backslashes and newlines without changing the filename. `processPathFromHostPath()` returns `undefined`, so consumers requiring an installed executable or bootstrap must supply a remote artifact explicitly.
 

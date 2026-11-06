@@ -105,6 +105,24 @@ async function run(ctx: Context, signal: AbortSignal) {
   const files = await backend.files(a.workspace.id, opened.containerId, signal)
   const shared = await files.fs.resolve('shared.txt', { cwd: files.root, signal: files.signal })
   check(await files.fs.readText(shared, files.signal) === 'from-bash\n', 'Remote file capability reads Bash output')
+  const race = `read-race-${randomUUID()}`
+  const raceExec = (command: string) => executionRequest.parse({ executionId: randomUUID(), expectedContainerId: opened.containerId, command, workdir: '.', timeoutMs: 5000 })
+  check((await backend.execute(a.workspace.id, raceExec(`mkdir ${race} ../${race}-outside; printf inside > ${race}/file; printf outside > ../${race}-outside/file`))).exitCode === 0, 'Owned remote read-race fixtures are prepared')
+  try {
+    const target = await files.fs.resolve(`${race}/file`, { cwd: files.root, signal: files.signal })
+    // Replace the directory after resolve so the remote read, rather than path resolution, must refuse it.
+    check((await backend.execute(a.workspace.id, raceExec(`mv ${race} ${race}-pinned; ln -s ../${race}-outside ${race}`))).exitCode === 0, 'Remote directory replacement happens after resolution')
+    const denied = (error: unknown) => z.object({ code: z.literal('FS_SANDBOX_DENIED') }).safeParse(error).success
+    check(await files.fs.readText(target, files.signal).then(() => false, denied), 'Loader-selected SSH text read refuses a directory replaced after resolve')
+    const consume = async () => {
+      const chunks: string[] = []
+      for await (const chunk of await files.fs.streamText(target, files.signal)) chunks.push(chunk)
+      return chunks.join('')
+    }
+    check(await consume().then(() => false, denied), 'Loader-selected SSH text stream refuses a directory replaced after resolve')
+  } finally {
+    check((await backend.execute(a.workspace.id, raceExec(`if test -L ${race}; then rm -f ${race}; else rm -rf ${race}; fi; rm -rf ${race}-pinned ../${race}-outside`))).exitCode === 0, 'Owned remote read-race fixtures are removed')
+  }
   await files.fs.writeText(shared, 'from-files\n', undefined, files.signal)
   const exec = (command: string, timeoutMs = 5000) => executionRequest.parse({ executionId: randomUUID(), expectedContainerId: opened.containerId, command, workdir: '.', timeoutMs })
   check((await backend.execute(a.workspace.id, exec('cat shared.txt'))).stdout.text === 'from-files\n', 'Bash reads file-capability writes from the same directory')
