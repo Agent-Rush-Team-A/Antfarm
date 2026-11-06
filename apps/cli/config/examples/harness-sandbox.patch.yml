@@ -1,6 +1,8 @@
 # Optional Runner Bash over the default Antfarm Web composition.
 # Runner runs independently with Docker access.
 # Both services use the same canonical Linux workspace root and filesystem UID.
+- id: ui-workspace-sandbox
+  disabled: false
 - insert:
     - id: workspace-sandbox
       name: '@deepseek-ai/dsh-harness-sandbox'

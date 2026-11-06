@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Workspace sandbox resources observe the current workspace without opening a container. Mutations use the authenticated Harness management API and never select host paths or containers.
+View sandbox status and start or stop a workspace's sandbox from the browser. Enable this package with Harness management and an independently deployed Runner. An open panel polls status every two seconds by default; only explicit user actions open or close a sandbox.
 
 ## Table of Contents
 
@@ -25,11 +25,15 @@ Workspace sandbox resources observe the current workspace without opening a cont
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this plugin alongside the [Harness sandbox overlay](../../../apps/cli/config/examples/harness-sandbox.patch.yml). The independent Runner and canonical workspace root are deployment prerequisites. `pollIntervalMs` is the delay after a completed status query; its default is 2000 milliseconds.
+The Web bundle includes this plugin disabled by default. Enable it through the [Harness sandbox overlay](../../../apps/cli/config/examples/harness-sandbox.patch.yml). The independent Runner and canonical workspace root are deployment prerequisites. `pollIntervalMs` is the delay after a completed status query; its default is 2000 milliseconds.
 
 The workspace menu and conversation input action open the same panel for the selected workspace. It displays current state, prevents repeated pending operations, refreshes explicitly and asks for confirmation before closing. Dismissing the panel leaves the sandbox running.
 
 Capacity exhaustion asks the user to close a sandbox or retry later. Unknown operation results disable new mutations; a failed status query marks the last observed state as stale. Workspace access revocation removes the panel and menu entry, and connection replacement or plugin disposal suppresses delayed feedback.
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `pollIntervalMs` | `2000` | Delay after a completed status query, in milliseconds. |
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
@@ -46,7 +50,9 @@ A failed query retains the last observed state with a failure. Connection replac
 <a id="further-exploration"></a>
 ## Further Exploration
 
+- [Web sandbox guide](../../../docs/user/guide/workspace-sandboxes.md) — deployment and browser controls.
 - [Harness sandbox management](../../sandbox/harness-sandbox/README.md) — authenticated lifecycle operations.
+- [Runner deployment](../../../team-docs/SANDBOX-RUNNER.md) — the independent Docker service.
 
 <a id="model-experience"></a>
 ## Model Experience
@@ -69,6 +75,6 @@ None; querying sandbox status does not change model requests.
 <details>
 <summary>Maintainer context</summary>
 
-None.
+Browser acceptance is owned by `apps/web/tests/workspace-sandbox.e2e.ts`. Set `DSH_SANDBOX_UI_DOCKER_SOCKET` and `DSH_SANDBOX_UI_DOCKER_IMAGE` (a preloaded digest-pinned Runner image) to run the same scenario against a real independent Runner. Without these deployment inputs, the scenario uses a controlled Runner to hold progress states and inject status failures.
 
 </details>

@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-工作区沙箱资源查询当前工作区，不会开启容器。修改操作使用经过鉴权的 Harness 管理接口，不能选择宿主路径或容器。
+在浏览器查看工作区沙箱状态，并开启或关闭沙箱。此插件需配合 Harness 管理接口和独立部署的 Runner 使用。面板打开时默认每两秒轮询状态；只有用户主动操作才会开启或关闭沙箱。
 
 ## 目录
 
@@ -25,11 +25,15 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-配合 [Harness 沙箱 overlay](../../../apps/cli/config/examples/harness-sandbox.patch.yml) 启用此插件。部署前需准备独立 Runner 与规范工作区根目录。`pollIntervalMs` 是状态查询完成后的轮询间隔，默认为 2000 毫秒。
+Web bundle 默认禁用此插件。通过 [Harness 沙箱 overlay](../../../apps/cli/config/examples/harness-sandbox.patch.yml) 启用。部署前需准备独立 Runner 与规范工作区根目录。`pollIntervalMs` 是状态查询完成后的轮询间隔，默认为 2000 毫秒。
 
 工作区菜单和对话输入栏操作打开同一面板，面向选定的工作区。面板显示当前状态，防止重复提交未完成操作，支持手动刷新，并在关闭沙箱前要求确认。关闭面板不会关闭沙箱。
 
 容量满时提示用户关闭一个沙箱或稍后重试。操作结果未知时禁用新的修改操作；状态查询失败时标明最近观察到的状态已过期。工作区权限撤销时移除面板和菜单入口，连接更换或插件卸载后不再展示延迟返回的操作提示。
+
+| 字段 | 默认值 | 含义 |
+| --- | --- | --- |
+| `pollIntervalMs` | `2000` | 状态查询完成后的间隔，单位为毫秒。 |
 
 <a id="understand-the-implementation"></a>
 ## 实现说明
@@ -46,7 +50,9 @@ kind: "package-reference"
 <a id="further-exploration"></a>
 ## 延伸阅读
 
+- [网页沙箱指南](../../../docs/user/guide/workspace-sandboxes.zh.md) — 部署与浏览器操作。
 - [Harness 沙箱管理](../../sandbox/harness-sandbox/README.zh.md) — 经过鉴权的生命周期操作。
+- [Runner 部署](../../../team-docs/SANDBOX-RUNNER.md) — 独立 Docker 服务。
 
 <a id="model-experience"></a>
 ## 模型体验
@@ -69,6 +75,6 @@ kind: "package-reference"
 <details>
 <summary>维护者背景</summary>
 
-无。
+浏览器验收由 `apps/web/tests/workspace-sandbox.e2e.ts` 负责。设置 `DSH_SANDBOX_UI_DOCKER_SOCKET` 和 `DSH_SANDBOX_UI_DOCKER_IMAGE`（预加载且固定摘要的 Runner 镜像），可让同一场景连接真实独立 Runner。未提供这些部署参数时，场景使用可控 Runner 暂停进度并注入状态查询失败。
 
 </details>

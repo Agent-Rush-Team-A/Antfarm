@@ -25,6 +25,7 @@
   "exclude": [
     "tests/workspace-upload.e2e.ts",
     "tests/workspace-artifacts.e2e.ts",
+    "tests/workspace-sandbox.e2e.ts",
     "tests/multiuser.e2e.ts",
     "tests/sidebar-drawer.e2e.ts",
     "tests/creation-recommendations.e2e.ts",

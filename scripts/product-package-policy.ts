@@ -20,6 +20,7 @@ export const PRODUCT_PACKAGE_POLICY: Readonly<Record<string, ProductPackagePolic
   'packages/api/multiuser': { category: 'optional', reason: 'Account login and workspace ownership are enabled by an explicit multiuser composition overlay.' },
   'packages/api/user-credentials': { category: 'optional', reason: 'Personal credentials require multiuser authentication and a provisioned Host master key.' },
   'packages/client/ui-user-credentials': { category: 'optional', reason: 'The credential form is enabled together with its Host API by the multiuser overlay.' },
+  'packages/client/ui-workspace-sandbox': { category: 'optional', reason: 'Sandbox controls require the explicit Harness overlay and an independently deployed Runner.' },
   'packages/browser-use/browser-use': { category: 'optional', reason: 'Service definition used by explicitly selected browser providers.' },
   'packages/computer-use/computer-use': { category: 'optional', reason: 'Service definition used by explicitly selected computer providers.' },
   'packages/lsp/lsp': { category: 'optional', reason: 'Service definition for deployment-configured language servers.' },

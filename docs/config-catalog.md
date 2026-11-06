@@ -822,6 +822,22 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-client-ui-trajectory -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-client-ui-workspace-sandbox -->
+<a id="deepseek-aidsh-client-ui-workspace-sandbox"></a>
+
+## `@deepseek-ai/dsh-client-ui-workspace-sandbox`
+
+- `source`: [`packages/client/ui-workspace-sandbox/src/config.ts:5`](../packages/client/ui-workspace-sandbox/src/config.ts)
+
+```ts config-catalog
+/** Deployment-configurable status polling interval. */
+export interface Config {
+  /** Delay in milliseconds after a completed query while the panel is open. */
+  pollIntervalMs: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-client-ui-workspace-sandbox -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-compaction-basic -->
 <a id="deepseek-aidsh-compaction-basic"></a>
 
