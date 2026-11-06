@@ -1,0 +1,74 @@
+# Optional bare-VM SSH Bash over the default Antfarm Web composition.
+# Prepare fixed per-Workspace SSH bindings before launch; VM allocation is external.
+- insert:
+    - id: workspace-ssh-backend
+      name: '@deepseek-ai/dsh-harness-sandbox/ssh'
+      config:
+        bindings: !!js JSON.parse(process.env.DSH_WORKSPACE_SSH_BINDINGS_JSON)
+    - id: workspace-sandbox
+      name: '@deepseek-ai/dsh-harness-sandbox'
+      inject: [sandboxRunnerClient]
+      config:
+        backend: provided
+        workspaceRoot: !!js process.env.DSH_MULTIUSER_WORKSPACE_ROOT
+    - id: sandbox-conversation
+      name: '@deepseek-ai/dsh-harness-sandbox/conversation'
+
+- id: working-directory
+  config:
+    modelDirectory: /workspace
+- id: harness-dev-context
+  disabled: true
+- id: deliverable-file-references
+  disabled: true
+- id: sandbox-policy
+  config:
+    mode: workspace-write
+    modelContext: false
+- id: spill-policy
+  disabled: true
+
+# Native execution and one isolated preset; no host-tool or indirect dispatch entry.
+- id: tool-executor-native
+  disabled: false
+- id: tool-executor-ptc
+  disabled: true
+- id: preset-standard
+  config:
+    id: standard
+    order: 1
+    plugins:
+      - id: persona
+        name: '@deepseek-ai/dsh-persona'
+        config:
+          prefix: You are a coding agent powered by the {{model}} model.
+      - id: sandbox-bash
+        name: '@deepseek-ai/dsh-harness-sandbox/bash'
+- id: preset-ptc
+  disabled: true
+- id: preset-cordis
+  disabled: true
+- id: preset-minimal
+  disabled: true
+- id: tool-working-directory
+  disabled: true
+- id: tool-agent-team
+  disabled: true
+- id: mcp-manager
+  disabled: true
+- id: mcp-resources
+  disabled: true
+- id: tool-bash
+  disabled: true
+- id: tool-pwsh
+  disabled: true
+- id: tool-fs
+  disabled: true
+- id: tool-fs-search
+  disabled: true
+- id: tool-jobs
+  disabled: true
+- id: terminal-controller
+  disabled: true
+- id: open-in-app
+  disabled: true

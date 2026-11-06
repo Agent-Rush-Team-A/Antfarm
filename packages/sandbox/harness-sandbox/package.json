@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-harness-sandbox",
-  "description": "Authorized workspace execution through a deployment-selected backend",
+  "description": "Authorized workspace execution over local Runner or independently bound SSH instances",
   "version": "0.2.2-alpha.3",
   "publishConfig": {
     "access": "public"
@@ -44,6 +44,10 @@
     "./backend": {
       "types": "./lib/types/backend.d.ts",
       "default": "./lib/backend.js"
+    },
+    "./ssh": {
+      "types": "./lib/types/ssh.d.ts",
+      "default": "./lib/ssh.js"
     }
   },
   "files": [
@@ -58,7 +62,8 @@
     "lib/typert.host.d.ts",
     "lib/typert.remote-client.js",
     "lib/typert.remote-client.d.ts",
-    "lib/backend.js"
+    "lib/backend.js",
+    "lib/ssh.js"
   ],
   "license": "MIT",
   "peerDependencies": {
@@ -78,7 +83,13 @@
     "@deepseek-ai/dsh-tool-bash": "workspace:*",
     "@deepseek-ai/dsh-brand": "workspace:*",
     "@deepseek-ai/schemastery": "workspace:~",
-    "zod": "4.4.3"
+    "zod": "4.4.3",
+    "@deepseek-ai/dsh-ssh": "workspace:*",
+    "@deepseek-ai/dsh-fs-ssh": "workspace:*",
+    "@deepseek-ai/dsh-subprocess": "workspace:*",
+    "@deepseek-ai/dsh-subprocess-ssh": "workspace:*",
+    "@deepseek-ai/dsh-sandbox-policy": "workspace:*",
+    "@deepseek-ai/dsh-session-projection": "workspace:*"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-tools": "workspace:*",
@@ -105,6 +116,7 @@
     "@deepseek-ai/dsh-api-gateway": "workspace:*",
     "@deepseek-ai/dsh-host-webserver": "workspace:*",
     "@deepseek-ai/dsh-client-connection": "workspace:*",
-    "@deepseek-ai/dsh-fs": "workspace:*"
+    "@deepseek-ai/dsh-fs": "workspace:*",
+    "@deepseek-ai/dsh-agent-loop": "workspace:*"
   }
 }

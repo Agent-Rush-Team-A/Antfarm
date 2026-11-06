@@ -3,7 +3,7 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/sandbox/harness-sandbox/README.md
 /:
-  en: 2352de39f62ff4e6
+  en: c25b05444f80c557
   zh: 15da94265b27c163
 /deepseek-ai-dsh-harness-sandbox:
   en: ca75baea6594ad66
@@ -15,11 +15,11 @@
   en: d152484eb41ac6b4
   zh: 3d8cf8aeb7cfa49b
 /deepseek-ai-dsh-harness-sandbox/use-this-package:
-  en: 1fc9baae1870f849
-  zh: 455ed1f59fd997d9
-/deepseek-ai-dsh-harness-sandbox/use-this-package/execution-backend:
-  en: 1fe2a9324cb1f1de
-  zh: 46834581b1860b08
+  en: ae76919f0b0914f8
+  zh: a38b3b8e0905612c
+/deepseek-ai-dsh-harness-sandbox/use-this-package/workspace-ssh-backend:
+  en: 4f781c50886483aa
+  zh: 6b9c667344d6f93b
 /deepseek-ai-dsh-harness-sandbox/use-this-package/conversation-admission:
   en: dff71544cd83015a
   zh: 82712922d032644b
@@ -27,8 +27,8 @@
   en: 9b4a6e06d14cdfc6
   zh: e693b1c4e3e4a676
 /deepseek-ai-dsh-harness-sandbox/use-this-package/integration-handoff:
-  en: 1d5979d11adc7dc4
-  zh: 9b8635905a4daf56
+  en: 0b2be0e20a0a6e05
+  zh: 3dc1120ba9877cd2
 /deepseek-ai-dsh-harness-sandbox/use-this-package/execution-transport:
   en: c8311ba34c2d3574
   zh: 7e613fb24ca3f147

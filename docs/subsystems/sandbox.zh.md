@@ -175,7 +175,7 @@ interface ConfinedArgv {
 <a id="workspace-sandbox-management"></a>
 ## 工作区沙箱管理
 
-`ctx.workspaceSandbox` 在调用配置的执行后端前核验原生多用户归属及登记的持久目录。`SandboxRequest` 仅含 `workspaceId`；`SandboxValue` 返回该编号和 `closed`、`starting`、`running`、`closing`、`cleanup_required` 中一种状态。浏览器结果不含容器编号或路径。`SandboxFailureReason` 在 `sandbox/failed` 下区分容量、清理、冲突，以及不可用或结果不明的操作；查询失败不会猜测状态。显式用户后端方法保留完整的 `RunnerRunningSandbox.containerId`，供执行接入。见[包参考](../../packages/sandbox/harness-sandbox/README.zh.md)和[可选 Web 部署](../user/guide/workspace-sandboxes.zh.md)。
+`ctx.workspaceSandbox` 在调用配置的本地 Runner 或 SSH 后端前核验原生多用户归属及登记的持久目录。`SandboxRequest` 仅含 `workspaceId`；`SandboxValue` 返回该编号和 `closed`、`starting`、`running`、`closing`、`cleanup_required` 中一种状态。浏览器结果不含容器编号或路径。`SandboxFailureReason` 在 `sandbox/failed` 下区分容量、清理、冲突，以及不可用或结果不明的操作；查询失败不会猜测状态。显式用户后端方法保留完整的 `RunnerRunningSandbox.containerId`，供执行接入。见[包参考](../../packages/sandbox/harness-sandbox/README.zh.md)和[可选 Web 部署](../user/guide/workspace-sandboxes.zh.md)。
 
 内部通信服务 `ctx.sandboxRunnerClient` 接收绑定原始 `RunnerExecutionIdentity` 的完整 `RunnerExecutionRequest`；`RunnerExecutionResult` 保留已确认的退出码与输出尾部。`RunnerCancellationResult` 仅表示接纳，`RunnerExecutionError.execution` 则保留 `RunnerExecutionFailure` 的清理状态和已知 Bash 状态。本机中止与通信期限到达都不确认远端清理。通信层不增加用户授权或模型工具；请求上限、独立预算与安全重取由[包参考](../../packages/sandbox/harness-sandbox/README.zh.md#execution-transport)说明。
 
@@ -183,7 +183,7 @@ interface ConfinedArgv {
 
 ## Workspace 远程文件
 
-执行后端可以提供绑定原始执行代次的文件接口。可信调用方保留用户与 turn 许可，复核 `assertCurrent()`，并传入捕获的取消信号。本地 Runner 拒绝此能力，不会改用 Harness 文件。
+[Workspace SSH 后端](../../packages/sandbox/harness-sandbox/README.zh.md#workspace-ssh) 提供与 Bash 相同运行时代次的文件系统。受信任调用方须实施原用户与轮次权限及路径约束，在每次操作前复核 `assertCurrent()` 并传递访问取消信号。连接关闭或中断会撤销该能力；本机 Runner 不会代为访问宿主文件。
 
 ```ts type-equiv
 /** Files and directory of one original execution generation, never the Harness project directory. */

@@ -175,7 +175,7 @@ Provider selection, probing, caching, and backend-specific enforcement reports b
 <a id="workspace-sandbox-management"></a>
 ## Workspace sandbox management
 
-`ctx.workspaceSandbox` authorizes native multiuser ownership and validates the registered persistent directory before calling the configured execution backend. `SandboxRequest` contains only `workspaceId`; `SandboxValue` returns that id and one of `closed`, `starting`, `running`, `closing`, or `cleanup_required`. Browser results omit container identities and paths. `SandboxFailureReason` distinguishes capacity, cleanup, conflicts and unavailable or unconfirmed operations under `sandbox/failed`; a failed query never guesses a state. Explicit-user backend methods retain the full `RunnerRunningSandbox.containerId` for execution integration. See the [package reference](../../packages/sandbox/harness-sandbox/README.md) and [optional Web deployment](../user/guide/workspace-sandboxes.md).
+`ctx.workspaceSandbox` authorizes native multiuser ownership and validates the registered persistent directory before calling the configured local Runner or SSH backend. `SandboxRequest` contains only `workspaceId`; `SandboxValue` returns that id and one of `closed`, `starting`, `running`, `closing`, or `cleanup_required`. Browser results omit container identities and paths. `SandboxFailureReason` distinguishes capacity, cleanup, conflicts and unavailable or unconfirmed operations under `sandbox/failed`; a failed query never guesses a state. Explicit-user backend methods retain the full `RunnerRunningSandbox.containerId` for execution integration. See the [package reference](../../packages/sandbox/harness-sandbox/README.md) and [optional Web deployment](../user/guide/workspace-sandboxes.md).
 
 The internal `ctx.sandboxRunnerClient` transport accepts a complete `RunnerExecutionRequest` bound to its original `RunnerExecutionIdentity`; `RunnerExecutionResult` retains the confirmed exit and output tails. `RunnerCancellationResult` is only an acknowledgement, while `RunnerExecutionError.execution` preserves `RunnerExecutionFailure` cleanup and known Bash status. Local aborts and transport deadlines never confirm remote cleanup. The transport adds neither user authorization nor model tools; the [package reference](../../packages/sandbox/harness-sandbox/README.md#execution-transport) owns request limits, independent budgets and safe result retrieval.
 
@@ -183,7 +183,7 @@ The internal `ctx.sandboxRunnerClient` transport accepts a complete `RunnerExecu
 
 ## Workspace remote files
 
-Execution backends can supply files bound to the original execution generation. Trusted consumers retain user and turn permission, recheck `assertCurrent()`, and pass the captured signal. The local Runner refuses this capability rather than substituting Harness files.
+The [Workspace SSH backend](../../packages/sandbox/harness-sandbox/README.md#workspace-ssh) supplies files from the same execution generation as Bash. Trusted consumers enforce their original user and turn permissions and path policy, recheck `assertCurrent()` and pass the captured signal for every operation. Closing or losing that connection invalidates the capability; the local Runner does not substitute host files.
 
 ```ts type-equiv
 /** Files and directory of one original execution generation, never the Harness project directory. */
