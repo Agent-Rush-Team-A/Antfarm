@@ -43,6 +43,8 @@ kind: "package-reference"
 
 ### 工具
 
+拥有操作生命周期的消费方可调用 `apply(ctx, resolvedConfig, registerTextTool)`，通过自己的执行包装注册 `read`、`write`、`edit`，同时保留原生参数、提示及渲染。消费方负责注册效果和取消；回调不拦截 `read_image` 或 `apply_patch`。[Workspace 文本入口](../../sandbox/harness-sandbox/README.zh.md#workspace-text-tools)通过此扩展点使用私有、绑定代次的文件系统。普通 Loader 调用省略回调，保持原生注册行为。
+
 | 工具 | 参数 | 行为 |
 |---|---|---|
 | `read` | `file_path`、`offset?`、`limit?` | 带行号的 UTF-8 内容与分页 footer；`offset` 从 1 开始，`limit` 默认为配置的 `readLimit`，上限也为该值 |

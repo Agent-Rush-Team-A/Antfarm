@@ -1693,14 +1693,20 @@ export interface Config {
 ## `@deepseek-ai/dsh-harness-sandbox`
 
 - `inject`: `multiuser` · `remoteAccess` · `typert` · `workspaceRegistry`
-- `source`: [`packages/sandbox/harness-sandbox/src/index.ts:32`](../packages/sandbox/harness-sandbox/src/index.ts)
+- `source`: [`packages/sandbox/harness-sandbox/src/index.ts:35`](../packages/sandbox/harness-sandbox/src/index.ts)
 
 ```ts config-catalog
-/** Deployment-trusted Runner settings and the existing multiuser workspace root. */
-export interface Config extends RunnerConfig {
-  /** Absolute root shared with multiuser allocation and the independent Runner. */
+/** Registered project root and deployment-selected local Runner or separately loaded backend. */
+export type Config = {
+  /** Absolute registered project root shared with multiuser allocation. Remote execution paths are supplied by the backend. */
   workspaceRoot: string
-}
+} & ((RunnerConfig & {
+  /** Construct and own the independent local Runner transport. */
+  backend?: 'runner'
+}) | {
+  /** Use a separately loaded sandboxRunnerClient; the Loader row injects that service before management. */
+  backend: 'provided'
+})
 
 /** Settings supplied by the Harness deployment, never by workspace callers. */
 export interface RunnerConfig {
@@ -4249,7 +4255,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-tool-fs`
 
 - `inject`: `tools` · `fs` · `systemPrompt` · `workingDirectory`
-- `source`: [`packages/fs/tool-fs/src/index.ts:27`](../packages/fs/tool-fs/src/index.ts)
+- `source`: [`packages/fs/tool-fs/src/index.ts:28`](../packages/fs/tool-fs/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config (all optional — `Config` supplies the defaults). */

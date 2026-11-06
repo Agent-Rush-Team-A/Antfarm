@@ -2,14 +2,14 @@
 import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
-import { defineTool, type ToolDefinition, type ToolExecution, type ToolExecutionToken, type ToolRunContext } from '@deepseek-ai/dsh-tools'
+import { defineTool, type ToolDefinition, type ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { renderCommandOutput, parseExitStatus } from '@deepseek-ai/dsh-tool-bash/render'
 import { z } from 'zod'
 import type {} from './conversation.ts'
 import { runBashExecution } from './bash-execution.ts'
+import { SandboxToolAuthority } from './tool-authority.ts'
 import type { RunnerExecutionId, RunnerExecutionRequest } from './execution.ts'
 
 /** Optional isolated tool plugin name. */
@@ -44,46 +44,19 @@ export function runnerWorkdir(path?: string): string {
  * @param ctx - Tool registry, native conversation permission and owned Runner services.
  */
 export function apply(ctx: Context): void {
-  const lifecycle = new AbortController()
-  const turns = new WeakMap<AbortSignal, { agent: Agent; turn: number }>()
-  const admissions = new Map<ToolExecutionToken, { agent: Agent; turn: number }>()
-  const pending = new Set<Promise<unknown>>()
-  ctx.on('agent/pre-step', ({ agent, turn, signal }, next) => {
-    turns.set(signal, { agent, turn })
-    return next()
-  }, { global: true })
-  ctx.on('tools/pre-execute', (exec, next) => {
-    const original = turns.get(exec.signal)
-    if (original !== undefined && original.agent === exec.agent && exec.toolSet !== undefined
-      && ctx.tools.get(exec.name, exec.agent, exec.toolSet) === definition) {
-      admissions.set(exec.token, { ...original })
-    }
-    return next()
-  }, { global: true })
-  ctx.on('tools/result', (exec) => { admissions.delete(exec.token) }, { global: true })
-
-  const permission = (exec: Readonly<ToolExecution>) => {
-    const original = admissions.get(exec.token)
-    if (lifecycle.signal.aborted || original === undefined || original.agent !== exec.agent || exec.toolSet === undefined
-      || exec.parent !== undefined || ctx.tools.get(exec.name, exec.agent, exec.toolSet) !== definition) {
-      throw new HarnessError('This command has no valid execution permission.', 'SANDBOX_PERMISSION_REVOKED')
-    }
-    try { return ctx.sandboxConversation.forTurn(original.agent, original.turn) } catch (cause) {
-      throw new HarnessError('This command no longer has valid execution permission.', 'SANDBOX_PERMISSION_REVOKED', { cause })
-    }
-  }
+  const authority = new SandboxToolAuthority(ctx)
 
   const execute = async (input: unknown, exec: ToolRunContext) => {
     const parsed = argsSchema.safeParse(input)
     if (!parsed.success) throw new HarnessError('Invalid Bash arguments. Use command, description, workdir and an integer timeoutMs from 1 to 60000.', 'SANDBOX_INVALID_ARGS')
-    const check = () => permission(exec)
+    const check = () => authority.permission(exec, definition)
     const permit = check()
     const workdir = runnerWorkdir(parsed.data.workdir)
     const request: RunnerExecutionRequest = {
       executionId: brandString<RunnerExecutionId>(randomUUID()), expectedContainerId: permit.containerId,
       command: parsed.data.command, workdir, timeoutMs: parsed.data.timeoutMs,
     }
-    const signal = AbortSignal.any([exec.signal, permit.signal, lifecycle.signal])
+    const signal = AbortSignal.any([exec.signal, permit.signal, authority.signal])
     const finish = ctx.workspaceSandboxState.beginExecution(permit.workspaceId)
     try {
       const result = await runBashExecution(ctx, permit, request, signal, () => { check() })
@@ -116,11 +89,7 @@ export function apply(ctx: Context): void {
       },
       presentationMeta: (_args, value) => ({ exitCode: value.exitCode }),
     },
-    execute: (args, exec) => {
-      const operation = execute(args, exec)
-      pending.add(operation)
-      return operation.finally(() => { pending.delete(operation) })
-    },
+    execute: (args, exec) => authority.track(execute(args, exec)),
     presentCall: args => ({ card: 'terminal', title: args.command, description: args.description,
       cwd: posix.join('/workspace', runnerWorkdir(args.workdir)) }),
     presentResult: (_args, result) => {
@@ -131,13 +100,5 @@ export function apply(ctx: Context): void {
       return { card: 'terminal', output: status.data.exitCode === 0 ? text : parseExitStatus(text).body, exitCode: status.data.exitCode }
     },
   })
-  ctx.tools.register(definition)
-  ctx.multiuser.registerIsolatedTool(definition, (exec) => {
-    try { permission(exec); return true } catch (_revoked: unknown) { return false }
-  })
-  ctx.effect(() => async () => {
-    lifecycle.abort()
-    await Promise.allSettled(pending)
-    admissions.clear()
-  })
+  authority.register(definition)
 }

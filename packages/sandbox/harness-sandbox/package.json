@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-harness-sandbox",
-  "description": "Authorized workspace sandbox lifecycle management over a local Runner",
+  "description": "Authorized workspace execution over local Runner or independently bound SSH instances",
   "version": "0.2.2-alpha.3",
   "publishConfig": {
     "access": "public"
@@ -40,6 +40,18 @@
     "./remote": {
       "types": "./lib/typert.remote-client.d.ts",
       "default": "./lib/typert.remote-client.js"
+    },
+    "./backend": {
+      "types": "./lib/types/backend.d.ts",
+      "default": "./lib/backend.js"
+    },
+    "./ssh": {
+      "types": "./lib/types/ssh.d.ts",
+      "default": "./lib/ssh.js"
+    },
+    "./files": {
+      "types": "./lib/types/files.d.ts",
+      "default": "./lib/files.js"
     }
   },
   "files": [
@@ -53,7 +65,10 @@
     "lib/typert.host.js",
     "lib/typert.host.d.ts",
     "lib/typert.remote-client.js",
-    "lib/typert.remote-client.d.ts"
+    "lib/typert.remote-client.d.ts",
+    "lib/backend.js",
+    "lib/ssh.js",
+    "lib/files.js"
   ],
   "license": "MIT",
   "peerDependencies": {
@@ -66,13 +81,23 @@
     "@deepseek-ai/dsh-workspace": "workspace:*",
     "@deepseek-ai/dsh-api-multiuser": "workspace:*",
     "@deepseek-ai/dsh-api-remote-access": "workspace:*",
-    "@deepseek-ai/dsh-typert-protocol": "workspace:*"
+    "@deepseek-ai/dsh-typert-protocol": "workspace:*",
+    "@deepseek-ai/dsh-fs": "workspace:*",
+    "@deepseek-ai/dsh-working-directory": "workspace:*",
+    "@deepseek-ai/dsh-system-prompt": "workspace:*"
   },
   "dependencies": {
     "@deepseek-ai/dsh-tool-bash": "workspace:*",
     "@deepseek-ai/dsh-brand": "workspace:*",
     "@deepseek-ai/schemastery": "workspace:~",
-    "zod": "4.4.3"
+    "zod": "4.4.3",
+    "@deepseek-ai/dsh-ssh": "workspace:*",
+    "@deepseek-ai/dsh-fs-ssh": "workspace:*",
+    "@deepseek-ai/dsh-subprocess": "workspace:*",
+    "@deepseek-ai/dsh-subprocess-ssh": "workspace:*",
+    "@deepseek-ai/dsh-sandbox-policy": "workspace:*",
+    "@deepseek-ai/dsh-session-projection": "workspace:*",
+    "@deepseek-ai/dsh-tool-fs": "workspace:*"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-tools": "workspace:*",
@@ -98,6 +123,12 @@
     "@deepseek-ai/dsh-typert-registry": "workspace:*",
     "@deepseek-ai/dsh-api-gateway": "workspace:*",
     "@deepseek-ai/dsh-host-webserver": "workspace:*",
-    "@deepseek-ai/dsh-client-connection": "workspace:*"
+    "@deepseek-ai/dsh-client-connection": "workspace:*",
+    "@deepseek-ai/dsh-fs": "workspace:*",
+    "@deepseek-ai/dsh-agent-loop": "workspace:*",
+    "@deepseek-ai/dsh-fs-local": "workspace:*",
+    "@deepseek-ai/dsh-fs-observation-policy": "workspace:*",
+    "@deepseek-ai/dsh-working-directory": "workspace:*",
+    "@deepseek-ai/dsh-system-prompt": "workspace:*"
   }
 }

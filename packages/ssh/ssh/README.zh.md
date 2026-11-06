@@ -29,6 +29,7 @@ kind: "package-reference"
 
 辅助进程验证线协议中的额外可写根目录；其执行限制的提供方要求使用远端文件系统中的物理目录路径。只读模式不授予这些目录的写权限。
 
+<a id="deployment-prerequisites"></a>
 ### 部署前提
 
 两端均需运行 Linux 或 macOS。本地 `ssh` 命令必须支持连接复用与 Unix 套接字转发，服务器也必须允许该转发。启动前配置主机别名、凭据与已知主机记录：本服务启用 `BatchMode`、要求严格检查主机密钥、禁用认证代理转发，且不提供交互认证流程。
@@ -70,6 +71,8 @@ OpenSSH 主连接承载私有管理 RPC。每条程序流使用独立转发的 U
 终端启用 shell 活动观察时，根进程退出会保留 reservation 及其剩余工作。活动 RPC 继续访问 provider；明确终止时先等待进程范围完全停稳，再释放端点并记录完成结果。helper 连接卸载和租约到期仍保留原有的终止权限。
 
 连接会禁用 helper 的 SIGUSR1 调试器激活：脚本调用使用 `--disable-sigusr1`，可执行文件调用通过 `NODE_OPTIONS` 提供该标志。
+
+`signal` 在连接中断或释放时取消。`closeConfirmed()` 等待本地资源释放，并要求原 helper 确认受管理资源清理；连接中断后，即使普通 `dispose()` 能完成本地释放，它仍会拒绝。Workspace 生命周期管理方须据此决定是否可以接纳替代的运行时代次。
 
 </details>
 

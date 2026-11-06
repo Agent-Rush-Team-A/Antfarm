@@ -686,6 +686,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   RunnerRunningSandbox: 'sandbox.md',
   RunnerExecutionIdentity: 'sandbox.md',
   SandboxExecutionPermit: 'sandbox.md',
+  WorkspaceRuntimeFiles: 'sandbox.md',
   SandboxCloseTarget: 'sandbox.md',
   SandboxActivity: 'sandbox.md',
   RunnerExecutionRequest: 'sandbox.md',

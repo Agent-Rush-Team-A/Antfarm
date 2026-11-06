@@ -7,6 +7,7 @@
 
 import type {} from '@deepseek-ai/dsh-working-directory'
 import type { Context } from '@deepseek-ai/cordis'
+import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import { applyReadTool, READ_LIMIT, STREAM_MIN_SIZE } from './read.ts'
@@ -67,8 +68,13 @@ function assertPositiveInteger(name: string, value: number): void {
   }
 }
 
-/** Register the selected filesystem tools; `read_image` additionally requires a mounted attachment store. */
-export function apply(ctx: Context, config: Config): void {
+/**
+ * Register the selected filesystem tools; `read_image` additionally requires a mounted attachment store.
+ * @param ctx - Filesystem, tool registry and prompt owner.
+ * @param config - Configuration resolved through Config by the Loader or calling consumer.
+ * @param registerTextTool - Optional owner of read/write/edit registration, used to bind their execution to a Workspace.
+ */
+export function apply(ctx: Context, config: Config, registerTextTool?: (definition: ToolDefinition) => void): void {
   // schemastery (Config) has already filled every defaulted field.
   const resolved = config as ResolvedConfig
   assertPositiveInteger('readLimit', resolved.readLimit)
@@ -81,7 +87,7 @@ export function apply(ctx: Context, config: Config): void {
       maxLineLength: resolved.readMaxLineLength,
       maxBytes: resolved.readMaxBytes,
       streamMinSize: resolved.readStreamMinSize,
-    })
+    }, registerTextTool)
   }
   // read_image is composition-conditional: without a mounted attachment store
   // the deployment cannot durably commit image bytes, so the tool never
@@ -96,8 +102,8 @@ export function apply(ctx: Context, config: Config): void {
   // the mounted ctx.fs confines (ctx.fs.sandboxMode).
   if (resolved.write || resolved.edit || resolved.applyPatch) {
     const sandbox = new FsSandboxController(ctx)
-    if (resolved.write) applyWriteTool(ctx, sandbox)
-    if (resolved.edit) applyEditTool(ctx, sandbox)
+    if (resolved.write) applyWriteTool(ctx, sandbox, registerTextTool)
+    if (resolved.edit) applyEditTool(ctx, sandbox, registerTextTool)
     if (resolved.applyPatch) applyApplyPatchTool(ctx, sandbox)
   }
 }

@@ -1,24 +1,18 @@
 /** Harness-side Runner transport; user authorization belongs to the management caller. */
 
-import { Context, Service } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import { RunnerConfig } from './config.ts'
 import { RunnerClient, type RunnerRunningSandbox, type RunnerClosedSandbox, type RunnerSandboxStatus } from './runner-client.ts'
 import type { RunnerCancellationResult, RunnerExecutionIdentity, RunnerExecutionRequest, RunnerExecutionResult } from './execution.ts'
+import { SandboxExecutionBackend } from './backend.ts'
 
 export { RunnerConfig as Config } from './config.ts'
 export { RunnerRequestError, RunnerResponseError, RunnerExecutionError, type RunnerRunningSandbox, type RunnerClosedSandbox, type RunnerSandboxStatus, type SandboxContainerId } from './runner-client.ts'
 export type { RunnerCancellationResult, RunnerExecutionFailure, RunnerExecutionIdentity, RunnerExecutionRequest, RunnerExecutionResult, RunnerExecutionId } from './execution.ts'
 
-declare module '@deepseek-ai/cordis' {
-  interface Context {
-    /** Deployment-trusted local Runner transport; not a user authorization API. */
-    sandboxRunnerClient: SandboxRunnerClient
-  }
-}
-
 /** Lifecycle-managed internal communication with one independent Runner. */
-export default class SandboxRunnerClient extends Service {
+export default class SandboxRunnerClient extends SandboxExecutionBackend {
   static Config = RunnerConfig
   private readonly client: RunnerClient
 
@@ -27,7 +21,7 @@ export default class SandboxRunnerClient extends Service {
    * @param config - Trusted Runner socket and transport limits.
    */
   constructor(ctx: Context, config: RunnerConfig) {
-    super(ctx, 'sandboxRunnerClient')
+    super(ctx)
     this.client = new RunnerClient(RunnerConfig(config))
     ctx.effect(() => () => this.client.dispose())
   }

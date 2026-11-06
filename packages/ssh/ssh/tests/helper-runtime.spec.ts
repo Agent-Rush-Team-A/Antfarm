@@ -4,14 +4,55 @@ import { describe, expect, it, vi } from 'vitest'
 import { LocalSandboxProvider } from '@deepseek-ai/dsh-sandbox-local'
 import { SubprocessExecutableNotFoundError } from '@deepseek-ai/dsh-subprocess'
 import { LocalSubprocessRuntime } from '@deepseek-ai/dsh-subprocess-local'
+import { SandboxedFileSystem } from '@deepseek-ai/dsh-fs-sandbox'
+import { FsError } from '@deepseek-ai/dsh-fs'
 import { z } from 'zod'
 import { createHelperHarness as helper } from './fixtures/helper.ts'
+import { RemoteProcesses } from '../src/helper-processes.ts'
 import { hunkSchema, moveOptionsSchema, moveResultSchema, deleteResultSchema, targetSchema, writeResultSchema, editResultSchema, infoSchema, entriesSchema } from '../src/schemas.ts'
 
 
 const policy = (workspaceRoot: string) => ({ mode: 'workspace-write', workspaceRoot })
 
 describe.skipIf(process.platform === 'win32')('SSH helper runtime', () => {
+  it.each(['success', 'failure'] as const)('waits for an accepted file write to settle with %s before acknowledging close', async (outcome) => {
+    const test = await helper()
+    const accepted = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    const write = vi.spyOn(SandboxedFileSystem.prototype, 'writeText').mockImplementationOnce(async () => {
+      accepted.resolve(undefined)
+      // The provider deliberately ignores cancellation during its commit, as a real filesystem may do.
+      await release.promise
+      if (outcome === 'failure') throw new FsError('File commit failed', 'FS_IO_ERROR')
+      await writeFile(`${test.root}/committed`, 'committed')
+      return { operation: 'create', before: null, after: 'committed', version: 'committed' as import('@deepseek-ai/dsh-fs').FsVersion }
+    })
+    const terminate = vi.spyOn(RemoteProcesses.prototype, 'close')
+    try {
+      const target = await test.client.request('fs.resolve', { path: 'committed' }, targetSchema)
+      const result = test.client.request('fs.write', { target, content: 'committed', policy: policy(test.root) }, writeResultSchema)
+        .then(value => ({ value }), (error: unknown) => ({ error }))
+      await accepted.promise
+      let acknowledged = false
+      const close = test.client.request('close', {}, z.null()).then(() => { acknowledged = true })
+      await vi.waitFor(() => { expect(terminate).toHaveBeenCalled() })
+      await new Promise(resolve => setImmediate(resolve))
+      expect(acknowledged).toBe(false)
+      await expect(test.client.request('fs.resolve', { path: '.' }, targetSchema)).rejects.toThrow('not accepting')
+      release.resolve(undefined)
+      await close
+      if (outcome === 'success') {
+        expect(await result).toMatchObject({ value: { after: 'committed' } })
+        expect(await readFile(`${test.root}/committed`, 'utf8')).toBe('committed')
+      } else expect(await result).toMatchObject({ error: { code: 'FS_IO_ERROR' } })
+    } finally {
+      release.resolve(undefined)
+      write.mockRestore()
+      terminate.mockRestore()
+      await test.close()
+    }
+  })
+
   it('binds relative filesystem operations to the negotiated workspace without chdir', async () => {
     const before = process.cwd()
     const test = await helper(false)

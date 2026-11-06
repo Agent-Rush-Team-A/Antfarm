@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-核验已登录原生用户的工作区归属和持久目录记录后，开启、查询和关闭工作区沙箱。可信后端接入方还可提交命令并请求取消。独立 Runner 负责容器状态和容量。HTTP 请求有有限等待和结果校验；结果无法确认的修改不会自动重发或执行补偿操作。
+核验已登录原生用户的工作区归属和持久目录记录后，开启、查询和关闭工作区沙箱。可信后端接入方还可提交命令并请求取消。所选后端负责执行状态，本地 Runner 还负责容器容量。本地 HTTP 请求有有限等待和结果校验；结果无法确认的修改不会自动重发或执行补偿操作。
 
 ## 目录
 
@@ -58,6 +58,28 @@ kind: "package-reference"
 
 Runner 失败使用 `sandbox/failed`，详情为 `{ reason, outcomeUnknown }`。稳定原因区分 `sandbox_capacity`、`sandbox_not_ready`、`sandbox_closing`、`sandbox_cleanup_required`、`sandbox_workspace_conflict`、`sandbox_name_conflict`、`sandbox_outcome_unknown`、`invalid_workspace_directory`、`docker_unavailable`、`runner_unavailable` 和 `runner_outcome_unknown`。关闭失败时保留阻止标记，可重试关闭。PUT 或 DELETE 结果不明时，后续 DELETE 也不会解除 `closing`：现有协议无法证明响应丢失的旧修改已收束。查询和插件重载都不清除这种不确定性。消息不含 Runner 原始诊断、路径或堆栈。
 
+<a id="workspace-ssh"></a>
+### Workspace SSH 后端
+
+可选的 [SSH 配置](../../../apps/cli/config/examples/harness-ssh.patch.yml) 使用 `backend: provided`，并在管理服务之前加载 `@deepseek-ai/dsh-harness-sandbox/ssh`。`DSH_WORKSPACE_SSH_BINDINGS_JSON` 是以已有原生 WorkspaceId 为键的 JSON 字典；每项包含独立的外部实例标识 `instanceId` 及 [SSH 连接配置](../../ssh/ssh/README.zh.md#deployment-prerequisites)：已有主机别名、helper 启动方式和摘要、远程绝对目录 `workspace`。SSH 私钥保留在 OpenSSH 配置中。缺失或无效的绑定会拒绝执行，不回退到 Harness 本机。
+
+执行协调、多用户授权和会话存储留在 Harness。每个打开的 Workspace 拥有独立的 SSH 服务上下文，文件和进程使用相同连接及目录。远程 VM 只需 helper 和 Bash，无需 Docker 或完整 Harness。原生项目登记路径留在 Harness；Bash 相对目录在远程根目录下解析。模型中的 cwd 仍为 `/workspace`，将 VM 的根目录也设为 `/workspace` 可让 `pwd` 输出用于后续绝对 workdir。命令与输出不做改写。
+
+重复打开复用同一运行时代次。执行标识保存原始请求和结果；修改请求会冲突，执行前取消不会启动命令，记录达到容量后拒绝新标识而不淘汰修改历史。超时和取消等待受管理进程清理。SSH 中断立即撤销文件访问并停止接纳该代次的新任务，显示 `cleanup_required`。关闭会等待已接纳命令结束，并要求原 helper 确认清理后才允许新代次。无法确认时，必须在外部核实远程清理后再重启拥有该连接的服务；重新加载本身不是清理证据。
+
+`files(workspaceId, containerId, signal)` 提供原代次的文件系统、远程根目录、取消信号和 `assertCurrent()`。受信任调用方须保留原用户和轮次权限，在每次操作前复核权限与访问有效性，传递访问取消信号，并实施路径约束。后端本身不注册模型工具。本机 Runner 拒绝文件能力请求，不访问宿主文件。
+
+SSH 关闭只释放 helper 及其受管理进程，不关闭或删除 VM。云实例创建、快照、空闲 VM 回收和网页上传下载适配由云迁移负责。绑定和执行记录仅保存在当前进程中；实例隔离依赖正确部署的独立 VM 及 SSH 别名，不能仅凭不同 `instanceId` 字符串确认。同宿主机 SSH 测试验证分派与目录分离，不证明 VM 隔离。
+
+<a id="workspace-text-tools"></a>
+### Workspace 文本工具
+
+可选入口 `@deepseek-ai/dsh-harness-sandbox/files` 在 SSH Bash 旁注册原生 `read`、`write`、`edit`。SSH 配置在标准预设中加载两个入口，并禁用宿主文件工具。文本入口复用 [tool-fs](../../fs/tool-fs/README.zh.md) 的参数、提示、行窗口、字面匹配、差异元数据及结果渲染。原有参数继续可用；未声明的额外参数，包括 Workspace 和代次覆盖字段，均被拒绝。`readLimit`、`readMaxLineLength`、`readMaxBytes` 使用原生默认值，接受正整数。远程读取使用流式接口，避免 helper 的整文件 RPC 限制。
+
+每次调用捕获具体工具定义、Agent、已接纳轮次及原始消息权限。私有文件系统将原生项目 cwd 和 `/workspace` 路径映射到该代次的远程根目录。相对路径保留远端文件系统解析，包括 `symlink/..`；规范化后位于根目录外的路径被拒绝。每项操作复核权限与目录包含关系，写操作还携带远程 workspace-write 策略。目标标识包含 Workspace 和代次，观察记录不能跨代次使用。文件调用不回退到 Harness 文件系统，取消后也不选择更新的连接。
+
+已有可选插件 `fs-observation-policy` 继续提供防覆盖和版本检查；未启用时，原生写入、编辑保持无条件行为。匹配失败和版本过期不会改变文件。取消不保证回滚已经提交的写入。helper 关闭会等待已接纳文件请求结束后确认清理；丢失确认会阻止复用。卸载文本入口会取消并等待调用结束，并移除三个定义。网页上传、下载仍需云迁移的远程文件适配；本入口不改变这些接口。
+
 <a id="conversation-admission"></a>
 ### 对话接纳
 
@@ -87,13 +109,13 @@ Agent 步骤信号在异步工具策略前标识原 turn，工具在发送时重
 
 | 使用方 | 可用入口 | 后续接入 |
 | --- | --- | --- |
-| 对话入口 | 可选 Web profile 接纳所属输入，只暴露 Runner Bash。 | 部署匹配的 Harness/Runner 构建、工作区路径与文件系统身份。 |
+| 对话入口 | 可选 Web profile 接纳所属输入，通过所选后端提供 Bash。 | 准备配置的 Runner 或 SSH 端点、执行目录与文件系统身份。 |
 | #8：空闲回收 | 针对持久记录中的所有者和工作区调用 `activityForUser`、`statusForUser`、`closeForUser`。 | 增加 30 分钟空闲判断。 |
 | #9：网页控件 | 三个 Typert 方法、五种状态以及类型化的 `sandbox/failed` 原因。 | 增加按钮和展示。关闭失败时继续阻止重开；未知修改需要维护来确认收束，查询不能清除它。 |
 
 新增文件、搜索或浏览器工具，必须先实现各自的隔离执行、确切定义授权、原 turn 许可和取消处理，再由 overlay 展示。文件操作须在沙箱内按登记工作区解析路径，并将真实结果保留到日志、回放和展示。Bash 的例外不授权其他定义或同名宿主实现。
 
-内部显式用户方法只接收可信后端代码取得的身份，不会在缺失调用上下文时推断 owner。子服务 `sandboxRunnerClient` 仅负责通信，不能作为用户管理 API 暴露。服务卸载会中止本机等待，等待请求连接与期限计时器释放，并移除方法，不发送 DELETE 或 cancel；断线和超时都不代表远端已清理。
+内部显式用户方法只接收可信后端代码取得的身份，不会在缺失调用上下文时推断 owner。子服务 `sandboxRunnerClient` 仅负责通信，不能作为用户管理 API 暴露。本地 Runner 客户端卸载会中止本机等待，等待请求连接与期限计时器释放，并移除方法，不发送 DELETE 或 cancel；断线和超时都不代表远端已清理。
 
 <a id="execution-transport"></a>
 ### 执行通信
