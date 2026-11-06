@@ -535,6 +535,47 @@ describe('WorkspaceRegistry create and lookup', () => {
     expect(reregistered.sessionIds).toEqual([])
   })
 
+  it('lets a provider refuse deletion before writes and removes the guard on unload', async () => {
+    const dir = await makeDir('delete-guard')
+    const result = await harness()
+    onTestFinished(async () => { await result.ctx.fiber.dispose() })
+    const workspace = await result.registry.create(dir)
+    const previous = storedState(result.pool)
+    const guard = result.ctx.plugin((ctx) => {
+      ctx.on('workspace/before-delete', () => { throw new Error('provider refused deletion') })
+    })
+    await guard
+    await expect(result.registry.delete(WorkspaceId('unknown-guarded-workspace'))).resolves.toBe(false)
+    await expect(result.registry.delete(workspace.id)).rejects.toThrow('provider refused deletion')
+    expect(result.registry.get(workspace.id)).toBe(workspace)
+    expect(storedState(result.pool)).toEqual(previous)
+    expect(storedRecord(result.pool, workspace.id)).toMatchObject({ path: dir })
+    await guard.dispose()
+    await expect(result.registry.delete(workspace.id)).resolves.toBe(true)
+  })
+
+  it('keeps named deletion guards for the registry lifetime and replaces their provider on remount', async () => {
+    const dir = await makeDir('persistent-delete-guard')
+    const result = await harness()
+    onTestFinished(async () => { await result.ctx.fiber.dispose() })
+    const workspace = await result.registry.create(dir)
+    let calls = 0
+    const provider = result.ctx.plugin({ inject: ['workspaceRegistry'], apply: (ctx) => {
+      ctx.workspaceRegistry.registerDeletionGuard('test-provider', async (scope) => {
+        expect(scope.fiber).not.toBe(ctx.fiber)
+        calls += 1
+        throw new Error('provider unavailable')
+      })
+    } })
+    await provider
+    await provider.dispose()
+    await expect(result.registry.delete(workspace.id)).rejects.toThrow('provider unavailable')
+    expect(result.registry.get(workspace.id)).toBe(workspace)
+    result.registry.registerDeletionGuard('test-provider', (_scope, _id, next) => next())
+    await expect(result.registry.delete(workspace.id)).resolves.toBe(true)
+    expect(calls).toBe(1)
+  })
+
   it('rolls registry order and cache back when record deletion fails', async () => {
     const dir = await makeDir('delete-rollback')
     const pool = new MemoryMediaPool()
@@ -543,8 +584,17 @@ describe('WorkspaceRegistry create and lookup', () => {
       backend: selectiveFailureBackend(pool, { deleteAt: 1 }),
     })
     const workspace = await result.registry.create(dir)
+    let releasedAfterRollback = false
+    result.ctx.on('workspace/before-delete', async (_id, next) => {
+      try {
+        return await next()
+      } finally {
+        releasedAfterRollback = result.registry.get(workspace.id) === workspace
+      }
+    })
 
     await expect(result.registry.delete(workspace.id)).rejects.toThrow(/selected rollback delete failure/)
+    expect(releasedAfterRollback).toBe(true)
     expect(result.registry.get(workspace.id)).toBe(workspace)
     expect(result.registry.list()).toEqual([workspace])
     expect(storedState(pool).workspaceIds).toEqual([workspace.id])

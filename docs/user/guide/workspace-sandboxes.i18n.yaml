@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for workspace-sandboxes.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/user/guide/workspace-sandboxes.md
+/:
+  en: abec7aa49bcaa067
+  zh: f2b522e36ce5e4ac
+/workspace-sandbox-management:
+  en: 393fd8941957d741
+  zh: 4bf47305bb939dbf
+/workspace-sandbox-management/prepare-the-deployment:
+  en: a483fc6e13cada2c
+  zh: 489ed44264e78c10
+/workspace-sandbox-management/call-the-management-methods:
+  en: 5bc93129198a122b
+  zh: 4e510e41589e21ca
+/workspace-sandbox-management/continue-the-integrations:
+  en: 1365e6e73744b41c
+  zh: 765e06d9cbbd7178

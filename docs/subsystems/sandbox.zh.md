@@ -172,6 +172,11 @@ interface ConfinedArgv {
 
 `SandboxCancellationResult` 表示取消已请求或执行已经结算，不确认结束原因或清理结果。`SandboxExecutionError.execution` 提供 `SandboxExecutionFailure`：执行/容器身份、已观察到的原因、独立确认的清理状态，以及已知时的 Bash 状态。结果不明与整代删除所中断的执行使用不同错误。[Runner 参考](../../packages/sandbox/sandbox-runner/README.zh.md)说明取消、回收和重试行为。
 
+<a id="workspace-sandbox-management"></a>
+## 工作区沙箱管理
+
+`ctx.workspaceSandbox` 在调用独立 Docker Runner 前核验原生多用户归属及登记的持久目录。`SandboxRequest` 仅含 `workspaceId`；`SandboxValue` 返回该编号和 `closed`、`starting`、`running`、`closing`、`cleanup_required` 中一种状态。浏览器结果不含容器编号或路径。`SandboxFailureReason` 在 `sandbox/failed` 下区分容量、清理、冲突，以及不可用或结果不明的操作；查询失败不会猜测状态。显式用户后端方法保留完整的 `RunnerRunningSandbox.containerId`，供执行接入。见[包参考](../../packages/sandbox/harness-sandbox/README.zh.md)和[可选 Web 部署](../user/guide/workspace-sandboxes.zh.md)。
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -282,4 +287,61 @@ async close(workspaceId: WorkspaceId): Promise<ClosedSandbox>
 Types: [WorkspaceId](workspace.zh.md)
 
 Source: [`packages/sandbox/sandbox-runner/src/index.ts`](../../packages/sandbox/sandbox-runner/src/index.ts)
+
+<a id="ctxworkspacesandbox--workspacesandbox"></a>
+
+### `ctx.workspaceSandbox` — `WorkspaceSandbox`
+
+Rechecks native ownership and directory records on every operation; owns no container state.
+
+```ts cordis-catalog
+/**
+ * Open an owned workspace through the independent Runner.
+ * @param request - Only the native workspace identity.
+ * @returns Browser-safe confirmed running state.
+ */
+@Remote({ resources: { workspace: (request: SandboxRequest) => request.workspaceId } }) async open(request: SandboxRequest): Promise<SandboxValue>
+
+/**
+ * Observe an owned workspace without modifying its sandbox.
+ * @param request - Only the native workspace identity.
+ * @returns This query's browser-safe observation.
+ */
+@Remote({ resources: { workspace: (request: SandboxRequest) => request.workspaceId } }) async status(request: SandboxRequest): Promise<SandboxValue>
+
+/**
+ * Remove an owned workspace's container while retaining its persistent data.
+ * @param request - Only the native workspace identity.
+ * @returns Closed only after Runner confirmation.
+ */
+@Remote({ resources: { workspace: (request: SandboxRequest) => request.workspaceId } }) async close(request: SandboxRequest): Promise<SandboxValue>
+
+/**
+ * Open a sandbox for an authenticated backend initiator.
+ * @param userId - Authenticated user from the initiating operation.
+ * @param workspaceId - Native workspace id.
+ * @returns Full running identity for trusted execution integration.
+ */
+async openForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerRunningSandbox>
+
+/**
+ * Observe a sandbox for an authenticated backend initiator.
+ * @param userId - Authenticated initiating user.
+ * @param workspaceId - Native workspace id.
+ * @returns Fresh Runner state with internal container identity.
+ */
+statusForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerSandboxStatus>
+
+/**
+ * Ends all commands in this container without deleting workspace files or sessions.
+ * @param userId - Authenticated initiating user.
+ * @param workspaceId - Native workspace id.
+ * @returns Confirmed container absence.
+ */
+closeForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerClosedSandbox>
+```
+
+Types: [UserId](typert.zh.md) · [WorkspaceId](workspace.zh.md)
+
+Source: [`packages/sandbox/harness-sandbox/src/index.ts`](../../packages/sandbox/harness-sandbox/src/index.ts)
 <!-- END GENERATED cordis-surface -->

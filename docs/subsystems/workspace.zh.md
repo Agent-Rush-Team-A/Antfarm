@@ -511,10 +511,19 @@ get(id: WorkspaceId): Workspace | undefined
 list(): Workspace[]
 
 /**
+ * Install a named deletion guard owned by this registry, replacing the same name without binding to the caller's lifetime.
+ * The callback receives the registry's context and must resolve current services instead of retaining a disposable provider.
+ * @param name - Stable plugin registration name.
+ * @param guard - Middleware that remains installed until replacement or registry disposal.
+ */
+registerDeletionGuard( name: string, guard: (scope: Context, workspaceId: WorkspaceId, next: () => Promise<boolean>) => Promise<boolean>, ): void
+
+/**
  * Delete one workspace registration while retaining its directory and every
  * session log. The durable order is updated before the table deletion; a
  * failed table write restores the prior order and keeps the entity
- * published. Unknown ids are an idempotent no-op for domain callers.
+ * published. Composed deletion guards run before writes and may refuse the operation.
+ * Unknown ids are an idempotent no-op and do not dispatch guards.
  * @param id - Workspace registration to remove.
  * @returns `true` when a record was deleted, `false` when it was unknown.
  */
@@ -596,6 +605,25 @@ Source: [`packages/workspace/workspace/src/index.ts`](../../packages/workspace/w
 <a id="workspace-events"></a>
 
 ### `workspace/*` events
+
+<a id="workspacebefore-delete--waterfall"></a>
+
+#### `workspace/before-delete` — waterfall
+
+Guard one Workspace registration deletion before its durable writes. Providers may refuse by throwing and must await `next()` to hold their guard until deletion settles.
+
+```ts cordis-catalog
+/**
+ * Guard one Workspace registration deletion before its durable writes.
+ * Providers may refuse by throwing and must await `next()` to hold their guard until deletion settles.
+ * @param workspaceId - Registration the trusted backend caller is removing.
+ * @param next - Continue deletion and return whether the registration existed.
+ * @mode waterfall
+ */
+'workspace/before-delete'(workspaceId: WorkspaceId, next: () => Promise<boolean>): Promise<boolean>
+```
+
+Source: [`packages/workspace/workspace/src/index.ts`](../../packages/workspace/workspace/src/index.ts)
 
 <a id="workspacesession-activity--waterfall"></a>
 

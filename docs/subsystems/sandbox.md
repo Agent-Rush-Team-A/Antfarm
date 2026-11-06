@@ -172,6 +172,11 @@ Provider selection, probing, caching, and backend-specific enforcement reports b
 
 `SandboxCancellationResult` acknowledges a requested cancellation or an already settled execution; it does not confirm the termination reason or cleanup. `SandboxExecutionError.execution` carries `SandboxExecutionFailure`: the execution/container identity, observed reason, independently confirmed cleanup, and Bash status when known. Unknown results and executions interrupted by generation removal are distinct failures. The [Runner reference](../../packages/sandbox/sandbox-runner/README.md) owns cancellation, recovery and retry behavior.
 
+<a id="workspace-sandbox-management"></a>
+## Workspace sandbox management
+
+`ctx.workspaceSandbox` authorizes native multiuser ownership and validates the registered persistent directory before calling the independent Docker Runner. `SandboxRequest` contains only `workspaceId`; `SandboxValue` returns that id and one of `closed`, `starting`, `running`, `closing`, or `cleanup_required`. Browser results omit container identities and paths. `SandboxFailureReason` distinguishes capacity, cleanup, conflicts and unavailable or unconfirmed operations under `sandbox/failed`; a failed query never guesses a state. Explicit-user backend methods retain the full `RunnerRunningSandbox.containerId` for execution integration. See the [package reference](../../packages/sandbox/harness-sandbox/README.md) and [optional Web deployment](../user/guide/workspace-sandboxes.md).
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -282,4 +287,61 @@ async close(workspaceId: WorkspaceId): Promise<ClosedSandbox>
 Types: [WorkspaceId](workspace.md)
 
 Source: [`packages/sandbox/sandbox-runner/src/index.ts`](../../packages/sandbox/sandbox-runner/src/index.ts)
+
+<a id="ctxworkspacesandbox--workspacesandbox"></a>
+
+### `ctx.workspaceSandbox` — `WorkspaceSandbox`
+
+Rechecks native ownership and directory records on every operation; owns no container state.
+
+```ts cordis-catalog
+/**
+ * Open an owned workspace through the independent Runner.
+ * @param request - Only the native workspace identity.
+ * @returns Browser-safe confirmed running state.
+ */
+@Remote({ resources: { workspace: (request: SandboxRequest) => request.workspaceId } }) async open(request: SandboxRequest): Promise<SandboxValue>
+
+/**
+ * Observe an owned workspace without modifying its sandbox.
+ * @param request - Only the native workspace identity.
+ * @returns This query's browser-safe observation.
+ */
+@Remote({ resources: { workspace: (request: SandboxRequest) => request.workspaceId } }) async status(request: SandboxRequest): Promise<SandboxValue>
+
+/**
+ * Remove an owned workspace's container while retaining its persistent data.
+ * @param request - Only the native workspace identity.
+ * @returns Closed only after Runner confirmation.
+ */
+@Remote({ resources: { workspace: (request: SandboxRequest) => request.workspaceId } }) async close(request: SandboxRequest): Promise<SandboxValue>
+
+/**
+ * Open a sandbox for an authenticated backend initiator.
+ * @param userId - Authenticated user from the initiating operation.
+ * @param workspaceId - Native workspace id.
+ * @returns Full running identity for trusted execution integration.
+ */
+async openForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerRunningSandbox>
+
+/**
+ * Observe a sandbox for an authenticated backend initiator.
+ * @param userId - Authenticated initiating user.
+ * @param workspaceId - Native workspace id.
+ * @returns Fresh Runner state with internal container identity.
+ */
+statusForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerSandboxStatus>
+
+/**
+ * Ends all commands in this container without deleting workspace files or sessions.
+ * @param userId - Authenticated initiating user.
+ * @param workspaceId - Native workspace id.
+ * @returns Confirmed container absence.
+ */
+closeForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerClosedSandbox>
+```
+
+Types: [UserId](typert.md) · [WorkspaceId](workspace.md)
+
+Source: [`packages/sandbox/harness-sandbox/src/index.ts`](../../packages/sandbox/harness-sandbox/src/index.ts)
 <!-- END GENERATED cordis-surface -->

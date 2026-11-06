@@ -1,0 +1,33 @@
+# Optional Web sandbox management. Runner runs independently with Docker access.
+# Both services use the same canonical Linux workspace root and filesystem UID.
+- id: connection
+  config:
+    multiuser: true
+    trustedHosts: !!js ctx.webStartup.trustedHosts
+
+- insert:
+    - id: multiuser
+      name: '@deepseek-ai/dsh-api-multiuser'
+      config:
+        workspaceRoot: !!js process.env.DSH_MULTIUSER_WORKSPACE_ROOT
+    - id: workspace-sandbox
+      name: '@deepseek-ai/dsh-harness-sandbox'
+      config:
+        socketPath: !!js process.env.DSH_SANDBOX_RUNNER_SOCKET
+        workspaceRoot: !!js process.env.DSH_MULTIUSER_WORKSPACE_ROOT
+
+# Execution integration belongs to #7; keep existing multiuser restrictions.
+- id: tool-bash
+  disabled: true
+- id: tool-pwsh
+  disabled: true
+- id: tool-fs
+  disabled: true
+- id: tool-fs-search
+  disabled: true
+- id: tool-jobs
+  disabled: true
+- id: terminal-controller
+  disabled: true
+- id: open-in-app
+  disabled: true

@@ -30,6 +30,7 @@ kind: "package-group"
 | [`sandbox-local/`](sandbox-local/README.zh.md) | 各平台隔离后端：Linux 先使用 bwrap，再使用 Landlock；macOS 使用 Seatbelt；Windows 使用受限令牌 | 注册到 `ctx.sandbox` |
 | [`sandbox-policy/`](sandbox-policy/README.zh.md) | 共享策略归属：供所有实施隔离的家族使用的部署默认值与逐会话模式覆盖 | `ctx.sandboxPolicy` |
 | [`sandbox-runner/`](sandbox-runner/README.zh.md) | 为独立部署提供 Docker Engine 操作和工作区目录挂载 | `ctx.sandboxRunner` |
+| [`harness-sandbox/`](harness-sandbox/README.zh.md) | 经过授权的工作区沙箱生命周期操作，经本机 Runner 执行 | `ctx.workspaceSandbox` |
 | [`sandbox-windows-acl/`](sandbox-windows-acl/README.zh.md) | Windows 写入限制：受限子进程只能写入工作区与私有临时目录 | —（由 `sandbox-local` 挂载为 win32 后端） |
 
 -----

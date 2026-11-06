@@ -4771,8 +4771,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'a fresh ordered array of workspace entities.',
       },
       {
+        signature: 'registerDeletionGuard( name: string, guard: (scope: Context, workspaceId: WorkspaceId, next: () => Promise<boolean>) => Promise<boolean>, ): void',
+        description: 'Install a named deletion guard owned by this registry, replacing the same name without binding to the caller\'s lifetime. The callback receives the registry\'s context and must resolve current services instead of retaining a disposable provider.',
+        parameters: [{ name: 'name', description: 'Stable plugin registration name.' }, { name: 'guard', description: 'Middleware that remains installed until replacement or registry disposal.' }],
+      },
+      {
         signature: 'delete(id: WorkspaceId): Promise<boolean>',
-        description: 'Delete one workspace registration while retaining its directory and every session log. The durable order is updated before the table deletion; a failed table write restores the prior order and keeps the entity published. Unknown ids are an idempotent no-op for domain callers.',
+        description: 'Delete one workspace registration while retaining its directory and every session log. The durable order is updated before the table deletion; a failed table write restores the prior order and keeps the entity published. Composed deletion guards run before writes and may refuse the operation. Unknown ids are an idempotent no-op and do not dispatch guards.',
         parameters: [{ name: 'id', description: 'Workspace registration to remove.' }],
         returns: '`true` when a record was deleted, `false` when it was unknown.',
       },
@@ -4811,6 +4816,49 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Resolve by canonical directory path without creating or mutating a workspace. A missing path rejects during `realpath`; an existing unowned directory returns `undefined`.',
         parameters: [{ name: 'path', description: 'Existing directory path in a fully qualified spelling.' }],
         returns: 'the workspace owning the canonical path, when one exists.',
+      },
+    ],
+  },
+  {
+    key: 'workspaceSandbox',
+    summary: 'Rechecks native ownership and directory records on every operation; owns no container state.',
+    description: 'Rechecks native ownership and directory records on every operation; owns no container state.',
+    methods: [
+      {
+        signature: '@Remote({ resources: { workspace: (request: SandboxRequest) => request.workspaceId } }) async open(request: SandboxRequest): Promise<SandboxValue>',
+        description: 'Open an owned workspace through the independent Runner.',
+        parameters: [{ name: 'request', description: 'Only the native workspace identity.' }],
+        returns: 'Browser-safe confirmed running state.',
+      },
+      {
+        signature: '@Remote({ resources: { workspace: (request: SandboxRequest) => request.workspaceId } }) async status(request: SandboxRequest): Promise<SandboxValue>',
+        description: 'Observe an owned workspace without modifying its sandbox.',
+        parameters: [{ name: 'request', description: 'Only the native workspace identity.' }],
+        returns: 'This query\'s browser-safe observation.',
+      },
+      {
+        signature: '@Remote({ resources: { workspace: (request: SandboxRequest) => request.workspaceId } }) async close(request: SandboxRequest): Promise<SandboxValue>',
+        description: 'Remove an owned workspace\'s container while retaining its persistent data.',
+        parameters: [{ name: 'request', description: 'Only the native workspace identity.' }],
+        returns: 'Closed only after Runner confirmation.',
+      },
+      {
+        signature: 'async openForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerRunningSandbox>',
+        description: 'Open a sandbox for an authenticated backend initiator.',
+        parameters: [{ name: 'userId', description: 'Authenticated user from the initiating operation.' }, { name: 'workspaceId', description: 'Native workspace id.' }],
+        returns: 'Full running identity for trusted execution integration.',
+      },
+      {
+        signature: 'statusForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerSandboxStatus>',
+        description: 'Observe a sandbox for an authenticated backend initiator.',
+        parameters: [{ name: 'userId', description: 'Authenticated initiating user.' }, { name: 'workspaceId', description: 'Native workspace id.' }],
+        returns: 'Fresh Runner state with internal container identity.',
+      },
+      {
+        signature: 'closeForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerClosedSandbox>',
+        description: 'Ends all commands in this container without deleting workspace files or sessions.',
+        parameters: [{ name: 'userId', description: 'Authenticated initiating user.' }, { name: 'workspaceId', description: 'Native workspace id.' }],
+        returns: 'Confirmed container absence.',
       },
     ],
   },
@@ -5540,6 +5588,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'A workflow run started — the script\'s meta block validated, the body about to execute.',
     description: 'A workflow run started — the script\'s meta block validated, the body about to execute. Paired with Events[\'workflow/end\'].',
     parameters: [{ name: 'info', description: 'the run\'s identity snapshot (id + meta).' }],
+  },
+  {
+    name: 'workspace/before-delete',
+    mode: 'waterfall',
+    signature: '\'workspace/before-delete\'(workspaceId: WorkspaceId, next: () => Promise<boolean>): Promise<boolean>',
+    summary: 'Guard one Workspace registration deletion before its durable writes.',
+    description: 'Guard one Workspace registration deletion before its durable writes. Providers may refuse by throwing and must await `next()` to hold their guard until deletion settles.',
+    parameters: [{ name: 'workspaceId', description: 'Registration the trusted backend caller is removing.' }, { name: 'next', description: 'Continue deletion and return whether the registration existed.' }],
   },
   {
     name: 'workspace/session-activity',
@@ -8230,8 +8286,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface RRuleScheduleRecord {\n    readonly kind: \'rrule\';\n    readonly id: ScheduleId;\n    readonly title: string;\n    readonly prompt: string;\n    readonly rrule: string;\n    readonly scheduledAt: string;\n}',
   },
   {
+    name: 'RunnerClosedSandbox',
+    declaration: 'export interface RunnerClosedSandbox {\n    readonly state: \'closed\';\n}',
+  },
+  {
     name: 'RunnerFailureRule',
     declaration: 'export interface RunnerFailureRule {\n    allowedExitCodes?: readonly number[];\n    fatalSignatures: readonly string[];\n    informationalLines?: readonly string[];\n}',
+  },
+  {
+    name: 'RunnerRunningSandbox',
+    declaration: 'export interface RunnerRunningSandbox {\n    readonly state: \'running\';\n    readonly containerId: SandboxContainerId;\n}',
+  },
+  {
+    name: 'RunnerSandboxStatus',
+    declaration: 'export type RunnerSandboxStatus = RunnerRunningSandbox | RunnerClosedSandbox | {\n    readonly state: \'starting\' | \'closing\' | \'cleanup_required\';\n};',
   },
   {
     name: 'RunningSandbox',
@@ -8240,6 +8308,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SandboxCancellationResult',
     declaration: 'export interface SandboxCancellationResult {\n    readonly executionId: SandboxExecutionId;\n    readonly containerId: DockerContainerId;\n    readonly cancellation: \'requested\' | \'settled\';\n}',
+  },
+  {
+    name: 'SandboxContainerId',
+    declaration: 'export type SandboxContainerId = Branded<\'SandboxContainerId\'>;',
   },
   {
     name: 'SandboxEnforcement',
@@ -8278,8 +8350,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SandboxPolicyRequest {\n    session?: Session;\n    mode?: SandboxMode;\n}',
   },
   {
+    name: 'SandboxRequest',
+    declaration: 'export interface SandboxRequest {\n    readonly workspaceId: WorkspaceId;\n}',
+  },
+  {
     name: 'SandboxStatus',
     declaration: 'export type SandboxStatus = RunningSandbox | ClosedSandbox | {\n    readonly state: \'starting\' | \'closing\' | \'cleanup_required\';\n};',
+  },
+  {
+    name: 'SandboxValue',
+    declaration: 'export interface SandboxValue {\n    readonly workspaceId: WorkspaceId;\n    readonly state: \'closed\' | \'starting\' | \'running\' | \'closing\' | \'cleanup_required\';\n}',
   },
   {
     name: 'SaveFileAttachment',

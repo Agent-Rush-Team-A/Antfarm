@@ -30,6 +30,7 @@ Four packages support host confinement; the subsystem reference owns its per-cal
 | [`sandbox-local/`](sandbox-local/README.md) | Per-platform confinement backends: Linux bwrap then Landlock, macOS Seatbelt, Windows restricted token | registers on `ctx.sandbox` |
 | [`sandbox-policy/`](sandbox-policy/README.md) | Shared policy home: deployment defaults and per-session mode overrides for every enforcing family | `ctx.sandboxPolicy` |
 | [`sandbox-runner/`](sandbox-runner/README.md) | Docker Engine operations and workspace bind mounts for an independent deployment | `ctx.sandboxRunner` |
+| [`harness-sandbox/`](harness-sandbox/README.md) | Authorized workspace sandbox lifecycle operations through a local Runner | `ctx.workspaceSandbox` |
 | [`sandbox-windows-acl/`](sandbox-windows-acl/README.md) | Windows write restriction: confined children may write only in the workspace and a private temp directory | — (mounted by `sandbox-local` as the win32 backend) |
 
 -----
