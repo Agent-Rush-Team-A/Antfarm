@@ -52,10 +52,10 @@ The `user` policy denies by default and grants actions only on resources the acc
 | Scope | Allowed actions | Notes |
 | --- | --- | --- |
 | global | `workspace/create`, `workspace/follow`, `session/list`, `session/search`, `session/control`, `session/modelCatalog`, `session/canOpenWorkspacePath` | Listing and follow methods filter each item through `ctx.remoteAccess.allows()`. |
-| workspace | `session/create`, `workspace/follow`, `workspace/rename`, `workspace/delete`, `workspace/insertBefore`, `workspace/insertSessionBefore` | Conditions recheck the ownership row at decision time. |
+| workspace | `session/create`, `workspace/follow`, `workspace/rename`, `workspace/delete`, `workspace/insertBefore`, `workspace/insertSessionBefore`, `workspaceUpload/limits`, `workspaceUpload/upload` | Conditions recheck the ownership row at decision time. |
 | session | `workspace/follow`, `session/create`, `session/list`, `session/search`, `session/control`, `session/page`, `session/events`, `session/observeEvent`, `session/observeProjections`, `session/state`, `session/observeState`, `session/wait`, `session/follow`, `session/projections`, `session/prompt`, `session/updateQueue`, `session/cancel`, `session/rename`, `session/fork`, `session/selectModel`, `workspace/insertSessionBefore`, `workspace/archiveSession`, `workspace/unarchiveSession`, `workspace/pinSession`, `workspace/unpinSession`, and the five `event:api-session/*` notifications | Session membership comes from the authoritative workspace record. |
 
-Everything else is denied before dispatch, including `workspace/initializeDefault`, cwd-only `session/create`, model-default writes, attachment reads, file services, terminal, jobs, settings, credentials, and exact Fetch routes. A denied request reports `remote-access/denied` with `reason: "not-found"` for a non-global resource, so another account's identity is not disclosed.
+Everything else is denied before dispatch, including `workspace/initializeDefault`, cwd-only `session/create`, model-default writes, attachment reads, file services, terminal, jobs, settings, credentials, and exact Fetch routes without explicit scoped authorization. [Workspace upload](../workspace-upload/README.md) checks owned-workspace access through both its limit reader and raw upload route. A denied request reports `remote-access/denied` with `reason: "not-found"` for a non-global resource, so another account's identity is not disclosed.
 
 <a id="configuration"></a>
 ## Configuration
@@ -97,7 +97,7 @@ No direct effect; login and ownership changes do not alter model requests.
 
 ## Known Limitations and Deferred Work
 
-- File, attachment, export, terminal, settings, and exact Fetch routes remain closed to ordinary users until their ownership rules are implemented.
+- Legacy file, attachment, export, terminal, settings, and exact Fetch routes remain closed to ordinary users. The explicitly mounted workspace upload provider implements its own ownership checks.
 - Ordinary users cannot change global settings or default model selections.
 - Process-level sandbox isolation remains a separate Docker/runner task. This service denies all tool execution, including tools loaded by agent presets, until that integration exists.
 - Self-service registration, password recovery, OAuth/OIDC, sharing, and user API keys are out of scope.

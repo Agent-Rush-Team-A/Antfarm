@@ -63,6 +63,8 @@ const WORKSPACE_ACTIONS = [
   'workspace/delete',
   'workspace/insertBefore',
   'workspace/insertSessionBefore',
+  'workspaceUpload/limits',
+  'workspaceUpload/upload',
 ] as const
 
 /** Actions allowed on a session accounted by an owned workspace. */
