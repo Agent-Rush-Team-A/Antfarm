@@ -1,0 +1,45 @@
+{
+  "extends": "../../../tsconfig.base.client.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../../sandbox/harness-sandbox"
+    },
+    {
+      "path": "../../api/gateway/tsconfig.client.json"
+    },
+    {
+      "path": "../connection/tsconfig.client.json"
+    },
+    {
+      "path": "../resources"
+    },
+    {
+      "path": "../store"
+    },
+    {
+      "path": "../ui-slots"
+    },
+    {
+      "path": "../../workspace/workspace"
+    },
+    {
+      "path": "../../typert/protocol"
+    },
+    {
+      "path": "../../api/remote-access/tsconfig.client.json"
+    }
+  ]
+}
