@@ -30,14 +30,14 @@ test('snapshot: Web sandbox Bash returns real results through the admitted produ
       ? event.data.content.flatMap(block => block.type === 'text' ? [block.text] : []) : [])[0]!
   const password = randomUUID()
   const patches = [overlay]
-  const calls: Array<{ path: string; body: Record<string, unknown> }> = []
+  const calls: Array<{ method: string | undefined; path: string; body: Record<string, unknown> }> = []
   const socketPath = process.platform === 'win32' ? `\\\\.\\pipe\\dsh-sandbox-snapshot-${randomUUID()}` : `/tmp/dsh-sandbox-${randomUUID()}.sock`
   const server = createServer((request, response) => {
     let body = ''
     request.setEncoding('utf8').on('data', (chunk: string) => { body += chunk })
     request.on('end', () => {
       const parsed = body === '' ? {} : JSON.parse(body) as Record<string, unknown>
-      calls.push({ path: request.url!, body: parsed })
+      calls.push({ method: request.method, path: request.url!, body: parsed })
       response.end(JSON.stringify(request.url?.endsWith('/exec') ? {
         executionId: parsed.executionId, exitCode: parsed.command === 'pwd' ? 0 : 7,
         stdout: { text: parsed.command === 'pwd' ? '/workspace\n' : stdout, truncated: parsed.command !== 'pwd' },
@@ -72,7 +72,7 @@ test('snapshot: Web sandbox Bash returns real results through the admitted produ
     const response = await post('/__test/sandbox-snapshot', {})
     expect(response.status, response.text).toBe(200)
     const observed = JSON.parse(response.text) as { log: string; requests: Array<{ messages: unknown[]; tools: Array<{ name: string }> }>; presentations: unknown[] }
-    expect(observed.requests).toHaveLength(3)
+    expect(observed.requests).toHaveLength(4)
     for (const request of observed.requests) {
       expect(request.tools.map(tool => tool.name)).toEqual(['bash'])
       const modelText = JSON.stringify(request)
@@ -87,7 +87,10 @@ test('snapshot: Web sandbox Bash returns real results through the admitted produ
     expect(observed.presentations).toMatchObject([
       { call: { card: 'terminal', cwd: '/workspace' }, result: { card: 'terminal', exitCode: 0, output: '/workspace\n' } },
       { call: { card: 'terminal', cwd: '/workspace' }, result: { card: 'terminal', exitCode: 7 } },
+      { call: { card: 'terminal', cwd: '/workspace' }, result: { card: 'generic', content: [{ type: 'text',
+        text: 'Error: Invalid command request. Check the arguments and keep the complete UTF-8 JSON request within 64 KiB.' }] } },
     ])
+    expect(JSON.stringify(observed.requests[3]?.messages)).toContain('Invalid command request. Check the arguments and keep the complete UTF-8 JSON request within 64 KiB.')
     expect(JSON.stringify(observed.requests[2]?.messages)).toContain(JSON.stringify(stdout).slice(1, -1))
     expect(JSON.stringify(observed.requests[2]?.messages)).toContain(JSON.stringify(stderr).slice(1, -1))
     expect(JSON.stringify(observed.requests[2]?.messages)).not.toContain('Full formatted result stored at:')
@@ -97,6 +100,7 @@ test('snapshot: Web sandbox Bash returns real results through the admitted produ
     expect(JSON.stringify(events)).toContain('diagnostic')
     const executions = calls.filter(call => call.path.endsWith('/exec'))
     expect(executions).toHaveLength(2)
+    expect(calls.map(call => call.method)).toEqual(['PUT', 'POST', 'POST'])
     expect(executions.map(call => call.body.workdir)).toEqual(['.', '.'])
     expect(new Set(executions.map(call => call.body.executionId)).size).toBe(2)
     const cwd = (calls[0]!.body.workspaceDir as string)

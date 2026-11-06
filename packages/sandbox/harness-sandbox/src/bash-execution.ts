@@ -49,10 +49,7 @@ export async function runBashExecution(
   try {
     check()
     signal.throwIfAborted()
-    let pending: Promise<RunnerExecutionResult>
-    try { pending = transport.execute(permit.workspaceId, request) } catch (cause) {
-      throw new HarnessError('Invalid or oversized command request.', 'SANDBOX_INVALID_REQUEST', { cause })
-    }
+    let pending = transport.execute(permit.workspaceId, request)
     submitted = true
     for (let attempt = 0; ; attempt++) {
       try {
@@ -64,6 +61,10 @@ export async function runBashExecution(
         }
         return result
       } catch (error) {
+        if (error instanceof TypeError) {
+          terminal = true
+          throw new HarnessError('Invalid command request. Check the arguments and keep the complete UTF-8 JSON request within 64 KiB.', 'SANDBOX_INVALID_REQUEST', { cause: error })
+        }
         if (error instanceof RunnerExecutionError) terminal = true
         const lost = error instanceof RunnerRequestError && error.code === 'runner_outcome_unknown'
         const evidence = lost && attempt === 0 ? await retrievable() : 'none'

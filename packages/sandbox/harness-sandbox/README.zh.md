@@ -72,7 +72,7 @@ Runner 失败使用 `sandbox/failed`，详情为 `{ reason, outcomeUnknown }`。
 
 `@deepseek-ai/dsh-harness-sandbox/bash` 注册前台 `bash` 定义，需与对话、管理服务一起加载，且同一作用域内不能已有另一个 Bash 注册。提供的多用户 overlay 将 standard preset 替换为此入口及其 persona，禁用其他内置 preset 和宿主工具，并选择原生执行。多用户默认拒绝策略保留；入口注册由调用方持有的例外，核对当前确切定义、步骤接纳的 toolSet 和原消息许可。同名替换、缺少接纳、嵌套分派和卸载仍被拒绝。
 
-参数为 `command`、`description`、可选 `workdir` 和整数 `timeoutMs`（默认 30000，范围 1–60000）。额外参数，包括后台、权限升级和管理字段，均被拒绝。省略目录、`.` 和 `/workspace` 转为 Runner `.`；`src`、`./src` 和 `/workspace/src` 转为 `src`。工作区外绝对路径、Windows 路径、`..` 段、无效文本和空目录在 exec 前失败。命令字节不变。每个独立调用生成一个 UUID；工具不会开启沙箱、调用宿主 Shell 或收集宿主环境变量。
+参数为 `command`、`description`、可选 `workdir` 和整数 `timeoutMs`（默认 30000，范围 1–60000）。额外参数，包括后台、权限升级和管理字段，均被拒绝。省略目录、`.` 和 `/workspace` 转为 Runner `.`；`src`、`./src` 和 `/workspace/src` 转为 `src`。工作区外绝对路径、Windows 路径、`..` 段、无效文本和空目录在 exec 前失败。exec 请求的完整 UTF-8 JSON 超过 64 KiB 时，在发送前返回 `SANDBOX_INVALID_REQUEST`，并提示大小上限及调整方向。命令字节不变。每个独立调用生成一个 UUID；工具不会开启沙箱、调用宿主 Shell 或收集宿主环境变量。
 
 Agent 步骤信号在异步工具策略前标识原 turn，工具在发送时重新检查该轮许可和接纳的定义。不同调用可以在同一容器并发。普通结果保留已知 stdout/stderr、截断状态和退出码；非零退出仍是成功的工具结果。规范值及终端元数据使用 `/workspace` 路径，不含内部身份。渲染复用 Bash 纯输出辅助函数，不推测信号或 spill 文件。
 

@@ -215,7 +215,13 @@ test('plugin unload drains cancellation and removes the tool without a host fall
 
 test('abort before dispatch and oversized commands never submit an exec', async () => {
   const f = await bashFixture()
-  expect((await f.run({ command: 'x'.repeat(65536), description: 'Too much input' })).isError).toBe(true)
+  const result = await f.run({ command: 'x'.repeat(65536), description: 'Too much input' })
+  expect(result).toMatchObject({ isError: true, error: { info: { code: 'SANDBOX_INVALID_REQUEST' } } })
+  const text = 'Error: Invalid command request. Check the arguments and keep the complete UTF-8 JSON request within 64 KiB.'
+  expect(result.content).toEqual([{ type: 'text', text }])
+  expect(f.logged.at(-1)?.data.message.content).toEqual(result.content)
+  expect(f.model.requests.at(-1)?.messages.some(message => message.role === 'tool' && JSON.stringify(message.content) === JSON.stringify(result.content))).toBe(true)
+  expect(f.calls.map(call => call.method)).toEqual(['PUT'])
   f.ctx.on('tools/pre-execute', (_exec, next) => { f.agent.cancel({ kind: 'user' }); return next() }, { global: true })
   await f.run({ command: 'echo unreachable', description: 'Must not run' })
   expect(f.calls.filter(call => call.path?.includes('/exec'))).toHaveLength(0)
