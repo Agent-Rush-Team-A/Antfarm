@@ -262,7 +262,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-api-session-controller`
 
 - `inject`: `agentDefaultModel` · `agents` · `attachments` · `fileUploads` · `fs` · `llm` · `remoteAccess` · `sessions` · `sessionProjections` · `sessionQuery` · `typert` · `typertGateway` · `workspaceRegistry`
-- `source`: [`packages/api/session-controller/src/index.ts:110`](../packages/api/session-controller/src/index.ts)
+- `source`: [`packages/api/session-controller/src/index.ts:111`](../packages/api/session-controller/src/index.ts)
 
 ```ts config-catalog
 /** Session Controller deployment policy. */
@@ -1622,7 +1622,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-harness-sandbox`
 
 - `inject`: `multiuser` · `remoteAccess` · `typert` · `workspaceRegistry`
-- `source`: [`packages/sandbox/harness-sandbox/src/index.ts:21`](../packages/sandbox/harness-sandbox/src/index.ts)
+- `source`: [`packages/sandbox/harness-sandbox/src/index.ts:32`](../packages/sandbox/harness-sandbox/src/index.ts)
 
 ```ts config-catalog
 /** Deployment-trusted Runner settings and the existing multiuser workspace root. */
@@ -1639,8 +1639,14 @@ export interface RunnerConfig {
   queryTimeoutMs?: number
   /** Total PUT/DELETE deadline; defaults to 120,000 ms for multi-request Runner operations. */
   mutationTimeoutMs?: number
-  /** Maximum response body in bytes, including error responses; defaults to 8192. */
+  /** Maximum lifecycle/cancel response body in bytes, including errors; defaults to 8192. */
   maxResponseBytes?: number
+  /** Total exec transport deadline, independent of the command's timeoutMs; defaults to 120,000 ms. */
+  execTimeoutMs?: number
+  /** Total cancel deadline, independent of the exec caller's signal; defaults to 15,000 ms. */
+  cancelTimeoutMs?: number
+  /** Maximum complete exec response body, including JSON escaping and errors; defaults to 1 MiB. */
+  maxExecResponseBytes?: number
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-harness-sandbox -->
@@ -3007,6 +3013,8 @@ export interface Config {
  * is any per-family knob: this is the one shared policy home.
  */
 export interface Config {
+  /** Include the host file policy in model runtime context. Disable when model tools use another execution world. @default true */
+  modelContext?: boolean
   /** File-sandbox mode a session starts from (default: `read-only`). */
   mode?: SandboxMode
   /**
@@ -4929,6 +4937,8 @@ export interface Config {
 export interface Config {
   /** Absolute execution-world fallback directory; omitted values use the launch directory. */
   defaultDirectory?: string
+  /** Fixed model-facing directory; backend paths and durable directory events remain unchanged. */
+  modelDirectory?: string
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-working-directory -->

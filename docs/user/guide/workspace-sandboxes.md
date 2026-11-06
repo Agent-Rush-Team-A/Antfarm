@@ -22,7 +22,7 @@ export DSH_SANDBOX_RUNNER_SOCKET=/run/agentrush-sandbox/runner.sock
 pnpm dsh --profile web --patch apps/cli/config/examples/harness-sandbox.patch.yml --no-open
 ```
 
-The overlay enables multiuser login and sandbox management. It retains the native restrictions on model tools, file access and terminal handoffs until execution isolation is connected. It does not load the Docker-privileged Runner into Web. Missing required configuration fails startup.
+The overlay enables multiuser login, sandbox management and automatic preparation when an authenticated user sends a message to an owned workspace Session. Preparation failure refuses the message. Its standard preset exposes only foreground Runner Bash; file tools and terminal handoffs remain denied. The Docker-privileged Runner stays outside Web. Missing required configuration fails startup.
 
 <a id="call-the-management-methods"></a>
 ## Call the management methods
@@ -39,11 +39,11 @@ Connection carries these methods through POST `/api/<method>` using the ordinary
 
 Status is one current observation: `closed`, `starting`, `running`, `closing`, or `cleanup_required`. A failed query is an error, never a guessed `closed`. Capacity, startup, closing, cleanup, configuration conflict and service failures have distinct stable reasons under `sandbox/failed`; see the [package reference](../../../packages/sandbox/harness-sandbox/README.md#use-this-package).
 
-When a modification has `outcomeUnknown: true`, query again to learn its eventual result. The Harness never automatically repeats PUT/DELETE or compensates an uncertain open with a close. Closing ends all commands in that container and succeeds only after confirmed removal; workspace files, sessions and registration remain available for reopening.
+Closing revokes earlier preparations and cancels active and queued input in the workspace before waiting for admitted opens and removing the container. New opens fail while `closing`. A failed close retains this state and can be retried. If PUT or DELETE has `outcomeUnknown: true`, status remains `closing` even after another DELETE; this protocol cannot prove the old mutation has settled. Plugin reload does not clear it. Follow the [package limitations](../../../packages/sandbox/harness-sandbox/README.md#known-limitations-and-deferred-work) for deployment maintenance; a single `closed` observation or Harness restart is insufficient evidence. Files, sessions and workspace registration remain intact.
 
 Close a workspace's sandbox before removing its workspace registration. Deletion queries the Runner and requires `closed`; an opening or active sandbox returns `workspace/sandbox-active`, and an unavailable Runner leaves the workspace intact. If the management service is unloaded or reloading, deletion is also refused and resumes after the service returns. A moved or missing directory still permits status and close operations, so it does not prevent cleanup.
 
 <a id="continue-the-integrations"></a>
 ## Continue the integrations
 
-Automatic opening and Bash forwarding belong to #7, idle reclamation to #8, and browser controls to #9. The [integration handoff](../../../packages/sandbox/harness-sandbox/README.md#integration-handoff) names the authorized internal methods and browser API. This overlay provides backend management without adding model tools or sandbox-management prompts.
+The optional overlay prepares messages and forwards Bash to the Runner. The model sees `/workspace`, command output and exit status, without sandbox-management parameters. Output uses the Runner's bounded tails; host result spilling is disabled because the model cannot access host spill files. Use the [integration handoff](../../../packages/sandbox/harness-sandbox/README.md#integration-handoff) for authorized internal methods, activity queries and browser APIs. Idle reclamation belongs to #8 and browser controls to #9; other tools require separate isolation.

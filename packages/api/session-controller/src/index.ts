@@ -21,6 +21,7 @@ import {
   type ApiSessionAgentResult,
 } from './agent.ts'
 import { SessionCommandController, hasPromptContent } from './commands.ts'
+export type { SessionPromptAdmission } from './prompt-admission.ts'
 import { SessionControlController } from './control.ts'
 import { HistoryController } from './history/controller.ts'
 import { StateController } from './state/controller.ts'
@@ -461,7 +462,7 @@ export class SessionController extends TypertRemoteService {
   /**
    * Admit one prompt after explicitly resuming its Session.
    * @param request - Session identity, prompt content, source metadata, and delivery mode.
-   * @param signal - caller cancellation before prompt admission begins.
+   * @param signal - caller cancellation until the prompt enters the inbox; accepted work survives disconnect.
    * @returns acknowledgement that the Agent accepted the prompt.
    */
   @Remote('prompt')
@@ -488,7 +489,7 @@ export class SessionController extends TypertRemoteService {
       ...(clientTimeZone === undefined ? {} : { clientTimeZone }),
       ...(principal === undefined ? {} : { principal }),
     }
-    return this.commands.prompt(request, source)
+    return this.commands.prompt(request, source, signal)
   }
 
   /**

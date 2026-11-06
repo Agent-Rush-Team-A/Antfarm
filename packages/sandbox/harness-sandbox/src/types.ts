@@ -13,6 +13,15 @@ export interface SandboxValue {
   readonly state: 'closed' | 'starting' | 'running' | 'closing' | 'cleanup_required'
 }
 
+/** Local work that an idle-reclamation consumer must allow to settle before closing. */
+export interface SandboxActivity {
+  readonly busy: boolean
+  readonly requests: number
+  readonly openings: number
+  readonly executions: number
+  readonly closing: boolean
+}
+
 /** Stable management failures; an unconfirmed modification requires a fresh query. */
 export type SandboxFailureReason = 'sandbox_not_ready' | 'sandbox_capacity' | 'sandbox_closing' | 'sandbox_cleanup_required'
   | 'sandbox_workspace_conflict' | 'sandbox_name_conflict' | 'sandbox_outcome_unknown' | 'invalid_workspace_directory'

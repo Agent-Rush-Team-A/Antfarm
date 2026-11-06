@@ -955,7 +955,7 @@ workspaceDesktop(): { name: string; available: boolean; fileManager: 'finder' | 
 /**
  * Admit one prompt after explicitly resuming its Session.
  * @param request - Session identity, prompt content, source metadata, and delivery mode.
- * @param signal - caller cancellation before prompt admission begins.
+ * @param signal - caller cancellation until the prompt enters the inbox; accepted work survives disconnect.
  * @returns acknowledgement that the Agent accepted the prompt.
  */
 @Remote('prompt') async prompt(request: SessionPromptRequest, signal: AbortSignal): Promise<SessionPromptValue>
@@ -1424,4 +1424,23 @@ Awaited parallel durability checkpoint: every listener runs and the caller await
 Types: [Scoped](scope.md)
 
 Source: [`packages/core/session/src/index.ts`](../../packages/core/session/src/index.ts)
+
+<a id="sessionprompt-admission--waterfall"></a>
+
+#### `session/prompt-admission` — waterfall
+
+Wrap prompt preparation through final inbox insertion. A listener can reuse a prior admission result; otherwise it delegates with next().
+
+```ts cordis-catalog
+/**
+ * Wrap prompt preparation through final inbox insertion.
+ * A listener can reuse a prior admission result; otherwise it delegates with next().
+ * @param admission - Trusted source, caller lifetime and operation-local preparation/check registration.
+ * @param next - Continue the remaining admission listeners and original prompt operation.
+ * @mode waterfall
+ */
+'session/prompt-admission'(admission: SessionPromptAdmission, next: () => Promise<SessionPromptValue>): Promise<SessionPromptValue>
+```
+
+Source: [`packages/api/session-controller/src/prompt-admission.ts`](../../packages/api/session-controller/src/prompt-admission.ts)
 <!-- END GENERATED cordis-surface -->

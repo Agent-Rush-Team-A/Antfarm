@@ -250,6 +250,8 @@ flowchart LR
   svc_workspaceSandbox["ctx.workspaceSandbox<br/>Authorized workspace sandboxes"]
   pkg_sandbox_runner["sandbox-runner"]
   svc_sandboxRunner["ctx.sandboxRunner<br/>Docker workspace lifecycle"]
+  svc_sandboxRunnerClient["ctx.sandboxRunnerClient<br/>Local Runner transport"]
+  svc_sandboxConversation["ctx.sandboxConversation<br/>Message-bound sandbox permission"]
   pkg_user_approval["user-approval"]
   svc_approval["ctx.approval<br/>Approval seam"]
   pkg_permission_presets["permission-presets"]
@@ -392,6 +394,8 @@ flowchart LR
   pkg_fs_sandbox --> svc_fs
   pkg_fs_ssh --> svc_fs
   pkg_goal --> svc_goals
+  pkg_harness_sandbox --> svc_sandboxConversation
+  pkg_harness_sandbox --> svc_sandboxRunnerClient
   pkg_harness_sandbox --> svc_workspaceSandbox
   pkg_headless --> svc_headlessStartup
   pkg_hmr --> svc_hmr
@@ -749,6 +753,8 @@ flowchart LR
 | `ctx.sandboxPolicy` | `core` | [`sandbox-policy`](../packages/sandbox/sandbox-policy) | - | [`bash-sandbox`](../packages/shell/bash-sandbox), [`fs-sandbox`](../packages/fs/fs-sandbox), [`terminal-bash`](../packages/terminal/terminal-bash) | - | The one home for the deployment default mode + workspace root; only the sandboxed executor and provider read the service (the tool layers use the pure `sandbox/mode` fold it also exports). Both enforcing families read it so bash and fs cannot confine to different roots. |
 | `ctx.workspaceSandbox` | `service` | [`harness-sandbox`](../packages/sandbox/harness-sandbox) | - | - | - | Native ownership checks precede Runner lifecycle requests; opening also validates the persistent workspace directory. |
 | `ctx.sandboxRunner` | `service` | [`sandbox-runner`](../packages/sandbox/sandbox-runner) | - | - | - | An independent deployment opens, queries, and closes Docker workspace containers through a local Unix socket. |
+| `ctx.sandboxRunnerClient` | `service` | [`harness-sandbox`](../packages/sandbox/harness-sandbox) | - | - | - | Bounded lifecycle, execution, and cancellation requests use a fixed local socket; callers own user authorization. |
+| `ctx.sandboxConversation` | `service` | [`harness-sandbox`](../packages/sandbox/harness-sandbox) | - | - | - | Authenticated prompt admission prepares the workspace and binds its original message and Agent turn; closing revokes earlier generations. |
 | `ctx.approval` | `seam` | [`user-approval`](../packages/interaction/user-approval) | - | [`tools`](../packages/core/tools), [`tool-bash`](../packages/shell/tool-bash), [`acp`](../packages/acp/acp) | - | One-shot permission decisions dispatched over the `approval/request` waterfall; answerers are listeners (the ACP bridge for its own agents), absence fails closed to `unavailable`. |
 | `ctx.permissionPresets` | `core` | [`permission-presets`](../packages/interaction/permission-presets) | - | - | - | User-facing preset table (`workspace-write`/`danger-full-access`) bundling the sandbox-mode and approval-policy knobs; a switch writes one `permission/preset` event through to both knob events. |
 | `ctx.ptcRuntime` | `seam` | [`ptc-runtime`](../packages/ptc-runtime/ptc-runtime) | [`ptc-runtime-node`](../packages/ptc-runtime/ptc-runtime-node), [`experimental-ptc-runtime-python`](../packages/experimental/ptc-runtime-python) | [`tool-executor-ptc`](../packages/core/tool-executor-ptc), [`workflow-ptc`](../packages/workflow/workflow-ptc) | - | Runs programs against host-provided async bindings; tool-executor-ptc owns PTC presentation and workflow-ptc owns workflow orchestration. |

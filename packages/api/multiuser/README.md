@@ -31,6 +31,8 @@ The service opens the `multiuser` storage domain (accounts, login sessions, work
 
 The service registers the `user` Remote access policy. The global role opens only listing, follow, controlled workspace creation, and model-catalog calls. Each owned workspace contributes a workspace grant, and each session accounted by an owned workspace contributes a session grant. Methods that touch a resource the account does not own are denied before dispatch; workspace and session reads filter through `remoteAccess.allows()` in the existing controllers. `workspace/follow` permits reading both owned workspaces and their Session membership; `session/create` permits reusing a blank Session in an owned workspace.
 
+Tool execution is denied by default, including preset contributions. A trusted isolated provider may call `registerIsolatedTool(definition, authorize)` in its own fiber. The exception requires the exact live definition in the current step's `toolSet`, a root invocation and synchronous provider authorization; tool names alone grant nothing. Disposal removes the exception, and other Tools guards can still deny. The [Runner Bash provider](../../sandbox/harness-sandbox/README.md#runner-bash) also checks original message ownership and cancellation in its body.
+
 <a id="routes"></a>
 ## Routes
 
@@ -99,7 +101,7 @@ No direct effect; login and ownership changes do not alter model requests.
 
 - File, attachment, export, terminal, settings, and exact Fetch routes remain closed to ordinary users until their ownership rules are implemented.
 - Ordinary users cannot change global settings or default model selections.
-- Process-level sandbox isolation remains a separate Docker/runner task. This service denies all tool execution, including tools loaded by agent presets, until that integration exists.
+- Account authentication supplies no process isolation. Only registered isolated implementations can receive a tool-execution exception; ordinary host tools remain denied.
 - Self-service registration, password recovery, OAuth/OIDC, sharing, and user API keys are out of scope.
 - Browser acceptance uses the real Web Loader composition in `apps/web/tests/multiuser.e2e.ts`; backend tests exercise login lifecycle, durable ownership, and rejection before dispatch.
 

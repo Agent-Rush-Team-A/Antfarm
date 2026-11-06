@@ -31,6 +31,7 @@ const snapshotAdapters = [
   'snapshots/acp/acp.snapshot.ts',
   'snapshots/sdk/sdk.snapshot.ts',
   'snapshots/session/headless.snapshot.ts',
+  'snapshots/web/sandbox-bash/sandbox-bash.snapshot.ts',
 ] as const
 
 interface Scenario {

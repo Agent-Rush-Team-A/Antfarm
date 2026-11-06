@@ -1,0 +1,8 @@
+version: 1
+scenario: sandbox-bash
+profile: web
+composition: web-sandbox-bash
+recording: authored
+header:
+  class: web-sandbox-bash
+  pin: true

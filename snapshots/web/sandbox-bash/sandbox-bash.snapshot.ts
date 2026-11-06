@@ -1,0 +1,131 @@
+/** Recorded-session replay through dsh Web, native authentication and the shipped Runner Bash preset. */
+import { existsSync } from 'node:fs'
+import { readFile, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { createServer } from 'node:http'
+import { once } from 'node:events'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { expect, test, vi } from 'vitest'
+import { deriveReplayScript, parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
+import { formatSystemPromptSnapshot, formatToolSchemasSnapshot, normalizedSystemPrompts, normalizedToolSchemas,
+  normalizeSessionSnapshot, redactSessionSnapshotIds } from '@deepseek-ai/dsh-session-snapshot'
+import { descriptorOf } from '@deepseek-ai/dsh-storage-domain'
+import { JsonStorageBackend } from '@deepseek-ai/dsh-storage-json'
+import { hashPassword, multiuserDomainSpec } from '@deepseek-ai/dsh-api-multiuser'
+import { withDefaultWeb, webRequest } from '../../../apps/cli/tests/profiles/web/tests/default-web-process.ts'
+
+const directory = fileURLToPath(new URL('.', import.meta.url))
+const fixture = join(directory, 'session.v4.jsonl')
+const overlay = fileURLToPath(new URL('../../../apps/cli/config/examples/harness-sandbox.patch.yml', import.meta.url))
+const stdout = '中\0'.repeat(16_384)
+const stderr = `${'e'.repeat(65_525)}diagnostic\n`
+
+test('snapshot: Web sandbox Bash returns real results through the admitted product tool', async (t) => {
+  const refresh = process.env.DSH_SNAPSHOT === 'refresh'
+  expect(existsSync(fixture), 'replay requires the committed Session fixture').toBe(true)
+  const source = await readFile(fixture, 'utf8')
+  const script = deriveReplayScript(parseSessionLog(source))
+  const task = parseSessionLog(source).flatMap(event => event.type === 'user/message' && event.data.source.kind === 'user'
+      ? event.data.content.flatMap(block => block.type === 'text' ? [block.text] : []) : [])[0]!
+  const password = randomUUID()
+  const patches = [overlay]
+  const calls: Array<{ path: string; body: Record<string, unknown> }> = []
+  const socketPath = process.platform === 'win32' ? `\\\\.\\pipe\\dsh-sandbox-snapshot-${randomUUID()}` : `/tmp/dsh-sandbox-${randomUUID()}.sock`
+  const server = createServer((request, response) => {
+    let body = ''
+    request.setEncoding('utf8').on('data', (chunk: string) => { body += chunk })
+    request.on('end', () => {
+      const parsed = body === '' ? {} : JSON.parse(body) as Record<string, unknown>
+      calls.push({ path: request.url!, body: parsed })
+      response.end(JSON.stringify(request.url?.endsWith('/exec') ? {
+        executionId: parsed.executionId, exitCode: parsed.command === 'pwd' ? 0 : 7,
+        stdout: { text: parsed.command === 'pwd' ? '/workspace\n' : stdout, truncated: parsed.command !== 'pwd' },
+        stderr: { text: parsed.command === 'pwd' ? '' : stderr, truncated: parsed.command !== 'pwd' },
+      } : { state: 'running', containerId: 'a'.repeat(64) }))
+    })
+  })
+  t.onTestFinished(async () => {
+    vi.unstubAllEnvs()
+    await new Promise<void>((resolve, reject) => { server.close(error => error ? reject(error) : resolve()); server.closeAllConnections() })
+  })
+  await once(server.listen(socketPath), 'listening')
+  vi.stubEnv('DSH_SANDBOX_RUNNER_SOCKET', socketPath)
+  await withDefaultWeb(t, async ({ root, url }) => {
+    const post = (path: string, body: unknown, cookie = '') => webRequest(new URL(path, url), t.signal, {
+      method: 'POST', headers: { 'content-type': 'application/json', origin: new URL(url).origin, cookie }, body: JSON.stringify(body),
+    })
+    const login = await post('/auth/login', { username: 'alice', password })
+    expect(login.status).toBe(200)
+    const cookie = login.headers['set-cookie']![0]!.split(';')[0]!
+    const rpc = async (method: string, request: unknown) => {
+      const response = await post(`/api/${method}`, { type: 'client-request', rpcId: randomUUID(), method, payload: { args: { request } } }, cookie)
+      expect(response.status, response.text).toBe(200)
+      const envelope = JSON.parse(response.text) as { result: { ok: boolean; value: Record<string, unknown> } }
+      expect(envelope.result.ok, response.text).toBe(true)
+      return envelope.result.value
+    }
+    const workspace = (await rpc('workspace/create', { title: 'snapshot' })).workspace as { workspaceId: string }
+    const sessionId = (await rpc('session/create', { workspaceId: workspace.workspaceId })).sessionId as string
+    const requestId = randomUUID()
+    expect(await rpc('session/prompt', { sessionId, requestId, mode: 'queue', content: [{ type: 'text', text: task }] })).toMatchObject({ accepted: true })
+    const response = await post('/__test/sandbox-snapshot', {})
+    expect(response.status, response.text).toBe(200)
+    const observed = JSON.parse(response.text) as { log: string; requests: Array<{ messages: unknown[]; tools: Array<{ name: string }> }>; presentations: unknown[] }
+    expect(observed.requests).toHaveLength(3)
+    for (const request of observed.requests) {
+      expect(request.tools.map(tool => tool.name)).toEqual(['bash'])
+      const modelText = JSON.stringify(request)
+      expect(modelText).toContain('Current working directory: \\"/workspace\\".')
+      for (const hidden of [root, 'a'.repeat(64), 'expectedContainerId', 'workspaceId', 'run_in_background', 'sandbox_permissions']) expect(modelText).not.toContain(hidden)
+      expect(modelText).not.toContain('session workspace:')
+      expect(modelText).not.toContain('Current DSH file policy:')
+      expect(modelText).not.toContain('full path relative to the working directory')
+    }
+    expect(JSON.stringify(observed.requests[2]?.messages)).toContain('diagnostic')
+    expect(JSON.stringify(observed.requests[2]?.messages)).toContain('[exit code: 7]')
+    expect(observed.presentations).toMatchObject([
+      { call: { card: 'terminal', cwd: '/workspace' }, result: { card: 'terminal', exitCode: 0, output: '/workspace\n' } },
+      { call: { card: 'terminal', cwd: '/workspace' }, result: { card: 'terminal', exitCode: 7 } },
+    ])
+    expect(JSON.stringify(observed.requests[2]?.messages)).toContain(JSON.stringify(stdout).slice(1, -1))
+    expect(JSON.stringify(observed.requests[2]?.messages)).toContain(JSON.stringify(stderr).slice(1, -1))
+    expect(JSON.stringify(observed.requests[2]?.messages)).not.toContain('Full formatted result stored at:')
+    expect(JSON.stringify(observed.requests[2]?.messages)).not.toContain('Use read with offset/limit')
+    const events = await rpc('session/events', { address: { kind: 'session', sessionId }, maxMessages: 100 })
+    expect(JSON.stringify(events)).toContain('"exitCode":7')
+    expect(JSON.stringify(events)).toContain('diagnostic')
+    const executions = calls.filter(call => call.path.endsWith('/exec'))
+    expect(executions).toHaveLength(2)
+    expect(executions.map(call => call.body.workdir)).toEqual(['.', '.'])
+    expect(new Set(executions.map(call => call.body.executionId)).size).toBe(2)
+    const cwd = (calls[0]!.body.workspaceDir as string)
+    const context = { sessionIds: [], cwd }
+    const redacted = redactSessionSnapshotIds([observed.log])[0]!
+    const actual = normalizeSessionSnapshot(redacted, context, { identityMode: 'preserve' })
+    const prompt = formatSystemPromptSnapshot(normalizedSystemPrompts(observed.log, context)[0]!)
+    const schemas = formatToolSchemasSnapshot(normalizedToolSchemas(observed.log, context)[0]!)
+    for (const [name, value] of [['session.v4.jsonl', actual], ['system-prompt.expected.md', prompt], ['tool-schemas.expected.json', schemas],
+      ['presentation.expected.json', JSON.stringify(observed.presentations, null, 2) + '\n']] as const) {
+      if (refresh) await writeFile(join(directory, name), value)
+      else expect(value, name).toBe(await readFile(join(directory, name), 'utf8'))
+    }
+    const beforeDuplicate = calls.length
+    expect(await rpc('session/prompt', { sessionId, requestId, mode: 'queue', content: [{ type: 'text', text: task }] })).toMatchObject({ accepted: true })
+    expect(calls).toHaveLength(beforeDuplicate)
+  }, { patches, prepare: async (root) => {
+    vi.stubEnv('DSH_MULTIUSER_WORKSPACE_ROOT', join(root, 'workspaces'))
+    const patch = join(root, 'snapshot.patch.yml')
+    await writeFile(patch, JSON.stringify([{ insert: [{ id: 'sandbox-snapshot-control',
+      name: new URL('../../../apps/cli/tests/profiles/harness-sandbox/fixtures/snapshot-control.mjs', import.meta.url).href, config: { script } }] },
+      { id: 'agent-default-model', config: { provider: 'sandbox-snapshot', model: 'fixture' } }, { id: 'session-title', disabled: true }]))
+    patches.push(patch)
+    const backend = new JsonStorageBackend(join(root, 'home', 'storages'))
+    try {
+      const unit = await backend.kv.open(descriptorOf(multiuserDomainSpec))
+      await unit.loadAll()
+      const id = `user-${randomUUID()}`
+      await unit.putRecord('users', id, { id, username: 'alice', usernameNormalized: 'alice', password: await hashPassword(password), createdAt: new Date().toISOString() })
+    } finally { await backend.close() }
+  } })
+}, 90_000)

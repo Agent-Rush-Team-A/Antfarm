@@ -6,7 +6,7 @@
  * its write path; the fold is the `sandboxMode` session-projection unit
  * registered here, while the event and write path come from
  * `./session-mode.ts`).
- * Before each agent request, the owner also contributes the resolved policy to
+ * By default, before each agent request the owner contributes the resolved policy to
  * the cache-safe runtime-context snapshot. The agent loop logs that snapshot as
  * model history, so replay reconstructs the same mode and root the enforcing
  * consumers resolve without rewriting the stable system prompt.
@@ -92,6 +92,8 @@ declare module '@deepseek-ai/cordis' {
  * is any per-family knob: this is the one shared policy home.
  */
 export interface Config {
+  /** Include the host file policy in model runtime context. Disable when model tools use another execution world. @default true */
+  modelContext?: boolean
   /** File-sandbox mode a session starts from (default: `read-only`). */
   mode?: SandboxMode
   /**
@@ -134,6 +136,7 @@ const sandboxModeStateSchema = zod.union([
 export class SandboxPolicyService extends Service {
   // Inline schema call: the config catalog walks `static Config` statically.
   static Config: z<Config> = z.object({
+    modelContext: z.boolean().default(true),
     mode: z.union(['read-only', 'workspace-write', 'danger-full-access'] as const).default('read-only'),
     // No schema default: process.cwd() is resolved in the constructor so the
     // stored root is always absolute regardless of how it was supplied.
@@ -150,6 +153,7 @@ export class SandboxPolicyService extends Service {
   /** The frozen extra writable directories shared by every resolved policy, or `undefined` for none. */
   readonly additionalWritableRoots: readonly string[] | undefined
   private sandboxModeProjectionHandle!: ProjectionHandle<SandboxMode | null>
+  private readonly modelContext: boolean
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'sandboxPolicy')
@@ -159,6 +163,7 @@ export class SandboxPolicyService extends Service {
     this.defaultMode = config.mode as SandboxMode
     this.workspaceRoot = resolveWorkspaceRoot(config.workspaceRoot ?? process.cwd())
     this.additionalWritableRoots = resolveAdditionalWritableRoots(config.additionalWritableRoots)
+    this.modelContext = config.modelContext ?? true
   }
 
   protected async [Service.init](): Promise<void> {
@@ -171,7 +176,7 @@ export class SandboxPolicyService extends Service {
       apply: (state, event) => (event.type === 'sandbox/mode' ? event.data.mode : state),
     })
 
-    ctx.inject(['systemPrompt'], (scope: Context) => {
+    if (this.modelContext) ctx.inject(['systemPrompt'], (scope: Context) => {
       scope.systemPrompt.context({
         name: 'sandbox:policy',
         order: scope.systemPrompt.getContextOrder('SANDBOX_POLICY'),

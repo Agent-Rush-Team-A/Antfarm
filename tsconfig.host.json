@@ -252,6 +252,7 @@
     "packages/experimental/inspector/scripts/**/*.ts",
     "packages/llm/llm-pi-ai/scripts/**/*.ts",
     "scripts/**/*.ts",
+    "snapshots/web/sandbox-bash/sandbox-bash.snapshot.ts",
     "website/**/*.ts",
     "website/.vitepress/**/*.ts"
   ],

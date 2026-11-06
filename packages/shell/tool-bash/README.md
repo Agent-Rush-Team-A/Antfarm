@@ -27,6 +27,8 @@ English | [中文](README.zh.md)
 
 New commands start in the Session's current working directory. Relative `workdir` values resolve from that directory; per-call overrides and background jobs do not change it.
 
+Pure output presentation is also exported from `@deepseek-ai/dsh-tool-bash/render`. `renderCommandOutput` accepts known retained stdout/stderr and truncation facts, without requiring fabricated signal or process fields. This entry registers no tool or shell provider.
+
 Load this plugin in any composition where the agent should run bash commands: it registers the `bash` tool once an executor provider and the `dsh-shell-env` registry are mounted, and stays pending until the `tools`, `shell`, `systemPrompt`, and `shellEnv` services exist.
 
 ### Minimal configuration

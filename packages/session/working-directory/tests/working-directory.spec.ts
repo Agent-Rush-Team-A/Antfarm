@@ -38,6 +38,26 @@ async function fixture(config?: (root: string) => WorkingDirectoryConfig) {
 }
 
 describe('Session working directories', () => {
+  it('projects the configured model directory in assembly and notices while preserving host records', async () => {
+    await using f = await fixture(() => ({ modelDirectory: '/workspace' }))
+    const child = join(f.root, 'child')
+    await mkdir(child)
+    await f.ctx.workingDirectory.set(f.agent, child)
+    const assembly = await f.ctx.systemPrompt.assemble({ agent: f.agent, scope: f.agent })
+    expect(renderContextSnapshot(assembly)).toBe('Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nCurrent working directory: "/workspace".')
+    expect(f.harness.claim(f.agent, 'next-step', 1)).toEqual([])
+    expect(f.ctx.workingDirectory.get(f.agent.session)).toBe(child)
+    expect(f.agent.session.header.cwd).toBe(f.root)
+    await rm(child, { recursive: true })
+    await f.ctx.workingDirectory.ensure(f.agent)
+    expect(f.harness.claim(f.agent, 'next-step', 1)).toEqual([])
+    expect(f.ctx.workingDirectory.get(f.agent.session)).toBe(f.root)
+  })
+
+  it.each(['', ' ', 'x\0y', '\ud800'])('rejects invalid model directory %j', async (modelDirectory) => {
+    await expect(fixture(() => ({ modelDirectory }))).rejects.toThrow('modelDirectory must be non-empty text')
+  })
+
   it('keeps origin metadata and other Sessions independent while logging the changed directory', async () => {
     await using f = await fixture()
     const child = join(f.root, 'child')

@@ -15,6 +15,7 @@ import {
   ReasoningEffortId, createUserMessage, freezeMessage,
 } from '@deepseek-ai/dsh-llm'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
+import type { SessionPromptAdmission } from './prompt-admission.ts'
 import { buildForkSeed } from '@deepseek-ai/dsh-session/fork'
 import { SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
@@ -328,11 +329,40 @@ export class SessionCommandController {
    * has already validated the content and built the durable message source.
    * @param request - Session identity, prompt content, and delivery mode.
    * @param source - the `user-rpc` source recorded on the accepted message.
+   * @param signal - Optional caller cancellation until insertion; omission supplies no caller cancellation.
    * @returns acknowledgement that the Agent accepted the prompt.
    */
-  async prompt(request: SessionPromptRequest, source: MessageSource): Promise<SessionPromptValue> {
+  async prompt(request: SessionPromptRequest, source: MessageSource, signal?: AbortSignal): Promise<SessionPromptValue> {
+    const caller = signal ?? new AbortController().signal
+    const preparations: Array<(agent: Agent) => Promise<void>> = []
+    const checks: Array<(agent: Agent, message: UserMessage) => undefined> = []
+    const admission: SessionPromptAdmission = {
+      request, source, signal: caller,
+      prepare: (callback) => { preparations.push(callback) },
+      beforeEnqueue: (callback) => { checks.push(callback) },
+    }
+    try {
+      caller.throwIfAborted()
+      return await this.ctx.waterfall('session/prompt-admission', admission,
+        () => this.admitPrompt(request, source, caller, preparations, checks))
+    } catch (error) {
+      if (caller.aborted) throw new RemoteError('gateway/cancelled', 'Prompt admission was cancelled', {})
+      throw error
+    }
+  }
+
+  private async admitPrompt(
+    request: SessionPromptRequest, source: MessageSource, signal: AbortSignal,
+    preparations: readonly ((agent: Agent) => Promise<void>)[],
+    checks: readonly ((agent: Agent, message: UserMessage) => undefined)[],
+  ): Promise<SessionPromptValue> {
     const agent = await this.resolveAgent(request.sessionId)
+    signal.throwIfAborted()
     if (hasPromptRequest(agent, request.requestId)) return { accepted: true }
+    for (const prepare of preparations) {
+      await prepare(agent)
+      signal.throwIfAborted()
+    }
     const admission = resolvePromptFileReceipts(
       request.content,
       receiptId => this.ctx.fileUploads.resolve(agent, receiptId),
@@ -364,6 +394,8 @@ export class SessionCommandController {
           )
         }
         using binding = this.ctx.fileUploads.bindPrompt(agent, admission.receiptIds, request.requestId)
+        for (const check of checks) check(agent, message)
+        signal.throwIfAborted()
         if (request.mode === 'steer') agent.steer(message)
         else agent.followup(message)
         binding.commit()
@@ -576,6 +608,7 @@ function hasPromptRequest(agent: Agent, requestId: SessionRequestId): boolean {
   if (agent.inbox.nextTurn.some(matches) || agent.inbox.nextStep.some(matches)) return true
   // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   return agent.session.snapshotEvents().some((event) => {
+    if (event.type === 'agent/inbox/spliced') return event.data.inserted.some(matches)
     if (event.type !== 'user/message') return false
     const source = event.data.source
     return source.kind === 'user' && 'rpcId' in source && source.rpcId === requestId

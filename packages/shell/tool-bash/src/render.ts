@@ -15,20 +15,11 @@ function streamText(output: CollectedOutput): string {
 }
 
 /**
- * Shape one finished run into the text the model sees: stdout, then a marked
- * stderr section, then exit-status markers. Non-zero exits are reported, not
- * errored — the model decides how to react; only infrastructure failures
- * (spawn errors, aborts) surface as isError results.
- * @param result - the completed foreground run from the executor.
- * @param escalationModes - the escalation targets this composition advertises;
- *   non-empty adds the same-turn escalation hint after a denial marker
- *   (default `[]`: no hint).
- * @returns the model-facing text: output body (or `(no output)`), then any timeout/stopped/signal/exit markers, each on its own line.
+ * Render retained stdout and stderr without inventing process status or spill files.
+ * @param result - Known output streams and their truncation facts.
+ * @returns Stdout, marked stderr and truncation notices, or `(no output)` for known empty output.
  */
-export function renderResult(
-  result: ShellRunResult & { stopped?: string },
-  escalationModes: readonly SandboxMode[] = [],
-): string {
+export function renderCommandOutput(result: Pick<ShellRunResult, 'stdout' | 'stderr'>): string {
   const out = streamText(result.stdout)
   const err = streamText(result.stderr)
 
@@ -39,6 +30,20 @@ export function renderResult(
     body += `[stderr]\n${err}`
   }
   if (body.length === 0) body = '(no output)'
+  return body
+}
+
+/**
+ * Render known process status after the retained command output.
+ * @param result - Completed local foreground run.
+ * @param escalationModes - Advertised escalation targets, empty by default.
+ * @returns Output followed by the known interruption and exit markers.
+ */
+export function renderResult(
+  result: ShellRunResult & { stopped?: string },
+  escalationModes: readonly SandboxMode[] = [],
+): string {
+  const body = renderCommandOutput(result)
 
   const markers: string[] = []
   // Keep the exit marker last because parseExitStatus anchors there.
@@ -61,8 +66,7 @@ export function renderResult(
   }
   if (markers.length === 0) return body
 
-  if (!body.endsWith('\n')) body += '\n'
-  return body + markers.join('\n')
+  return body + (body.endsWith('\n') ? '' : '\n') + markers.join('\n')
 }
 
 /**

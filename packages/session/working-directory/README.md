@@ -27,6 +27,8 @@ Change one Session’s working directory while existing processes retain theirs.
 
 Mount alongside `fs`, `sessionProjections`, and `systemPrompt`. `defaultDirectory` selects an absolute fallback for Sessions without an original directory; omission uses the launch directory. See the [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-working-directory).
 
+`modelDirectory` optionally fixes the model-facing directory to non-empty text, such as `/workspace` for a container-backed command tool. It applies inside the owning context renderer, including its final assembly update. Backend `get`, validation and durable directory events continue to use the actual directory. While this display is fixed, directory changes and recovery queue no path-transition notices; the next context still shows the configured value. Filesystem isolation remains the execution provider's responsibility.
+
 ```yaml
 - name: '@deepseek-ai/dsh-working-directory'
 ```
@@ -63,7 +65,7 @@ No runtime invariant companion is published because the service reads its only d
 
 #### What the model sees
 
-The current value is `Current working directory: <JSON-quoted absolute path>.` Each committed change, including automatic recovery, attempts to queue a user-context notice through the ordinary Agent inbox. Cancellation or disposal may discard unadmitted notices; the durable directory remains available to the next request. Directory context stays outside the system prompt and remains enabled when optional runtime context is disabled.
+The current value is `Current working directory: <JSON-quoted absolute path>.` Each committed change, including automatic recovery, attempts to queue a user-context notice through the ordinary Agent inbox. Cancellation or disposal may discard unadmitted notices; the durable directory remains available to the next request. Directory context stays outside the system prompt and remains enabled when optional runtime context is disabled. With `modelDirectory: /workspace`, the context is exactly `Current working directory: "/workspace".` and host-directory transitions contribute no model notices. Backend directory events remain available to management and replay readers.
 
 #### Token effect
 
@@ -71,7 +73,7 @@ The initial snapshot and changed values add user-context tokens; unchanged snaps
 
 #### KV Cache effect
 
-Directory transitions append context without replacing the stable system-prompt prefix. A changed directory or recovery creates new context after retained history.
+Directory transitions append context without replacing the stable system-prompt prefix. A changed directory or recovery creates new context after retained history when the model display is not fixed.
 
 ## Known Limitations and Deferred Work
 

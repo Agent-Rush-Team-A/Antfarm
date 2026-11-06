@@ -13,7 +13,7 @@ import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-storage-domain'
 import type { UserId, PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import type {} from '@deepseek-ai/dsh-tools'
+import type { ToolDefinition, ToolExecution } from '@deepseek-ai/dsh-tools'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { WorkspaceId, workspaceRecord, type Workspace } from '@deepseek-ai/dsh-workspace'
 import { MULTIUSER_CLIENT_SCRIPT, MULTIUSER_CLIENT_STYLE } from './client-script.ts'
@@ -115,6 +115,7 @@ export class MultiuserService extends Service implements ConnectionAdmissionProv
   private readonly workspacesByUser = new Map<string, Set<string>>()
   private workspaceBySession = new Map<string, string>()
   private operationTail: Promise<unknown> = Promise.resolve()
+  private readonly isolatedTools = new Set<{ definition: ToolDefinition; authorize: (execution: Readonly<ToolExecution>) => boolean }>()
 
   /**
    * @param ctx - Host context carrying Connection, access control, storage, and the workspace registry.
@@ -184,12 +185,34 @@ export class MultiuserService extends Service implements ConnectionAdmissionProv
       table.push({ kind: 'script-src', placement: 'head', src: '/auth/client.js' })
       table.push({ kind: 'style', text: MULTIUSER_CLIENT_STYLE })
     })
-    // No execution-world isolation is provided by account authentication.
-    // A monotonic guard also covers tools installed by agent presets.
     this.ctx.inject(['tools'], (ctx) => {
-      ctx.tools.guard(() => 'Tool execution is unavailable in this multiuser deployment.')
+      ctx.tools.guard((execution) => {
+        if (execution.toolSet !== undefined && execution.parent === undefined) {
+          const definition = ctx.tools.get(execution.name, execution.agent, execution.toolSet)
+          for (const entry of this.isolatedTools) {
+            if (entry.definition === definition && entry.authorize(execution)) return undefined
+          }
+        }
+        return 'Tool execution is unavailable in this multiuser deployment.'
+      })
     })
     this.registerRoutes()
+  }
+
+  /**
+   * Register an isolated implementation's exception to the default execution denial.
+   * Only the exact live definition in an admitted step may use it; nested dispatch stays denied.
+   * @param definition - Tool whose provider owns isolation and validates the original initiator.
+   * @param authorize - Synchronous per-call permission check; false retains the default denial.
+   * @returns Caller-owned disposer removing this exception, also invoked on plugin unload.
+   */
+  registerIsolatedTool(definition: ToolDefinition, authorize: (execution: Readonly<ToolExecution>) => boolean): () => void {
+    const entry = { definition, authorize }
+    const dispose = this.ctx.effect(() => {
+      this.isolatedTools.add(entry)
+      return () => { this.isolatedTools.delete(entry) }
+    }, 'multiuser.registerIsolatedTool()')
+    return () => { void dispose() }
   }
 
   // ── Account provisioning ────────────────────────────────────────────────

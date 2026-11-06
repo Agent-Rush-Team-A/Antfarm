@@ -2139,6 +2139,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Account and ownership service installed by the multiuser composition.',
     methods: [
       {
+        signature: 'registerIsolatedTool(definition: ToolDefinition, authorize: (execution: Readonly<ToolExecution>) => boolean): () => void',
+        description: 'Register an isolated implementation\'s exception to the default execution denial. Only the exact live definition in an admitted step may use it; nested dispatch stays denied.',
+        parameters: [{ name: 'definition', description: 'Tool whose provider owns isolation and validates the original initiator.' }, { name: 'authorize', description: 'Synchronous per-call permission check; false retains the default denial.' }],
+        returns: 'Caller-owned disposer removing this exception, also invoked on plugin unload.',
+      },
+      {
         signature: 'provisionUser(username: string, password: string): Promise<MultiuserUser>',
         description: 'Create one account through an explicit provisioning step. Existing names are never overwritten and passwords are never reset implicitly.',
         parameters: [{ name: 'username', description: 'display name users type at login.' }, { name: 'password', description: 'plaintext to hash once; never stored.' }],
@@ -2661,6 +2667,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'sandboxConversation',
+    summary: 'Prepares owned workspaces before accepting messages; contributes no model tools.',
+    description: 'Prepares owned workspaces before accepting messages; contributes no model tools.',
+    methods: [
+      {
+        signature: 'forTurn(agent: Agent, turn: number): SandboxExecutionPermit',
+        description: 'Resolve permission for the actual owning turn, rechecking current native ownership.',
+        parameters: [{ name: 'agent', description: 'Exact Agent executing the original turn.' }, { name: 'turn', description: 'Captured original turn; never a latest-message lookup.' }],
+        returns: 'Original message, generation and cancellation signal; no sandbox is opened here.',
+      },
+    ],
+  },
+  {
     key: 'sandboxPolicy',
     summary: 'The sandbox-policy service (`ctx.sandboxPolicy`).',
     description: 'The sandbox-policy service (`ctx.sandboxPolicy`). Owns the deployment default mode, fallback workspace root, and current request-time policy section. Tool layers call resolve for each execution so a session\'s mode log and immutable cwd travel together to every enforcing capability.',
@@ -2728,6 +2747,43 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Close the current generation. Acknowledging deletion alone does not release its slot.',
         parameters: [{ name: 'workspaceId', description: 'Workspace registry identity.' }],
         returns: 'Closed after Docker confirms the generation is absent.',
+      },
+    ],
+  },
+  {
+    key: 'sandboxRunnerClient',
+    summary: 'Lifecycle-managed internal communication with one independent Runner.',
+    description: 'Lifecycle-managed internal communication with one independent Runner.',
+    methods: [
+      {
+        signature: 'open(workspaceId: WorkspaceId, workspaceDir: string): Promise<RunnerRunningSandbox>',
+        description: 'Send an authorized caller\'s open request; this transport does not authenticate users.',
+        parameters: [{ name: 'workspaceId', description: 'Trusted Runner workspace identity.' }, { name: 'workspaceDir', description: 'Trusted persistent workspace directory.' }],
+        returns: 'Confirmed running generation, retaining its full container identity.',
+      },
+      {
+        signature: 'status(workspaceId: WorkspaceId): Promise<RunnerSandboxStatus>',
+        description: 'Query the Runner for an authorized caller\'s workspace.',
+        parameters: [{ name: 'workspaceId', description: 'Trusted Runner workspace identity.' }],
+        returns: 'The current validated observation; failures never synthesize closed.',
+      },
+      {
+        signature: 'close(workspaceId: WorkspaceId): Promise<RunnerClosedSandbox>',
+        description: 'Request closure after the caller has authorized this operation; never automatically replay it.',
+        parameters: [{ name: 'workspaceId', description: 'Trusted Runner workspace identity.' }],
+        returns: 'Closed only after the Runner confirms container absence.',
+      },
+      {
+        signature: 'execute(workspaceId: WorkspaceId, request: RunnerExecutionRequest, signal?: AbortSignal): Promise<RunnerExecutionResult>',
+        description: 'Submit or retrieve the authorized caller\'s unchanged execution request without automatic retries.',
+        parameters: [{ name: 'workspaceId', description: 'Trusted workspace identity.' }, { name: 'request', description: 'Saved request including original execution and container identities.' }, { name: 'signal', description: 'Optional local wait cancellation; omission uses only service lifetime and deadline.' }],
+        returns: 'Validated command result; stopping this wait does not cancel the remote execution.',
+      },
+      {
+        signature: 'cancel(workspaceId: WorkspaceId, request: RunnerExecutionIdentity): Promise<RunnerCancellationResult>',
+        description: 'Request cancellation with its own deadline, independent of an aborted execution wait.',
+        parameters: [{ name: 'workspaceId', description: 'Trusted workspace identity.' }, { name: 'request', description: 'Original execution and full container identity.' }],
+        returns: 'Cancellation acknowledgement, not a cleanup guarantee; errors retain the Runner reason.',
       },
     ],
   },
@@ -2904,7 +2960,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: '@Remote(\'prompt\') async prompt(request: SessionPromptRequest, signal: AbortSignal): Promise<SessionPromptValue>',
         description: 'Admit one prompt after explicitly resuming its Session.',
-        parameters: [{ name: 'request', description: 'Session identity, prompt content, source metadata, and delivery mode.' }, { name: 'signal', description: 'caller cancellation before prompt admission begins.' }],
+        parameters: [{ name: 'request', description: 'Session identity, prompt content, source metadata, and delivery mode.' }, { name: 'signal', description: 'caller cancellation until the prompt enters the inbox; accepted work survives disconnect.' }],
         returns: 'acknowledgement that the Agent accepted the prompt.',
       },
       {
@@ -4849,15 +4905,21 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Full running identity for trusted execution integration.',
       },
       {
-        signature: 'statusForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerSandboxStatus>',
+        signature: 'async statusForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerSandboxStatus>',
         description: 'Observe a sandbox for an authenticated backend initiator.',
         parameters: [{ name: 'userId', description: 'Authenticated initiating user.' }, { name: 'workspaceId', description: 'Native workspace id.' }],
-        returns: 'Fresh Runner state with internal container identity.',
+        returns: 'Local closing barrier, or fresh Runner state with internal container identity.',
       },
       {
-        signature: 'closeForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerClosedSandbox>',
-        description: 'Ends all commands in this container without deleting workspace files or sessions.',
+        signature: 'activityForUser(userId: UserId, workspaceId: WorkspaceId): SandboxActivity',
+        description: 'Inspect local work before an authorized idle-reclamation decision; does not query Runner or close anything.',
         parameters: [{ name: 'userId', description: 'Authenticated initiating user.' }, { name: 'workspaceId', description: 'Native workspace id.' }],
+        returns: 'Outstanding input, openings, executions and closure; unavailable management throws rather than reporting idle.',
+      },
+      {
+        signature: 'async closeForUser(userId: UserId, workspaceId: WorkspaceId, target?: SandboxCloseTarget): Promise<RunnerClosedSandbox>',
+        description: 'Ends all commands in this container without deleting workspace files or sessions.',
+        parameters: [{ name: 'userId', description: 'Authenticated initiating user.' }, { name: 'workspaceId', description: 'Native workspace id.' }, { name: 'target', description: 'Optional original execution generation; stale cleanup cannot close a newer generation.' }],
         returns: 'Confirmed container absence.',
       },
     ],
@@ -5404,6 +5466,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Awaited parallel durability checkpoint: every listener runs and the caller awaits all of them, with no waterfall veto.',
     description: 'Awaited parallel durability checkpoint: every listener runs and the caller awaits all of them, with no waterfall veto. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`) reuses the session\'s owner scope.',
     parameters: [{ name: 'session', description: 'the session whose buffered events must reach durable storage.' }],
+  },
+  {
+    name: 'session/prompt-admission',
+    mode: 'waterfall',
+    signature: '\'session/prompt-admission\'(admission: SessionPromptAdmission, next: () => Promise<SessionPromptValue>): Promise<SessionPromptValue>',
+    summary: 'Wrap prompt preparation through final inbox insertion.',
+    description: 'Wrap prompt preparation through final inbox insertion. A listener can reuse a prior admission result; otherwise it delegates with next().',
+    parameters: [{ name: 'admission', description: 'Trusted source, caller lifetime and operation-local preparation/check registration.' }, { name: 'next', description: 'Continue the remaining admission listeners and original prompt operation.' }],
   },
   {
     name: 'settings/document-updated',
@@ -7530,6 +7600,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface MessageRoleMap {\n    system: SystemMessage;\n    developer: DeveloperMessage;\n    user: UserMessage;\n    assistant: AssistantMessage;\n    tool: ToolResultMessage;\n}',
   },
   {
+    name: 'MessageSource',
+    declaration: 'export type MessageSource = MessageSourceMap[keyof MessageSourceMap];',
+  },
+  {
     name: 'MessageSourceMap',
     declaration: 'export interface MessageSourceMap {\n    user: {\n        kind: \'user\';\n    };\n    model: ModelMessageSource;\n    tool: ToolMessageSource;\n    \'system-prompt\': SystemPromptMessageSource;\n}',
   },
@@ -8286,8 +8360,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface RRuleScheduleRecord {\n    readonly kind: \'rrule\';\n    readonly id: ScheduleId;\n    readonly title: string;\n    readonly prompt: string;\n    readonly rrule: string;\n    readonly scheduledAt: string;\n}',
   },
   {
+    name: 'RunnerCancellationResult',
+    declaration: 'export type RunnerCancellationResult = z.output<typeof cancellationResult>;',
+  },
+  {
     name: 'RunnerClosedSandbox',
     declaration: 'export interface RunnerClosedSandbox {\n    readonly state: \'closed\';\n}',
+  },
+  {
+    name: 'RunnerExecutionIdentity',
+    declaration: 'export type RunnerExecutionIdentity = z.output<typeof executionIdentity>;',
+  },
+  {
+    name: 'RunnerExecutionRequest',
+    declaration: 'export type RunnerExecutionRequest = z.output<typeof executionRequest>;',
+  },
+  {
+    name: 'RunnerExecutionResult',
+    declaration: 'export type RunnerExecutionResult = z.output<typeof executionResult>;',
   },
   {
     name: 'RunnerFailureRule',
@@ -8306,8 +8396,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface RunningSandbox {\n    readonly state: \'running\';\n    readonly containerId: DockerContainerId;\n}',
   },
   {
+    name: 'SandboxActivity',
+    declaration: 'export interface SandboxActivity {\n    readonly busy: boolean;\n    readonly requests: number;\n    readonly openings: number;\n    readonly executions: number;\n    readonly closing: boolean;\n}',
+  },
+  {
     name: 'SandboxCancellationResult',
     declaration: 'export interface SandboxCancellationResult {\n    readonly executionId: SandboxExecutionId;\n    readonly containerId: DockerContainerId;\n    readonly cancellation: \'requested\' | \'settled\';\n}',
+  },
+  {
+    name: 'SandboxCloseTarget',
+    declaration: 'export interface SandboxCloseTarget {\n    readonly containerId: import(\'./runner-client.ts\').SandboxContainerId;\n    readonly version: number;\n}',
   },
   {
     name: 'SandboxContainerId',
@@ -8324,6 +8422,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SandboxExecutionIdentity',
     declaration: 'export interface SandboxExecutionIdentity {\n    readonly executionId: SandboxExecutionId;\n    readonly expectedContainerId: DockerContainerId;\n}',
+  },
+  {
+    name: 'SandboxExecutionPermit',
+    declaration: 'export interface SandboxExecutionPermit {\n    readonly userId: UserId;\n    readonly workspaceId: WorkspaceId;\n    readonly sessionId: SessionId;\n    readonly requestId: SessionRequestId;\n    readonly messageId: UserMessage[\'id\'];\n    readonly containerId: SandboxContainerId;\n    readonly version: number;\n    readonly signal: AbortSignal;\n}',
   },
   {
     name: 'SandboxExecutionPolicy',
@@ -8952,6 +9054,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionProjectionViewValues',
     declaration: 'export type SessionProjectionViewValues = {\n    [K in keyof SessionProjectionMap]: SessionProjectionViewValue<SessionProjectionMap[K]>;\n};',
+  },
+  {
+    name: 'SessionPromptAdmission',
+    declaration: 'export interface SessionPromptAdmission {\n    readonly request: SessionPromptRequest;\n    readonly source: MessageSource;\n    readonly signal: AbortSignal;\n    prepare(callback: (agent: Agent) => Promise<void>): void;\n    beforeEnqueue(callback: (agent: Agent, message: UserMessage) => undefined): void;\n}',
   },
   {
     name: 'SessionPromptRequest',
