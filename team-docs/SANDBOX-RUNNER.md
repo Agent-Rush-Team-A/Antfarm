@@ -90,7 +90,7 @@ jq -n --arg id "$execution_id" --arg container "$container_id" \
 
 确认单次超时或取消已清理时，容器继续可用，其他执行不受影响。结果无法确认则同步冻结该代的新命令和尚未发出的 Start/run，按完整 ID 删除并确认。原失败报 execution_outcome_unknown，受回收影响的其他执行报 execution_container_recycled。删除成功可重新开启；删除失败继续保留名额和 cleanup_required，需要关闭操作重试。HTTP 与进程内 `cancel(workspaceId, {executionId, expectedContainerId})` 均只定位已有记录，重复取消复用同一次清理。
 
-交接给 #7 的执行入口为 POST /exec，取消入口为 POST /exec/cancel，身份和最终结果按上一节处理。`processes_cleaned` 表示本次后代已清理，`container_removed` 表示整代已删除，`unconfirmed` 表示仍没有清理保证；取消请求已接纳不能代替这些证据。一次清理成功时 B 继续，监管失证时 B 返回可识别的整代回收错误。旧代取消不能作用到重开的容器。
+交接给 #11 的执行入口为 POST /exec，取消入口为 POST /exec/cancel，身份和最终结果按上一节处理。`processes_cleaned` 表示本次后代已清理，`container_removed` 表示整代已删除，`unconfirmed` 表示仍没有清理保证；取消请求已接纳不能代替这些证据。一次清理成功时 B 继续，监管失证时 B 返回可识别的整代回收错误。旧代取消不能作用到重开的容器。
 
 ## 真实 Docker 验收
 
