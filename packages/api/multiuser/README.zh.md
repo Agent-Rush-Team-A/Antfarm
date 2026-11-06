@@ -42,7 +42,7 @@ kind: "package-reference"
 | `/auth/client.js` | GET | 登录页与账号徽标辅助脚本。 |
 | `/auth/sign-in` | GET | 公开登录页，不加载应用或私有启动状态。 |
 
-未登录的首页请求重定向到公开的 `/auth/sign-in` 页面。已登录页面显示账号和退出入口。登录状态变化会刷新其他标签页，切换账号会在启动应用前清除浏览器持久化的应用视图。退出失败时显示可重试的错误。活动 Peer 在登录到期时结束；认证响应和个性化首页均不允许缓存。
+未登录的首页请求重定向到相对于首页 URL 的公开 `auth/sign-in` 页面。脚本地址、登录/退出请求和账号刷新均保留部署路径前缀；浏览器从账号脚本 URL 推导应用根目录。已登录页面显示账号和退出入口。登录状态变化会刷新其他标签页，切换账号会在启动应用前清除浏览器持久化的应用视图。退出失败时显示可重试的错误。活动 Peer 在登录到期时结束；认证响应和个性化首页均不允许缓存。
 
 <a id="remote-access-policy"></a>
 ## Remote 访问策略
@@ -52,10 +52,10 @@ kind: "package-reference"
 | 范围 | 允许的 action | 说明 |
 | --- | --- | --- |
 | global | `workspace/create`、`workspace/follow`、`session/list`、`session/search`、`session/control`、`session/modelCatalog`、`session/canOpenWorkspacePath` | 列表与 follow 方法经 `ctx.remoteAccess.allows()` 逐项过滤。 |
-| workspace | `session/create`、`workspace/follow`、`workspace/rename`、`workspace/delete`、`workspace/insertBefore`、`workspace/insertSessionBefore` | condition 在判定时重新检查归属行。 |
+| workspace | `session/create`、`workspace/follow`、`workspace/rename`、`workspace/delete`、`workspace/insertBefore`、`workspace/insertSessionBefore`、`workspaceUpload/limits`、`workspaceUpload/upload` | condition 在判定时重新检查归属行。 |
 | session | `workspace/follow`、`session/create`、`session/list`、`session/search`、`session/control`、`session/page`、`session/events`、`session/observeEvent`、`session/observeProjections`、`session/state`、`session/observeState`、`session/wait`、`session/follow`、`session/projections`、`session/prompt`、`session/updateQueue`、`session/cancel`、`session/rename`、`session/fork`、`session/selectModel`、`workspace/insertSessionBefore`、`workspace/archiveSession`、`workspace/unarchiveSession`、`workspace/pinSession`、`workspace/unpinSession`，以及五个 `event:api-session/*` 通知 | Session 成员关系来自权威工作区记录。 |
 
-其余入口均在派发前拒绝，包括 `workspace/initializeDefault`、仅带 cwd 的 `session/create`、模型默认值写入、附件读取、文件服务、终端、后台任务、设置、凭证以及精确 Fetch 路由。非 global 资源被拒绝时返回 `remote-access/denied` 与 `reason: "not-found"`，不泄露其他账号的资源身份。
+其余入口均在派发前拒绝，包括 `workspace/initializeDefault`、仅带 cwd 的 `session/create`、模型默认值写入、附件读取、文件服务、终端、后台任务、设置、凭证以及未显式提供资源作用域授权的精确 Fetch 路由。[工作区上传](../workspace-upload/README.zh.md)在上限读取和原始上传路由中均检查工作区归属权限。非 global 资源被拒绝时返回 `remote-access/denied` 与 `reason: "not-found"`，不泄露其他账号的资源身份。
 
 <a id="configuration"></a>
 ## 配置
@@ -98,7 +98,7 @@ pnpm exec tsx scripts/multiuser-provision.ts --storage-root "$DSH_HOME/storages"
 <a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
-- 在文件、附件、导出、终端、设置和精确 Fetch 路由实现归属规则前，普通用户仍不能访问这些能力。
+- 普通用户仍不能访问旧版文件、附件、导出、终端、设置和精确 Fetch 路由。显式挂载的工作区上传服务实现自己的归属检查。
 - 普通用户不能修改全局设置或默认模型选择。
 - 进程级沙箱隔离仍属于独立的 Docker/runner 任务。本服务拒绝所有工具执行，包括会话预设加载的工具，直到该集成完成。
 - 自助注册、密码找回、OAuth/OIDC、共享和用户 API key 不在本任务范围。

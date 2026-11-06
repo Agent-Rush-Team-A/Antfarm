@@ -102,6 +102,8 @@ Workspace 和 Session 的启动基线均就绪后，空安装环境调用 `works
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
+挂载可选的[工作区上传](../../api/workspace-upload/README.zh.md)服务后，会话输入栏提供将所选文件上传到已授权工作区的入口。此入口用共享工作区 Toast 显示成功和失败，发送前检查服务端字节数上限，并随组件生命周期取消。
+
 <details>
 <summary>实现细节——点击展开</summary>
 

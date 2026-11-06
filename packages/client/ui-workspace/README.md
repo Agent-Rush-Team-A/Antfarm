@@ -102,6 +102,8 @@ The package injects the Client `remoteAccess` service and provides the root stan
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
+When the optional [workspace upload](../../api/workspace-upload/README.md) provider is mounted, a session composer action uploads a selected file into its authorized workspace. The action uses the shared workspace toast for success and failure, checks the server byte limit before sending, and cancels with its component lifetime.
+
 <details>
 <summary>Implementation internals — click to expand</summary>
 

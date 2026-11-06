@@ -2179,7 +2179,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'admitIndex(request: { readonly headers: AdmissionHeaders }, _secure: boolean): ConnectionIndexAdmission',
         description: 'Render an authenticated page or redirect to the public login document.',
         parameters: [{ name: 'request', description: 'index request headers after the trust fence.' }, { name: '_secure', description: 'listener TLS state.' }],
-        returns: 'the authenticated Peer or a login-page redirect.',
+        returns: 'the authenticated Peer or a document-relative login-page redirect.',
       },
       {
         signature: 'ownsWorkspace(userId: UserId, workspaceId: WorkspaceId): boolean',
@@ -4863,6 +4863,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'workspaceUpload',
+    summary: 'Host upload provider; resources belong to the operation and survive its cancellation cleanup.',
+    description: 'Host upload provider; resources belong to the operation and survive its cancellation cleanup.',
+    methods: [
+      {
+        signature: '@Remote limits(request: WorkspaceUploadScope, signal: AbortSignal): WorkspaceUploadLimits',
+        description: 'Read the deployment byte limit for an authorized workspace.',
+        parameters: [{ name: 'request', description: 'workspace identity from the caller.' }, { name: 'signal', description: 'caller cancellation, including browser provider withdrawal.' }],
+        returns: 'inclusive per-file byte limit without exposing a host path.',
+      },
+    ],
+  },
+  {
     key: 'worktrees',
     summary: 'Creates retained Git worktrees under the mounted filesystem and sandbox providers.',
     description: 'Creates retained Git worktrees under the mounted filesystem and sandbox providers.',
@@ -6163,7 +6176,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConnectionFetchRoute',
-    declaration: 'export interface ConnectionFetchRoute {\n    readonly path: string;\n    readonly methods: readonly ConnectionFetchMethod[];\n    readonly requestBody: ConnectionRequestBodyMode;\n    readonly fetch: (request: Request) => Promise<Response>;\n}',
+    declaration: 'export interface ConnectionFetchRoute {\n    readonly path: string;\n    readonly methods: readonly ConnectionFetchMethod[];\n    readonly requestBody: ConnectionRequestBodyMode;\n    readonly fetch: (request: Request, peer: PeerScope) => Promise<Response>;\n    readonly authorize?: (request: Request, peer: PeerScope) => boolean;\n}',
   },
   {
     name: 'ConnectionIndexAdmission',
@@ -10556,6 +10569,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceUnpinSessionRequest',
     declaration: 'export interface WorkspaceUnpinSessionRequest {\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'WorkspaceUploadLimits',
+    declaration: 'export interface WorkspaceUploadLimits {\n    readonly maxBytes: number;\n}',
+  },
+  {
+    name: 'WorkspaceUploadScope',
+    declaration: 'export interface WorkspaceUploadScope {\n    readonly workspaceId: WorkspaceId;\n}',
   },
   {
     name: 'WorkspaceValue',

@@ -45,6 +45,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { SessionSearchResultItem } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { RemoteHostFacts } from '@deepseek-ai/dsh-api-remotes/client'
+import type { WorkspaceUploadFailureReason } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionActivity, WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
@@ -322,6 +323,8 @@ export type SessionRowActionProps<Injected extends object = object> =
 
 /** One transient Workspace notice rendered by the overlay toast entry. */
 export type RowToast =
+  | { kind: 'uploaded'; name: string }
+  | { kind: 'uploadFailed'; reason: WorkspaceUploadFailureReason | 'unknown'; stored: boolean }
   | { kind: 'archived'; sessionId: SessionId }
   | { kind: 'stoppedAndArchived'; sessionId: SessionId }
   | { kind: 'sessionIdCopied' }

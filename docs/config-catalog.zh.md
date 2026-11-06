@@ -387,6 +387,23 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-workspace-files -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-api-workspace-upload -->
+<a id="deepseek-aidsh-api-workspace-upload"></a>
+
+## `@deepseek-ai/dsh-api-workspace-upload`
+
+- `inject`: `connection` · `remoteAccess` · `typert` · `workspaceRegistry` · `workspaceController`
+- `source`: [`packages/api/workspace-upload/src/index.ts:17`](../packages/api/workspace-upload/src/index.ts)
+
+```ts config-catalog
+/** Per-file streamed intake limit. */
+export interface Config {
+  /** Inclusive maximum size of one uploaded file; uploads are never truncated. */
+  readonly maxBytes?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-workspace-upload -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-attachment-local -->
 <a id="deepseek-aidsh-attachment-local"></a>
 

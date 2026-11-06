@@ -57,6 +57,8 @@ import { SessionRenameDialog } from './session-actions/RenameSession.tsx'
 import { RowActionToast } from './session-actions/RowActionToast.tsx'
 import { registerToasts } from './toast/register.ts'
 import { WorkspacePicker } from './WorkspacePicker.tsx'
+import { WorkspaceUploadButton, type WorkspaceUploadInjected } from './WorkspaceUploadButton.tsx'
+import type {} from '@deepseek-ai/dsh-api-workspace-upload/client'
 import { en, ja, es, fr, de, ru, pt, zh, type WorkspaceKey } from './locales.ts'
 
 export type { StartSessionOptions, UiWorkspace } from './navigation.ts'
@@ -122,6 +124,17 @@ export function apply(ctx: Context): void {
   const rowToast = createSnapshotStore<RowToastState | null>(null)
   let toastSeq = 0
   const notify = (toast: RowToast): void => { rowToast.set({ ...toast, seq: ++toastSeq }) }
+  ctx.inject(['workspaceUploads'], (ctx) => {
+    ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
+      name: 'conversation.input.left', id: 'workspace.upload', order: 200, locale: NS,
+      inject: (): WorkspaceUploadInjected => ({
+        uploadFile: async (workspaceId, file, signal) => {
+          const result = await ctx.workspaceUploads.uploadFile(workspaceId, file, signal)
+          notify(result.ok ? { kind: 'uploaded', name: result.value.name } : { kind: 'uploadFailed', ...result.error })
+        },
+      }),
+    }, WorkspaceUploadButton))
+  })
   const uiWorkspace = new UiWorkspaceService(
     ctx, ctx.remote.directoryPicker, workspaces, sessions, viewInstance.actions, notify,
   )

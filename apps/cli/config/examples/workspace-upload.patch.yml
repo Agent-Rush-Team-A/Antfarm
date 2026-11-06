@@ -1,0 +1,6 @@
+# Linux opt-in: workspace directory permissions must match the container group.
+- insert:
+    - id: workspace-upload
+      name: '@deepseek-ai/dsh-api-workspace-upload'
+      config:
+        maxBytes: 33554432

@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-11-05-workspace-upload-publication.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-11-05-workspace-upload-publication.md
+/agent-note-exclusive-workspace-upload-publication:
+  en: 522cd91d9f92f3a6
+  zh: ad7fbfc2b7173cc1
+/agent-note-exclusive-workspace-upload-publication/problem:
+  en: 10b1e3a4790a7369
+  zh: 0eff49ba82138566
+/agent-note-exclusive-workspace-upload-publication/decision:
+  en: 56d320b5c32cc1ba
+  zh: 85398cb92bd12d67
+/agent-note-exclusive-workspace-upload-publication/verification:
+  en: bb4aaf1b448bb6d0
+  zh: 6d21c8b50f9f4f01
+/agent-note-exclusive-workspace-upload-publication/alternatives-considered:
+  en: 1e0784d11a1b34c3
+  zh: d45594fc6681013f
+/agent-note-exclusive-workspace-upload-publication/consequences:
+  en: 9aa10a11a417c96e
+  zh: 3b76c6e02a6f202e

@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for workspace-upload.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/user/workspace-upload.md
+/:
+  en: 1e4cc2a681494c65
+  zh: cf1a7857d1d15686
+/upload-to-a-workspace:
+  en: 17dbd9c044338166
+  zh: 985d9c6854d24041
+/upload-to-a-workspace/1-enable-uploads:
+  en: 079414fea98f7c2a
+  zh: 34d4fe58e24d6921
+/upload-to-a-workspace/2-choose-a-file:
+  en: a6db147e0274ecda
+  zh: ad5783054119290d
+/upload-to-a-workspace/3-check-the-result:
+  en: 65ca512bdbc0d36b
+  zh: e774918742e3d287

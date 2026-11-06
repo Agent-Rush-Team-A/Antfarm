@@ -120,6 +120,9 @@
     },
     {
       "path": "../../web/web"
+    },
+    {
+      "path": "../workspace-upload/tsconfig.client.json"
     }
   ]
 }
