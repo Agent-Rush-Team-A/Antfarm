@@ -124,6 +124,15 @@ export function parseDevWebArguments(argv: readonly string[]): DevWebArguments {
 }
 
 /**
+ * Select Antfarm's account-based Web composition before caller-supplied patches.
+ * @param appArgs - Web arguments forwarded from the development command.
+ * @returns arguments for the shared dsh Web launcher.
+ */
+export function devWebAppArguments(appArgs: readonly string[]): string[] {
+  return ['web', '--patch', 'apps/cli/config/antfarm-web.patch.yml', ...appArgs]
+}
+
+/**
  * Discover the watch workspace by declaration: every packages/<group>/<name>
  * whose package.json carries `dsh.client` with platform "web" is a client
  * plugin bundle emitter. Scanned once at startup — a package added while
@@ -415,11 +424,10 @@ if (isMain) {
     // running vite from anywhere but apps/web silently switches which react copy
     // the bundle gets.
     spawnStage(supervisor, 'vite build --watch', 'pnpm', ['--filter', SHELL_PACKAGE, 'run', 'watch'], false)
-    // The same launch vector as the root `dsh` script, so the served Host runs
-    // from source exactly as `pnpm dsh web` would.
+    // Account admission and file services match the root start:web command.
     if (options.serve) {
       spawnStage(supervisor, 'dsh web', process.execPath, [
-        '--import', 'tsx/esm', 'apps/cli/src/bin.ts', 'web', ...options.appArgs,
+        '--import', 'tsx/esm', 'apps/cli/src/bin.ts', ...devWebAppArguments(options.appArgs),
       ], false)
     }
     console.log(

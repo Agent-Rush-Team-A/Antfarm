@@ -32,17 +32,24 @@ npx @deepseek-ai/dsh web
 
 ### 从源码运行
 
-如需从仓库源码运行：
+如需从 Linux 仓库源码运行 Antfarm：
 
 ```sh
-git clone https://github.com/deepseek-ai/deepseek-harness.git
-cd deepseek-harness
 pnpm install
 pnpm run build
-pnpm dsh web
 ```
 
-`pnpm run build` 会准备仓库产物。`pnpm dsh web` 会直接使用这些已构建产物，不会重新构建。
+首次启动前，在服务停止时选择持久数据目录并初始化团队账号。维护命令会隐藏输入的密码，并拒绝已有用户名：
+
+```sh
+export DSH_HOME="$HOME/.antfarm"
+pnpm exec tsx scripts/multiuser-provision.ts --storage-root "$DSH_HOME/storages" --username alice
+pnpm run start:web --no-open
+```
+
+打开 `http://127.0.0.1:3080/` 并使用该账号登录。Antfarm 的 `start:web` 和 `dev:web` 命令默认加载账号登录、工作区上传、文件列表和下载，URL 无需启动 token。重启时沿用同一 `DSH_HOME`，不用再次初始化账号。工作区默认位于 `$DSH_HOME/workspaces`；部署时可将 `DSH_MULTIUSER_WORKSPACE_ROOT` 设为绝对路径。`start:web` 复用已构建的 Web 产物；`dev:web` 在启动前构建。底层 `pnpm dsh web` 命令保留上游 profile 的默认行为。
+
+在沙箱 Bash 接入完成前，Agent 工具执行仍不可用。可选沙箱管理见[部署指南](docs/user/guide/workspace-sandboxes.zh.md)。
 
 ## 社区与支持
 

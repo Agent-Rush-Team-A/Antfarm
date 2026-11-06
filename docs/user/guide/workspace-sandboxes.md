@@ -19,10 +19,10 @@ Provision accounts with the existing [multiuser maintenance command](../../../pa
 ```sh
 export DSH_MULTIUSER_WORKSPACE_ROOT=/srv/agentrush/workspaces
 export DSH_SANDBOX_RUNNER_SOCKET=/run/agentrush-sandbox/runner.sock
-pnpm dsh --profile web --patch apps/cli/config/examples/harness-sandbox.patch.yml --no-open
+pnpm run start:web --patch apps/cli/config/examples/harness-sandbox.patch.yml --no-open
 ```
 
-The overlay enables multiuser login and sandbox management. It retains the native restrictions on model tools, file access and terminal handoffs until execution isolation is connected. It does not load the Docker-privileged Runner into Web. Missing required configuration fails startup.
+Antfarm's default Web entry provides account login and workspace file services; the overlay adds sandbox management. The default entry retains the native restrictions on model tools and terminal handoffs until execution isolation is connected. It does not load the Docker-privileged Runner into Web. Missing required configuration fails startup. When using `pnpm dsh web` directly, load `apps/cli/config/antfarm-web.patch.yml` before this overlay.
 
 <a id="call-the-management-methods"></a>
 ## Call the management methods

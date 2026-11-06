@@ -197,13 +197,13 @@ pnpm run demo:ptc -- "summarize this workspace"
 Web 与 Desktop 共用同一对命令。`start:*` 启动上一次 `pnpm run build` 或 `build:artifacts` 的产物；`dev:*` 先执行 `build:artifacts` 再启动。Web 还会在源码修改时持续重建 client bundle，因为它的 Host 从源码运行，而浏览器加载的是构建产物：
 
 ```sh
-pnpm run start:web       # serve built Web artifacts through the source launcher (the same launch as pnpm dsh web)
+pnpm run start:web       # serve Antfarm's account-based Web entry using built artifacts
 pnpm run dev:web         # build, serve, and rebuild Web client bundles on source edits
 pnpm run start:desktop   # launch built Desktop artifacts
 pnpm run dev:desktop     # build, then launch Desktop
 ```
 
-Web 命令后面的参数会传给 `dsh web`，例如 `pnpm run dev:web --no-open --port 3081`；`dev:web` 还接受 `--skip-build` 复用现有产物树，以及 `--no-serve` 只运行重建 watcher、配合别处启动的服务器。两个 Web 命令使用正常的 Harness home，而 Desktop 命令使用 [Desktop README](../apps/desktop/README.zh.md) 描述的隔离开发 home。根目录 `Makefile` 以 `make web`、`make dev-web`、`make desktop`、`make dev-desktop` 和 `make build` 命名同一套命令；`ARGS='--no-open'` 用于转发参数。
+两个 Web 命令都加载 Antfarm 的[账号与文件服务配置](../apps/cli/config/antfarm-web.patch.yml)，启动前请完成[首次账号初始化](../README.zh.md#run-from-source)。参数在该配置之后传给 `dsh web`，例如 `pnpm run dev:web --no-open --port 3081`；`dev:web` 还接受 `--skip-build` 复用现有产物树，以及 `--no-serve` 只运行重建 watcher、配合别处启动的服务器。两个 Web 命令使用 `DSH_HOME`，而 Desktop 使用 [Desktop README](../apps/desktop/README.zh.md) 描述的隔离开发 home。根目录 `Makefile` 以 `make web`、`make dev-web`、`make desktop`、`make dev-desktop` 和 `make build` 命名同一套命令；`ARGS='--no-open'` 用于转发参数。
 
 ### TODO 标记
 

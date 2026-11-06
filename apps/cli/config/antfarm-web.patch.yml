@@ -1,0 +1,38 @@
+# Antfarm's account-based Web entry, shared by the start and development commands.
+- id: connection
+  config:
+    multiuser: true
+    trustedHosts: !!js ctx.webStartup.trustedHosts
+
+- insert:
+    - id: multiuser
+      name: '@deepseek-ai/dsh-api-multiuser'
+      config:
+        workspaceRoot: !!js process.env.DSH_MULTIUSER_WORKSPACE_ROOT ?? process.getBuiltinModule('node:path').join(ctx.profileContext.home, 'workspaces')
+    - id: workspace-upload
+      name: '@deepseek-ai/dsh-api-workspace-upload'
+      disabled: !!js process.platform !== 'linux'
+      config:
+        maxBytes: 33554432
+    - id: workspace-artifacts
+      name: '@deepseek-ai/dsh-api-workspace-artifacts'
+      disabled: !!js process.platform !== 'linux'
+      config:
+        maxEntries: 2000
+        maxDownloadBytes: 33554432
+
+# Host execution remains disabled until the sandbox execution integration in #7.
+- id: tool-bash
+  disabled: true
+- id: tool-pwsh
+  disabled: true
+- id: tool-fs
+  disabled: true
+- id: tool-fs-search
+  disabled: true
+- id: tool-jobs
+  disabled: true
+- id: terminal-controller
+  disabled: true
+- id: open-in-app
+  disabled: true

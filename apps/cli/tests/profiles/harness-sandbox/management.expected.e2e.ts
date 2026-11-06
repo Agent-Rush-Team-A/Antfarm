@@ -13,9 +13,10 @@ import { expect, test, vi } from 'vitest'
 import { withDefaultWeb, webRequest } from '../web/tests/default-web-process.ts'
 
 const overlay = fileURLToPath(new URL('../../../config/examples/harness-sandbox.patch.yml', import.meta.url))
+const antfarmWeb = fileURLToPath(new URL('../../../config/antfarm-web.patch.yml', import.meta.url))
 
 test('published Web overlay authenticates two accounts and manages only their own sandboxes', async (t) => {
-  const patches = [overlay]
+  const patches = [antfarmWeb, overlay]
   const password = randomUUID()
   const calls: Array<{ method: string | undefined; path: string | undefined; body: string }> = []
   const running = new Set<string>()
