@@ -1,0 +1,46 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/api/workspace-artifacts/README.md
+/:
+  en: 205140e35fe88a2d
+  zh: f0fb672707e039fa
+/deepseek-ai-dsh-api-workspace-artifacts:
+  en: d65cf44272eba1a9
+  zh: fa46f06c2332681d
+/deepseek-ai-dsh-api-workspace-artifacts/summary:
+  en: 6ed8be7b966f0676
+  zh: bb6a09d7fad6d5b9
+/deepseek-ai-dsh-api-workspace-artifacts/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: aec3688fb92d60ae
+/deepseek-ai-dsh-api-workspace-artifacts/use-this-package:
+  en: b611702823b46ea8
+  zh: f6c11d9943b80208
+/deepseek-ai-dsh-api-workspace-artifacts/understand-the-implementation:
+  en: 5ccdd77f35e696e3
+  zh: ccfb6bc3b4808501
+/deepseek-ai-dsh-api-workspace-artifacts/further-exploration:
+  en: 76b995ffce4b3b7c
+  zh: a59a6c7d31ad3790
+/deepseek-ai-dsh-api-workspace-artifacts/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-api-workspace-artifacts/model-experience/direct-effects:
+  en: 1829e1ba516199a1
+  zh: 0db077f63623bb52
+/deepseek-ai-dsh-api-workspace-artifacts/model-experience/direct-effects/what-the-model-sees:
+  en: 02ee031470fa08ee
+  zh: 2a7a88b585567388
+/deepseek-ai-dsh-api-workspace-artifacts/model-experience/direct-effects/token-effect:
+  en: 43e2da740cd9b575
+  zh: d40263c18c0cfe0b
+/deepseek-ai-dsh-api-workspace-artifacts/model-experience/direct-effects/kv-cache-effect:
+  en: 67259b342f0f284f
+  zh: 819fbf346a6253f4
+/deepseek-ai-dsh-api-workspace-artifacts/known-limitations-and-deferred-work:
+  en: b6e3a3f6e67f7f4b
+  zh: 7ce5529866918da3
+/deepseek-ai-dsh-api-workspace-artifacts/known-limitations-and-deferred-work/dev-note:
+  en: 4d21819c1b96753c
+  zh: 519d7c4aff0e3fb3

@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for workspace-artifacts.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/user/workspace-artifacts.md
+/:
+  en: 56b45a5760350dc8
+  zh: 7938e2e42d220215
+/workspace-files-and-downloads:
+  en: 86f25f4f93ac3fd0
+  zh: 0257a120a139967b
+/workspace-files-and-downloads/summary:
+  en: 7001f49d4ceddc34
+  zh: 86c4367590218c76
+/workspace-files-and-downloads/table-of-contents:
+  en: 19ca2b041f16742a
+  zh: 41fa2981f7067b50
+/workspace-files-and-downloads/1-enable-the-file-browser:
+  en: ca2d7d267a6f642b
+  zh: 8c81636fd7d033fe
+/workspace-files-and-downloads/2-browse-the-workspace:
+  en: 62badf669587176b
+  zh: 7982bb3fd03221f5
+/workspace-files-and-downloads/3-download-a-file:
+  en: f05006fd58854539
+  zh: 1e75f1888d3b8361
+/workspace-files-and-downloads/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269
