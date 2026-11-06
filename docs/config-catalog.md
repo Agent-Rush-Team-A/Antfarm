@@ -337,6 +337,28 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-terminal-controller -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-api-user-credentials -->
+<a id="deepseek-aidsh-api-user-credentials"></a>
+
+## `@deepseek-ai/dsh-api-user-credentials`
+
+- `inject`: `storageDomain` · `multiuser`
+- `source`: [`packages/api/user-credentials/src/index.ts:20`](../packages/api/user-credentials/src/index.ts)
+
+```ts config-catalog
+/** Host deployment values; no secret is stored in plugin configuration. */
+export interface Config {
+  /** Absolute path of a provisioned private 32-byte file outside workspace mounts. */
+  encryptionKeyFile: string
+  /** Maximum UTF-8 secret bytes. @default 16384 */
+  maxCredentialBytes?: number
+  /** Maximum credentials per account. @default 64 */
+  maxRecordsPerUser?: number
+
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-user-credentials -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-api-workspace-artifacts -->
 <a id="deepseek-aidsh-api-workspace-artifacts"></a>
 

@@ -424,6 +424,8 @@
       "@deepseek-ai/dsh-harness-sandbox/bash": ["./packages/sandbox/harness-sandbox/src/bash.ts"],
       "@deepseek-ai/dsh-harness-sandbox/conversation": ["./packages/sandbox/harness-sandbox/src/conversation.ts"],
       "@deepseek-ai/dsh-tool-bash/render": ["./packages/shell/tool-bash/src/render.ts"],
+      "@deepseek-ai/dsh-api-user-credentials": ["./packages/api/user-credentials/src/index.ts"],
+      "@deepseek-ai/dsh-api-user-credentials/types": ["./packages/api/user-credentials/src/types.ts"],
       // BEGIN generated package aliases — pnpm run gen-tsconfig-paths
       "@deepseek-ai/dsh-acp": ["./packages/acp/acp/src"],
       "@deepseek-ai/dsh-acp-app": ["./packages/bundle/acp-app/src"],

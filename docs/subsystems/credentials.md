@@ -54,6 +54,10 @@ interface CredentialInfo {
 
 `credentials/reference-updated (ref)` fires after a committed change to a provider-managed source — a `set`, an `unset`, or an external edit observed in storage. Ambient process-environment changes are not observable and never emit. Consumers do not need the event (they re-resolve per operation); it exists for configuration surfaces refreshing a "configured" badge.
 
+## Personal credentials
+
+The [personal-credential API](../../packages/api/user-credentials/README.md) stores authenticated ciphertext for each [multiuser account](../../packages/api/multiuser/README.md). `UserCredentialId` identifies a record; `UserCredentialView` returns only ID, name, configured state and timestamps. `CreateCredentialRequest` submits name and value, `CredentialRequest` addresses an owned ID, and `ReplaceCredentialRequest` supplies that ID and a new value. The caller identity comes from the authenticated Peer, independently of workspace permissions. These types are declared in [the browser-safe types module](../../packages/api/user-credentials/src/types.ts); credential management has no model tools or Session events.
+
 ## Embedded Platform credentials
 
 PlatformSession is a Host-only snapshot from getPlatformSession: origin names the configured Platform issuer and token contains its stored account credential. userId repeats the stable account ID from the most recent successful getProfile, and is null until one succeeds or when that profile carries no ID. The snapshot reuses that ID without issuing a profile request of its own, so an unknown ID leaves userId null instead of delaying the caller; a profile read whose stable ID first becomes available or changes notifies only Host subscribers using `watch(signal, true)`, which lets identity consumers re-read the snapshot. Consumers key persistent browser storage by origin and userId and fall back to temporary storage for null. Signed-out accounts and credentials changed during the credential read return no snapshot; a mismatched issuer fails. Native consumers own document invalidation when credentials change. This snapshot is excluded from account-controller RPC, AccountView, and AccountDetails.
@@ -366,6 +370,55 @@ abstract getDeviceIdentity(): Promise<{ deviceId?: string; userId?: AccountUserI
 ```
 
 Source: [`packages/credentials/deepseek-account/src/index.ts`](../../packages/credentials/deepseek-account/src/index.ts)
+
+<a id="ctxusercredentials--usercredentials"></a>
+
+### `ctx.userCredentials` — `UserCredentials`
+
+Host service backing the personal-credential browser API.
+
+```ts cordis-catalog
+/**
+ * Lists only the authenticated caller's credential metadata.
+ * @param signal - Request lifetime.
+ * @returns Metadata without secret fragments.
+ */
+@Remote list(signal: AbortSignal): UserCredentialView[]
+
+/**
+ * Encrypts and durably stores a new credential for the authenticated caller.
+ * @param request - Name and submitted secret.
+ * @param signal - Request lifetime.
+ * @returns Committed metadata without the secret.
+ */
+@Remote create(request: CreateCredentialRequest, signal: AbortSignal): Promise<UserCredentialView>
+
+/**
+ * Replaces the secret of a credential owned by the authenticated caller.
+ * @param request - Own record and replacement secret.
+ * @param signal - Request lifetime.
+ * @returns Committed metadata without the secret.
+ */
+@Remote replace(request: ReplaceCredentialRequest, signal: AbortSignal): Promise<UserCredentialView>
+
+/**
+ * Durably removes a credential owned by the authenticated caller.
+ * @param request - Own record to delete.
+ * @param signal - Request lifetime.
+ * @returns Confirmation after durable removal.
+ */
+@Remote delete(request: CredentialRequest, signal: AbortSignal): Promise<{ removed: true }>
+
+/**
+ * Authenticates and decrypts the caller's stored credential only in Host memory.
+ * @param request - Own record to check.
+ * @param signal - Request lifetime.
+ * @returns Storage readability, not external-service authorization.
+ */
+@Remote check(request: CredentialRequest, signal: AbortSignal): { readable: true }
+```
+
+Source: [`packages/api/user-credentials/src/index.ts`](../../packages/api/user-credentials/src/index.ts)
 
 <a id="authorization-events"></a>
 

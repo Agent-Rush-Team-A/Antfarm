@@ -1935,6 +1935,31 @@ importers:
         specifier: workspace:*
         version: link:../../session/working-directory
 
+  packages/api/user-credentials:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-api-multiuser':
+        specifier: workspace:*
+        version: link:../multiuser
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:*
+        version: link:../../util/brand
+      '@deepseek-ai/dsh-storage-domain':
+        specifier: workspace:*
+        version: link:../../storage/storage-domain
+      '@deepseek-ai/dsh-typert-protocol':
+        specifier: workspace:*
+        version: link:../../typert/protocol
+
   packages/api/workspace-artifacts:
     dependencies:
       '@deepseek-ai/dsh-brand':
@@ -3104,6 +3129,9 @@ importers:
       '@deepseek-ai/dsh-api-terminal-controller':
         specifier: workspace:*
         version: link:../../api/terminal-controller
+      '@deepseek-ai/dsh-api-user-credentials':
+        specifier: workspace:*
+        version: link:../../api/user-credentials
       '@deepseek-ai/dsh-api-workspace-artifacts':
         specifier: workspace:*
         version: link:../../api/workspace-artifacts

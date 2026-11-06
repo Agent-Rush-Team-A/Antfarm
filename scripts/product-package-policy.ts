@@ -18,6 +18,7 @@ export interface ProductPackagePolicy {
 export const PRODUCT_PACKAGE_POLICY: Readonly<Record<string, ProductPackagePolicy>> = {
   'packages/core/agent-tool-presentation': { category: 'optional', reason: 'Deprecated selector retained for existing executor configurations.' },
   'packages/api/multiuser': { category: 'optional', reason: 'Account login and workspace ownership are enabled by an explicit multiuser composition overlay.' },
+  'packages/api/user-credentials': { category: 'optional', reason: 'Personal credentials require multiuser authentication and a provisioned Host master key.' },
   'packages/browser-use/browser-use': { category: 'optional', reason: 'Service definition used by explicitly selected browser providers.' },
   'packages/computer-use/computer-use': { category: 'optional', reason: 'Service definition used by explicitly selected computer providers.' },
   'packages/lsp/lsp': { category: 'optional', reason: 'Service definition for deployment-configured language servers.' },

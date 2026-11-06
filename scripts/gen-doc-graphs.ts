@@ -464,6 +464,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Authenticates browser accounts, persists workspace ownership, and registers per-user Remote access policy.',
   },
   {
+    key: 'userCredentials',
+    pkg: 'api-user-credentials',
+    title: 'Personal credential management',
+    mode: 'service',
+    consumers: ['api-gateway'],
+    note: 'Authenticated accounts manage only their own encrypted Host records; workspace permissions do not grant credential access.',
+  },
+  {
     key: 'remoteAccess',
     pkg: 'api-remote-access',
     title: 'Remote method access control',

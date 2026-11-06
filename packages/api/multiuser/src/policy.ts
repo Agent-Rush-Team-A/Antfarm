@@ -53,6 +53,11 @@ const GLOBAL_ACTIONS = [
   'session/control',
   'session/modelCatalog',
   'session/canOpenWorkspacePath',
+  'userCredentials/list',
+  'userCredentials/create',
+  'userCredentials/replace',
+  'userCredentials/delete',
+  'userCredentials/check',
 ] as const
 
 /** Actions allowed on a workspace the account owns. */
