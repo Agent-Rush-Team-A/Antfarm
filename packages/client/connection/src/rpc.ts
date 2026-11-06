@@ -190,10 +190,18 @@ export interface ConnectionFetchRoute {
   readonly requestBody: ConnectionRequestBodyMode
   /**
    * Handle one request after the physical carrier has applied its trust and
-   * authentication policy. Only owner Peers reach an exact route; the shared
-   * handler answers 403 for every other principal.
+   * authentication policy and this route's metadata authorization.
    */
-  readonly fetch: (request: Request) => Promise<Response>
+  readonly fetch: (request: Request, peer: PeerScope) => Promise<Response>
+  /**
+   * Decide access from authenticated identity and request metadata without
+   * consuming the body. An absent decision admits owner Peers only.
+   * The route owns resource authorization and rechecks it before mutations.
+   * @param request - request metadata supplied by the trusted carrier.
+   * @param peer - authenticated caller and its cancellation lifetime.
+   * @returns whether this exact request may reach the handler.
+   */
+  readonly authorize?: (request: Request, peer: PeerScope) => boolean
 }
 
 /** Host registry for exact Fetch routes that cannot use JSON Remote invocation. */

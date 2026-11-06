@@ -29,6 +29,25 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
 }
 
 describe('Connection exact Fetch routes', () => {
+  it('admits only Peers and request metadata explicitly authorized by a scoped route', async () => {
+    const { connection, dispose } = await mounted()
+    const route = vi.fn(async () => new Response('scoped upload'))
+    const withdraw = connection.fetch.register({
+      path: '/api/workspace/upload', methods: ['POST'], requestBody: 'streaming', fetch: route,
+      authorize: (request, peer) => peer.principal === GUEST && new URL(request.url).searchParams.get('workspaceId') === 'owned',
+    })
+    const guest = connection.createPeer({ principal: GUEST })
+    const shared = connection.createSharedFetchHandler('/api')
+    const request = (id: string) => new Request('http://host/api/workspace/upload?workspaceId=' + id, { method: 'POST' })
+    expect((await shared.fetch(request('other'), guest)).status).toBe(403)
+    expect((await shared.fetch(request('owned'), connection.browserPeer)).status).toBe(403)
+    expect(route).not.toHaveBeenCalled()
+    expect((await shared.fetch(request('owned'), guest)).status).toBe(200)
+    expect(route).toHaveBeenCalledOnce()
+    await withdraw()
+    expect((await shared.fetch(request('owned'), guest)).status).toBe(404)
+    await dispose()
+  })
   it('dispatches owned methods and returns 404 for unclaimed requests', async () => {
     const { connection, dispose: disposeFiber } = await mounted()
     const route = vi.fn(async (request: Request) =>

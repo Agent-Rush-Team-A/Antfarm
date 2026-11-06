@@ -189,7 +189,7 @@ describe('HTTP bridge abort', () => {
     expect(Buffer.concat(responseBytes).toString()).toBe('stored')
   })
 
-  it('closes an unread streaming request after returning an early validation response', async () => {
+  it.each(['empty', 'body'])('flushes an early %s response before closing its unread request', async (kind) => {
     const destroyed: true[] = []
     const request = new Readable({ read() {} }) as IncomingMessage
     Object.assign(request, {
@@ -209,10 +209,12 @@ describe('HTTP bridge abort', () => {
 
     await bridge(request, response, {
       requestBodyMode: () => 'streaming',
-      fetch: () => Promise.resolve(new Response(null, { status: 415 })),
+      fetch: () => Promise.resolve(new Response(kind === 'empty' ? null : 'invalid content type', { status: 415 })),
     }, PEER, 1)
     expect(status).toBe(415)
     expect(headers).toMatchObject({ connection: 'close' })
+    expect(destroyed).toEqual([])
+    response.emit('finish')
     expect(destroyed).toEqual([true])
   })
 })
