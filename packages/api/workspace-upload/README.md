@@ -39,8 +39,9 @@ The service opens the trusted registered root without following its final symlin
 
 The published file inherits the workspace directory's group and uses mode `0660`. Provision the workspace directory's group and access for the non-root sandbox account as described in [Runner deployment](../../../team-docs/SANDBOX-RUNNER.md). File upload does not create or configure a sandbox.
 
-Success returns `{ ok: true, value: { name, bytes } }` after cleanup. Failures return `{ ok: false, error: { reason, stored } }`; internal paths and causes stay in Host logs. `stored` becomes true only after publication. A cleanup failure can therefore report a committed file. Existing entries are never replaced.
+Success returns `{ ok: true, value: { name, bytes } }` after cleanup. Failures return `{ ok: false, error: { reason, stored } }`; internal paths and causes stay in Host logs. `stored` becomes true only after publication. A cleanup failure can therefore report a committed file. The browser reports lost confirmations as unknown and asks the user to check the workspace before retrying. Existing entries are never replaced.
 
+The Client provider exposes `ctx.workspaceUploads.uploadFile(workspaceId, file, signal)` only while this plugin is mounted. Limit reads and byte transfers share caller and provider cancellation. Cancellation during the limit read returns `cancelled` before sending bytes, including when the Gateway returns a failure result. The document-relative HTTP route preserves deployment URL prefixes. Browser withdrawal aborts and drains its transfers.
 
 Every operation owns its descriptors and staging directory. Disconnect, peer revocation and service unload cancel blocked body reads; unload drains admitted operations before releasing the provider. A cancellation racing successful publication does not remove the committed file.
 

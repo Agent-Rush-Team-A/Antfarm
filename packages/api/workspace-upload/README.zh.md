@@ -39,8 +39,9 @@ kind: "package-reference"
 
 发布文件继承工作区目录的组，权限为 `0660`。按 [Runner 部署](../../../team-docs/SANDBOX-RUNNER.md)为工作区目录配置非 root 沙箱账号所需的组和访问权限。上传不创建或配置沙箱。
 
-成功清理后返回 `{ ok: true, value: { name, bytes } }`。失败返回 `{ ok: false, error: { reason, stored } }`；内部路径和原因仅记录在 Host 日志中。`stored` 只在发布后变为 true，因此清理失败可能对应已提交文件。始终不替换现有目录项。
+成功清理后返回 `{ ok: true, value: { name, bytes } }`。失败返回 `{ ok: false, error: { reason, stored } }`；内部路径和原因仅记录在 Host 日志中。`stored` 只在发布后变为 true，因此清理失败可能对应已提交文件。浏览器将丢失确认的结果报告为未知，并要求用户检查工作区后再重试。始终不替换现有目录项。
 
+Client 服务只在本插件挂载时提供 `ctx.workspaceUploads.uploadFile(workspaceId, file, signal)`。限制查询与文件传输共享调用者和 provider 的取消信号。限制查询期间取消会在发送字节前返回 `cancelled`，包括 Gateway 返回失败结果的情况。相对文档的 HTTP 路径保留部署 URL 前缀。浏览器端卸载会中止并等待上传结束。
 
 每项操作持有自己的描述符和暂存目录。连接断开、Peer 撤销和服务卸载均会取消阻塞的请求体读取；卸载会等待已接纳操作结束后释放服务。与成功发布竞态的取消不会删除已提交文件。
 

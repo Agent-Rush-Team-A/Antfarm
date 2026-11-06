@@ -32,11 +32,16 @@
     },
     "./src/*": "./src/*",
     "./package.json": "./package.json",
-    "./locale/*.json": "./locale/*.json"
+    "./locale/*.json": "./locale/*.json",
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    }
   },
   "files": [
     "locale/*.json",
     "lib/index.js",
+    "lib/client.js",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts",
     "lib/typert.host.js",
@@ -55,14 +60,24 @@
   "dependencies": {
     "@deepseek-ai/schemastery": "workspace:~",
     "@deepseek-ai/dsh-brand": "workspace:*",
-    "@deepseek-ai/dsh-typert-protocol": "workspace:*"
+    "@deepseek-ai/dsh-typert-protocol": "workspace:*",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-api-remote-access": "workspace:*",
     "@deepseek-ai/dsh-api-workspace-controller": "workspace:*",
     "@deepseek-ai/dsh-client-connection": "workspace:*",
-    "@deepseek-ai/dsh-workspace": "workspace:*"
+    "@deepseek-ai/dsh-workspace": "workspace:*",
+    "@deepseek-ai/dsh-api-gateway": "workspace:*"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-api-gateway"
+      ],
+      "platform": "web"
+    }
   },
   "scripts": {
     "bundle": "tsdown",
