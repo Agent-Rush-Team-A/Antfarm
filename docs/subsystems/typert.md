@@ -577,7 +577,7 @@ admit(request: { readonly headers: AdmissionHeaders }, _secure: boolean): PeerAd
  * Render an authenticated page or redirect to the public login document.
  * @param request - index request headers after the trust fence.
  * @param _secure - listener TLS state.
- * @returns the authenticated Peer or a login-page redirect.
+ * @returns the authenticated Peer or a document-relative login-page redirect.
  */
 admitIndex(request: { readonly headers: AdmissionHeaders }, _secure: boolean): ConnectionIndexAdmission
 

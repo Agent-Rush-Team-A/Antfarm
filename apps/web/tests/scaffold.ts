@@ -83,6 +83,7 @@ import {
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 // Empty type imports carry the webServer/agents/sessionPersistence Context merges.
 import type {} from '@deepseek-ai/dsh-host-webserver'
+import type { ConnectionConfig } from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-agent'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { startPrefixProxy, type PrefixProxy } from './prefix-proxy.ts'
@@ -662,6 +663,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       : [{
         id: 'connection',
         config: {
+          ...composedRows.find(row => row.id === 'connection')?.config as ConnectionConfig | undefined,
           trustedHosts: [
             ...publicHost === undefined ? [] : [publicHost],
             ...options.remoteAuthority === undefined ? [] : [options.remoteAuthority],

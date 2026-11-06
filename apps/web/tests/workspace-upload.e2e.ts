@@ -7,9 +7,9 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { chromium, type Page, type BrowserContext } from 'playwright'
+import { chromium, type Page, type BrowserContext, type Browser } from 'playwright'
 import { expect, it } from 'vitest'
-import { launchWebScaffold, compareOrRefreshGolden, webSnapshotMode } from './scaffold.ts'
+import { launchWebScaffold, compareOrRefreshGolden, webSnapshotMode, type WebScaffold } from './scaffold.ts'
 import { connectFreshWorkspaceZh } from './support.ts'
 
 it.skipIf(process.platform !== 'linux')('uploads to owned workspaces, preserves old files, and cancels revoked or unloaded intake', async () => {
@@ -139,6 +139,69 @@ it.skipIf(process.platform !== 'linux')('uploads to owned workspaces, preserves 
     for (const req of requests) req.destroy()
     try { await browser.close() } catch (error) { failures.push(error) }
     try { await scaffold.close() } catch (error) { console.error(error); failures.push(error) }
+    try { await rm(root, { recursive: true, force: true }) } catch (error) { failures.push(error) }
+  }
+  if (failures.length > 0) throw new AggregateError(failures)
+})
+
+it.skipIf(process.platform !== 'linux')('keeps multiuser login, upload, identity refresh and logout under a deployment prefix', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'workspace-upload-prefix-'))
+  const failures: unknown[] = []
+  let scaffold: WebScaffold | undefined
+  let browser: Browser | undefined
+  try {
+    const overlay = join(root, 'upload.yml')
+    await writeFile(overlay, `- id: connection\n  config:\n    multiuser: true\n- insert:\n    - id: multiuser\n      name: '@deepseek-ai/dsh-api-multiuser'\n      config:\n        workspaceRoot: ${JSON.stringify(join(root, 'workspaces'))}\n        sessionSweepIntervalMs: 1000\n    - id: workspace-upload\n      name: '@deepseek-ai/dsh-api-workspace-upload'\n`)
+    scaffold = await launchWebScaffold({
+      firstUse: true, accountAuthentication: true, extraOverlayPath: overlay,
+      publicMount: { prefix: '/tools/dsh/' },
+    })
+    browser = await chromium.launch({ args: ['--no-sandbox'] })
+    const base = scaffold.baseUrl
+    const password = randomUUID()
+    await scaffold.ctx.multiuser.provisionUser('alice', password)
+    const context = await browser.newContext({ locale: 'en-US' })
+    const page = await context.newPage()
+    const requests: string[] = []
+    const errors: string[] = []
+    page.on('request', (request) => { requests.push(request.url()) })
+    page.on('pageerror', (error) => { errors.push(error.message) })
+    const response = await page.goto(base)
+    expect(response?.status()).toBe(200)
+    expect(new URL(page.url()).pathname).toBe('/tools/dsh/auth/sign-in')
+    await page.getByLabel('Username', { exact: true }).fill('alice')
+    await page.getByLabel('Password', { exact: true }).fill(password)
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+    await page.locator('.dsh-account').getByText('alice', { exact: true }).waitFor()
+    expect(new URL(page.url()).pathname).toBe('/tools/dsh/')
+    await page.getByRole('button', { name: 'Choose workspace', exact: true }).click()
+    await page.getByRole('button', { name: 'Upload to workspace', exact: true }).waitFor()
+    await page.locator('input[type="file"][aria-label="Upload to workspace"]').setInputFiles({
+      name: 'prefixed.bin', mimeType: 'application/octet-stream', buffer: Buffer.from([0, 255, 1]),
+    })
+    await page.getByText('Uploaded “prefixed.bin” to workspace', { exact: true }).waitFor()
+    const workspace = scaffold.ctx.workspaceRegistry.list()[0]!
+    expect(await readFile(join(workspace.path, 'prefixed.bin'))).toEqual(Buffer.from([0, 255, 1]))
+    await expect.poll(() => requests.some(url => new URL(url).pathname === '/tools/dsh/auth/me')).toBe(true)
+    const other = await context.newPage()
+    other.on('request', (request) => { requests.push(request.url()) })
+    other.on('pageerror', (error) => { errors.push(error.message) })
+    await other.goto(base)
+    await other.locator('.dsh-account').getByText('alice', { exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Sign out', exact: true }).click()
+    for (const tab of [page, other]) {
+      await tab.getByLabel('Username', { exact: true }).waitFor()
+      expect(new URL(tab.url()).pathname).toBe('/tools/dsh/auth/sign-in')
+    }
+    expect(requests.some(url => new URL(url).pathname === '/tools/dsh/auth/login')).toBe(true)
+    expect(requests.some(url => new URL(url).pathname === '/tools/dsh/auth/logout')).toBe(true)
+    expect(requests.filter(url => !url.startsWith(base))).toEqual([])
+    expect(errors).toEqual([])
+  } catch (error) {
+    failures.push(error)
+  } finally {
+    try { await browser?.close() } catch (error) { failures.push(error) }
+    try { await scaffold?.close() } catch (error) { failures.push(error) }
     try { await rm(root, { recursive: true, force: true }) } catch (error) { failures.push(error) }
   }
   if (failures.length > 0) throw new AggregateError(failures)

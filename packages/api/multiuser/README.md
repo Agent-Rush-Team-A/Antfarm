@@ -42,7 +42,7 @@ The service registers the `user` Remote access policy. The global role opens onl
 | `/auth/client.js` | GET | Login document and account badge helper. |
 | `/auth/sign-in` | GET | Public login page, without the application or private boot state. |
 
-Unauthenticated index requests redirect to the public `/auth/sign-in` document. Authenticated pages show the account and a logout control. Login changes refresh other tabs, and switching accounts clears browser-persisted application views before boot. A failed logout stays visible and can be retried. Active Peers expire at the login deadline; authentication responses and personalized index documents are not cacheable.
+Unauthenticated index requests redirect to the public `auth/sign-in` document relative to the index URL. Script references, login/logout requests and account refreshes preserve the deployment prefix; the browser derives the application root from the account script URL. Authenticated pages show the account and a logout control. Login changes refresh other tabs, and switching accounts clears browser-persisted application views before boot. A failed logout stays visible and can be retried. Active Peers expire at the login deadline; authentication responses and personalized index documents are not cacheable.
 
 <a id="remote-access-policy"></a>
 ## Remote access policy

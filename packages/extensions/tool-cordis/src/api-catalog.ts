@@ -2179,7 +2179,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'admitIndex(request: { readonly headers: AdmissionHeaders }, _secure: boolean): ConnectionIndexAdmission',
         description: 'Render an authenticated page or redirect to the public login document.',
         parameters: [{ name: 'request', description: 'index request headers after the trust fence.' }, { name: '_secure', description: 'listener TLS state.' }],
-        returns: 'the authenticated Peer or a login-page redirect.',
+        returns: 'the authenticated Peer or a document-relative login-page redirect.',
       },
       {
         signature: 'ownsWorkspace(userId: UserId, workspaceId: WorkspaceId): boolean',
