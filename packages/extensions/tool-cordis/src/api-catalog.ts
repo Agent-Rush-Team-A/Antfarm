@@ -5387,6 +5387,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'request', description: 'immutable routing metadata from the exact prepared call.' }, { name: 'headers', description: 'fresh profile headers, shared only within this dispatch.' }, { name: 'next', description: 'continue header preparation through the remaining listeners.' }],
   },
   {
+    name: 'llm-pi-ai/resolve-api-key',
+    mode: 'waterfall',
+    signature: '\'llm-pi-ai/resolve-api-key\'(request: PiAiCredentialRequest, next: () => Promise<string | undefined>): Promise<string | undefined>',
+    summary: 'Authorize one Host-only credential resolution.',
+    description: 'Authorize one Host-only credential resolution. A route-specific consumer may replace the global resolver and must reject an unauthorized request without calling next(). Other consumers delegate with next(). Neither routing inputs nor the returned secret may be logged or sent to a model.',
+    parameters: [{ name: 'request', description: 'exact endpoint and initiating Session when generating.' }, { name: 'next', description: 'resolve through the deployment\'s global credential plane.' }],
+  },
+  {
     name: 'llm/adapters-updated',
     mode: 'emit',
     signature: '\'llm/adapters-updated\'(): void',
@@ -7877,6 +7885,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PermissionCatalog',
     declaration: 'export interface PermissionCatalog {\n    options: PresetOption[];\n    defaultOptions: PresetOption[];\n    defaultPreset: string;\n}',
+  },
+  {
+    name: 'PiAiCredentialRequest',
+    declaration: 'export interface PiAiCredentialRequest {\n    readonly provider: string;\n    readonly baseURL?: string;\n    readonly model?: string;\n    readonly apiKeyEnv?: string;\n    readonly credentialScope?: \'global\' | \'request\';\n    readonly sessionId?: GenerateOptions[\'sessionId\'];\n    readonly purpose?: GenerateOptions[\'purpose\'];\n    readonly signal?: AbortSignal;\n}',
   },
   {
     name: 'PiAiRequestHeaderContext',

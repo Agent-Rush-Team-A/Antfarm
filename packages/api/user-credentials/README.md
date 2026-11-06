@@ -57,6 +57,8 @@ The `userCredentials` Remote namespace lists safe metadata, creates credentials,
 
 Responses contain only ID, name, configured state and timestamps. Checks authenticate and decrypt a caller-owned record in Host memory, then clear the plaintext buffer; they confirm storage readability, not authorization with an external service. Neither plaintext nor secret fragments enter domain or browser events, model messages, execution environments or workspace files. Errors carry fixed messages and empty details without raw storage or cryptographic causes.
 
+An optional `inferenceBindings` array binds each pi-ai provider to an exact `baseURL` and account-local `credentialName`. Configure the pi-ai route with `credentialScope: request`; it never falls back to deployment keys, including when the consumer is unloaded. For example, bind provider `vultr`, endpoint `https://api.vultrinference.com/v1` and name `Vultr API Key`, then configure its `openai-completions` route and chosen model. HTTPS is required; `allowLoopbackHttp` permits only explicitly configured local test providers. Model catalogs expose configured metadata without reading credentials; authorization happens only at inference. Inference captures the authenticated prompt principal at the current turn, rejects mixed-account input, and rechecks live Session ownership before decrypting. Calls without a live authorized turn, duplicate matching names, and endpoint changes are refused. The Host-only credential waterfall is not forwarded to the browser; only the selected transport receives the secret. Saving, replacing and deleting bound credentials publish only model-catalog invalidation metadata.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
@@ -76,7 +78,7 @@ AES-256-GCM authenticates each record's user ID, record ID and encryption versio
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as credential management adds no model tools, prompt sections or Session events.
+None, as the optional inference consumer changes transport authentication without adding model tools, prompt sections or request messages.
 
 #### KV Cache effect
 
@@ -84,7 +86,7 @@ None; credential management never changes a model request prefix.
 
 ## Known Limitations and Deferred Work
 
-- Master-key rotation requires a separately designed migration; replacing the file prevents existing ciphertext from being read. Labels are user-supplied metadata and must not contain secrets. Confidentiality assumes the Host and its private storage remain trusted.
+- Inference supports explicitly bound pi-ai routes, not a general external-request proxy or credential-sharing grant. Subagents and autonomous calls without their own authenticated prompt are refused. Master-key rotation requires a separately designed migration; replacing the file prevents existing ciphertext from being read. Labels are user-supplied metadata and must not contain secrets. Confidentiality assumes the Host and its private storage remain trusted.
 
 <a id="dev-note"></a>
 ### Dev Note

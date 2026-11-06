@@ -112,6 +112,31 @@ beforeEach(() => {
   vi.stubEnv('PI_TEST_KEY', 'test-key')
 })
 
+it('refuses request-scoped inference without its consumer even when a deployment key exists', async () => {
+  const server = await mockServer([{ events: textEvents }])
+  const ctx = await harness(server.url, { credentialScope: 'request' })
+  onTestFinished(async () => { await ctx.fiber.dispose() })
+  // Configured model metadata stays selectable without reading anyone's key.
+  expect(await ctx.llm.listModels('deepseek')).not.toHaveLength(0)
+  const result = await assemble(ctx, { model: 'deepseek-flash', messages: [] })
+  expect(result.finish).toMatchObject({ kind: 'error', failure: { code: 'MISSING_CREDENTIAL' } })
+  ctx.on('llm-pi-ai/resolve-api-key', () => Promise.resolve(undefined))
+  const empty = await assemble(ctx, { model: 'deepseek-flash', messages: [] })
+  expect(empty.finish).toMatchObject({ kind: 'error', failure: { code: 'MISSING_CREDENTIAL' } })
+  expect(server.requests).toHaveLength(0)
+})
+
+it('removes an echoed request credential from provider failure output', async () => {
+  const server = await mockServer([{ status: 401, body: JSON.stringify({ error: { message: 'test-key rejected' } }) }])
+  const ctx = await harness(server.url, { credentialScope: 'request' })
+  onTestFinished(async () => { await ctx.fiber.dispose() })
+  ctx.on('llm-pi-ai/resolve-api-key', () => Promise.resolve('test-key'))
+  const result = await assemble(ctx, { model: 'deepseek-flash', messages: [] })
+  expect(result.finish.kind).toBe('error')
+  expect(JSON.stringify(result)).not.toContain('test-key')
+  expect(JSON.stringify(result)).toContain('[redacted]')
+})
+
 describe('PiAiAdapter provider routing', () => {
   it('resolves a catalog model dynamically and uses a private endpoint', async () => {
     const server = await mockServer([{ events: textEvents }])

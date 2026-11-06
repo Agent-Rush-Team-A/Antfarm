@@ -11,7 +11,7 @@
     - /placeholder: Paste the API key or access token from your provider
   - paragraph: Enter only the secret itself, without Bearer, a curl command or JSON.
   - button "Save credential"
-  - paragraph: Saving credentials does not configure a model or automatically use them for conversation.
+  - paragraph: Connected services use your own credentials. Select the matching provider and model in the conversation.
   - paragraph: Storage checks do not validate access to an external service.
   - button "Refresh"
   - list:

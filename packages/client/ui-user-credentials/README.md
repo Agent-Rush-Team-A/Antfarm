@@ -27,7 +27,7 @@ Open **My credentials** from the sidebar footer to manage the logged-in account'
 
 The Web bundle supplies a disabled `ui-user-credentials` row. Enable it together with the [Host plugin](../../api/user-credentials/README.md) in the multiuser deployment; the test overlay does both. Add a named credential, replace its value, check storage readability or confirm deletion. The dialog explains that workspace sharing does not share credentials and a storage check does not authenticate an external service.
 
-The name field asks for the service's configured credential name, such as `Vultr API Key`. The value field asks for only the provider's API key or token, without `Bearer`, curl commands or JSON. Persistent hints remain visible while typing. Saving a credential does not configure a model or automatically use it for conversation.
+The name field asks for the service's configured credential name, such as `Vultr API Key`. The value field asks for only the provider's API key or token, without `Bearer`, curl commands or JSON. Persistent hints remain visible while typing. Configured Host inference bindings use the current account's credential; select the corresponding provider and model in the conversation.
 
 Credential values use a password input. Submission clears that input before the request; responses never refill it. Closing, disconnecting, access revocation and switching accounts discard the dialog. No form or credential list is written to browser storage. A failed request shows localized fixed copy rather than displaying raw exceptions.
 
@@ -58,7 +58,7 @@ None; opening the form does not change model requests.
 
 ## Known Limitations and Deferred Work
 
-- The page does not reveal or export saved values and does not validate external authentication. Lists refresh on entry and after operations; another tab's changes require Refresh.
+- The page does not reveal or export saved values and does not validate external authentication. Inference requires an explicit [Host binding](../../api/user-credentials/README.md). Lists refresh on entry and after operations; another tab's changes require Refresh.
 
 <a id="dev-note"></a>
 ### Dev Note

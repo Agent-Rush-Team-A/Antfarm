@@ -4,8 +4,9 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createServer } from 'node:http'
 import { chromium, type Page, type APIRequestContext } from 'playwright'
-import { expect, it } from 'vitest'
+import { expect, it, onTestFinished } from 'vitest'
 import type { Context, RegistryService } from '@deepseek-ai/cordis'
 import type { ClientModuleLoaderTarget } from '@deepseek-ai/dsh-client-modules/client'
 import type { LoginValue } from '@deepseek-ai/dsh-api-multiuser'
@@ -18,9 +19,34 @@ it('logs in separate accounts, creates private workspaces, revokes all tabs, and
   const root = await mkdtemp(join(tmpdir(), 'multiuser-browser-'))
   const overlay = join(root, 'multiuser.yml')
   const credentialKey = join(root, 'credential-key')
+  const inferenceCalls: Array<{ authorization: string; body: unknown }> = []
+  const inference = createServer((request, response) => {
+    const chunks: Buffer[] = []
+    request.on('data', (chunk: Buffer) => { chunks.push(chunk) })
+    request.on('end', () => {
+      const body: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      inferenceCalls.push({ authorization: request.headers.authorization ?? '', body })
+      response.writeHead(200, { 'content-type': 'text/event-stream' })
+      for (const choice of [
+        { index: 0, delta: { role: 'assistant', content: 'PERSONAL-INFERENCE' }, finish_reason: null },
+        { index: 0, delta: {}, finish_reason: 'stop' },
+      ]) response.write('data: ' + JSON.stringify({ id: 'personal-test', object: 'chat.completion.chunk',
+        created: 1, model: 'personal-model', choices: [choice] }) + '\n\n')
+      response.end('data: [DONE]\n\n')
+    })
+  })
+  onTestFinished(async () => {
+    inference.closeAllConnections()
+    await new Promise<void>((resolve, reject) => { inference.close((error) => { if (error) reject(error); else resolve() }) })
+  })
+  await new Promise<void>((resolve) => { inference.listen(0, '127.0.0.1', resolve) })
+  const address = inference.address()
+  if (address === null || typeof address === 'string') throw new Error('Inference fixture must listen on TCP')
+  const inferenceBase = `http://127.0.0.1:${address.port}/v1`
   await writeFile(credentialKey, randomBytes(32), { flag: 'wx', mode: 0o600 })
   await writeFile(overlay, `- id: connection\n  config:\n    multiuser: true\n- insert:\n    - id: multiuser\n      name: '@deepseek-ai/dsh-api-multiuser'\n      config:\n        workspaceRoot: ${JSON.stringify(join(root, 'workspaces'))}\n        sessionSweepIntervalMs: 1000\n`)
-  await writeFile(overlay, `- insert:\n    - id: user-credentials\n      name: '@deepseek-ai/dsh-api-user-credentials'\n      config:\n        encryptionKeyFile: ${JSON.stringify(credentialKey)}\n`, { flag: 'a' })
+  await writeFile(overlay, `- insert:\n    - id: user-credentials\n      name: '@deepseek-ai/dsh-api-user-credentials'\n      config:\n        encryptionKeyFile: ${JSON.stringify(credentialKey)}\n        allowLoopbackHttp: true\n        inferenceBindings:\n          - provider: personal-fixture\n            baseURL: ${JSON.stringify(inferenceBase)}\n            credentialName: Test key\n`, { flag: 'a' })
+  await writeFile(overlay, `- id: llm-pi-ai\n  config:\n    providers:\n      personal-fixture:\n        displayName: Personal fixture\n        credentialScope: request\n        apiKeyEnv: PERSONAL_FIXTURE_API_KEY\n        api: openai-completions\n        baseURL: ${JSON.stringify(inferenceBase)}\n        models:\n          - id: personal-model\n            name: Personal model\n`, { flag: 'a' })
   await writeFile(overlay, '- id: ui-user-credentials\n  disabled: false\n', { flag: 'a' })
   const scaffold = await launchWebScaffold({ firstUse: true, accountAuthentication: true, extraOverlayPath: overlay,
     compareReplaySession: false,
@@ -180,6 +206,33 @@ it('logs in separate accounts, creates private workspaces, revokes all tabs, and
     }
     const aliceSession = scaffold.ctx.multiuser.ownedSessions(aliceUser.userId)[0]!
     const bobSession = scaffold.ctx.multiuser.ownedSessions(bobUser.userId)[0]!
+    for (const [index, [client, sessionId]] of ([[alice.request, aliceSession], [bob.request, bobSession]] as const).entries()) {
+      const selected = await rpc(client, 'session/selectModel', { request: {
+        sessionId, provider: 'personal-fixture', model: 'personal-model',
+      } })
+      expect(selected, JSON.stringify(selected)).toMatchObject({ ok: true })
+      const settled = scaffold.whenTurnSettled()
+      expect(await rpc(client, 'session/prompt', { request: {
+        sessionId, requestId: randomUUID(), mode: 'queue', content: [{ type: 'text', text: 'Test personal inference.' }],
+      } })).toMatchObject({ ok: true })
+      expect(await settled).toBe(sessionId)
+      expect(inferenceCalls[index]?.authorization).toBe('Bearer ' + credentialSecrets[index]!)
+    }
+    for (const secret of credentialSecrets) {
+      expect(JSON.stringify(inferenceCalls.map(call => call.body))).not.toContain(secret)
+      for (const session of scaffold.ctx.sessions.list()) expect(JSON.stringify(session.snapshotEvents())).not.toContain(secret)
+    }
+    // A selected model must not borrow the other account's key after deletion.
+    expect(await rpc(bob.request, 'userCredentials/delete', { request: { id: bobCredential.id } })).toMatchObject({ ok: true })
+    const deniedTurn = scaffold.whenTurnSettled()
+    expect(await rpc(bob.request, 'session/prompt', { request: {
+      sessionId: bobSession, requestId: randomUUID(), mode: 'queue', content: [{ type: 'text', text: 'Must not use Alice credentials.' }],
+    } })).toMatchObject({ ok: true })
+    expect(await deniedTurn).toBe(bobSession)
+    expect(inferenceCalls).toHaveLength(2)
+    expect(JSON.stringify(scaffold.ctx.sessions.get(bobSession)!.snapshotEvents())).toContain('MISSING_CREDENTIAL')
+    const fallback = scaffold.ctx.agentDefaultModel.currentSelection()
+    expect(await rpc(alice.request, 'session/selectModel', { request: { sessionId: aliceSession, ...fallback } })).toMatchObject({ ok: true })
     const before = scaffold.ctx.sessions.get(bobSession)!.snapshotEvents()
     const denied: Array<[string, unknown]> = [
       ['session/create', { workspaceId: bobWorkspaceId }],

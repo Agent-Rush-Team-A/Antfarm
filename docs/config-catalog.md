@@ -343,7 +343,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-api-user-credentials`
 
 - `inject`: `storageDomain` · `multiuser`
-- `source`: [`packages/api/user-credentials/src/index.ts:20`](../packages/api/user-credentials/src/index.ts)
+- `source`: [`packages/api/user-credentials/src/index.ts:23`](../packages/api/user-credentials/src/index.ts)
 
 ```ts config-catalog
 /** Host deployment values; no secret is stored in plugin configuration. */
@@ -354,6 +354,20 @@ export interface Config {
   maxCredentialBytes?: number
   /** Maximum credentials per account. @default 64 */
   maxRecordsPerUser?: number
+  /** Provider routes allowed to consume this account's named credentials. @default [] */
+  inferenceBindings?: InferenceBinding[]
+  /** Allow HTTP only for explicitly bound loopback test providers. @default false */
+  allowLoopbackHttp?: boolean
+}
+
+/** Explicit deployment binding; credential names remain scoped to each account. */
+export interface InferenceBinding {
+  /** Registered pi-ai route receiving the credential. */
+  readonly provider: string
+  /** Exact HTTPS base endpoint allowed to receive the secret. */
+  readonly baseURL: string
+  /** Display name looked up only within the initiating account. */
+  readonly credentialName: string
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-user-credentials -->
@@ -2051,7 +2065,7 @@ export interface Config extends ProtocolConfig, ModelListingConfig {
 
 - `inject`: `llm`
 - `refs`: `Api` (`@earendil-works/pi-ai`) · `CacheRetention` (`@earendil-works/pi-ai`) · `Model` (`@earendil-works/pi-ai`) · `ModelThinkingLevel` (`@earendil-works/pi-ai`) · `OpenAICompletionsCompat` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets` (`@earendil-works/pi-ai`) · `Transport` (`@earendil-works/pi-ai`) · `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/llm/llm-pi-ai/src/config.ts:251`](../packages/llm/llm-pi-ai/src/config.ts)
+- `source`: [`packages/llm/llm-pi-ai/src/config.ts:255`](../packages/llm/llm-pi-ai/src/config.ts)
 
 ```ts config-catalog
 /** Plugin configuration: the provider routes this instance owns. */
@@ -2068,6 +2082,8 @@ export interface Config {
 export interface PiAiProviderProfile {
   /** Credential reference (environment-variable name) resolved per request through `ctx.credentials`. */
   apiKeyEnv?: string
+  /** Request requires an authorized consumer and never falls back to deployment credentials. @default global */
+  credentialScope?: 'global' | 'request'
   /** Name shown by configuration surfaces; defaults to the route key. */
   displayName?: string
   /**

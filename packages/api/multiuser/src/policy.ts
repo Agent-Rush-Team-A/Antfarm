@@ -52,6 +52,8 @@ const GLOBAL_ACTIONS = [
   'session/search',
   'session/control',
   'session/modelCatalog',
+  'event:llm/adapters-updated',
+  'event:llm/models-updated',
   'session/canOpenWorkspacePath',
   'userCredentials/list',
   'userCredentials/create',

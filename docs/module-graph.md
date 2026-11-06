@@ -577,9 +577,6 @@ flowchart TD
   pkg_spill_local --> pkg_spill
   pkg_session_log_export --> pkg_session
   pkg_session_log_export --> pkg_session_persistence
-  pkg_api_user_credentials --> pkg_api_multiuser
-  pkg_api_user_credentials --> pkg_storage_domain
-  pkg_api_user_credentials --> pkg_typert_protocol
   pkg_config_editor --> pkg_app_boot
   pkg_config_editor --> pkg_hmr
   pkg_experimental_speech_to_text --> pkg_settings
@@ -692,6 +689,11 @@ flowchart TD
   pkg_goal --> pkg_session
   pkg_goal --> pkg_session_projection
   pkg_goal --> pkg_typert_protocol
+  pkg_api_user_credentials --> pkg_agent
+  pkg_api_user_credentials --> pkg_api_multiuser
+  pkg_api_user_credentials --> pkg_llm
+  pkg_api_user_credentials --> pkg_storage_domain
+  pkg_api_user_credentials --> pkg_typert_protocol
   pkg_api_workspace_artifacts --> pkg_api_remote_access
   pkg_api_workspace_artifacts --> pkg_api_workspace_controller
   pkg_api_workspace_artifacts --> pkg_client_connection
@@ -1739,7 +1741,6 @@ flowchart TD
 | [`fs`](../packages/fs/fs) | `fs` | [`brand`](../packages/util/brand), [`llm`](../packages/llm/llm), [`sandbox`](../packages/sandbox/sandbox) |
 | [`spill-local`](../packages/spill/spill-local) | `spill` | [`spill`](../packages/spill/spill) |
 | [`session-log-export`](../packages/session-query/session-log-export) | `session-query` | [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence) |
-| [`api-user-credentials`](../packages/api/user-credentials) | `api` | [`api-multiuser`](../packages/api/multiuser), [`storage-domain`](../packages/storage/storage-domain), [`typert-protocol`](../packages/typert/protocol) |
 | [`config-editor`](../packages/boot/config-editor) | `boot` | [`app-boot`](../packages/boot/app-boot), [`hmr`](../packages/boot/hmr) |
 | [`experimental-speech-to-text`](../packages/experimental/speech-to-text) | `experimental` | [`settings`](../packages/settings/settings) |
 | [`experimental-translator`](../packages/experimental/translator) | `experimental` | [`credentials`](../packages/credentials/credentials), [`launch-environment`](../packages/util/launch-environment), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`timeout`](../packages/util/timeout), [`util-values`](../packages/util/values) |
@@ -1772,6 +1773,7 @@ flowchart TD
 | [`llm-retry`](../packages/llm/llm-retry) | `llm` | [`agent`](../packages/core/agent), [`brand`](../packages/util/brand), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`timeout`](../packages/util/timeout) |
 | [`agent-default-model`](../packages/core/agent-default-model) | `core` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm) |
 | [`goal`](../packages/goal/goal) | `goal` | [`agent`](../packages/core/agent), [`brand`](../packages/util/brand), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`typert-protocol`](../packages/typert/protocol) |
+| [`api-user-credentials`](../packages/api/user-credentials) | `api` | [`agent`](../packages/core/agent), [`api-multiuser`](../packages/api/multiuser), [`llm`](../packages/llm/llm), [`storage-domain`](../packages/storage/storage-domain), [`typert-protocol`](../packages/typert/protocol) |
 | [`api-workspace-artifacts`](../packages/api/workspace-artifacts) | `api` | [`api-remote-access`](../packages/api/remote-access), [`api-workspace-controller`](../packages/api/workspace-controller), [`client-connection`](../packages/client/connection), [`workspace`](../packages/workspace/workspace) |
 | [`api-workspace-upload`](../packages/api/workspace-upload) | `api` | [`api-remote-access`](../packages/api/remote-access), [`api-workspace-controller`](../packages/api/workspace-controller), [`client-connection`](../packages/client/connection), [`workspace`](../packages/workspace/workspace) |
 | [`file-reference`](../packages/context/file-reference) | `context` | [`agent`](../packages/core/agent) |

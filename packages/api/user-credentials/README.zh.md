@@ -57,6 +57,8 @@ pnpm exec tsx scripts/user-credentials-key.ts --path "$DSH_HOME/secrets/user-cre
 
 响应仅包含 ID、名称、保存状态和时间戳。检查在 Host 内存中认证并解密当前用户的记录，随后清除明文字节缓冲区；结果表示存储可读，不表示外部服务授权有效。明文和凭证片段不会进入存储域事件、浏览器事件、模型消息、执行环境或工作区文件。错误仅包含固定消息与空详情，不携带原始存储或加密异常。
 
+可选的 `inferenceBindings` 数组将每个 pi-ai provider 绑定到精确的 `baseURL` 和账号内的 `credentialName`。pi-ai 路由必须配置 `credentialScope: request`；即使凭证消费者被卸载，也不会回退到部署密钥。例如绑定 provider `vultr`、接口 `https://api.vultrinference.com/v1` 和名称 `Vultr API Key`，再配置对应的 `openai-completions` 路由与所需模型。接口必须使用 HTTPS；`allowLoopbackHttp` 仅允许显式配置的本地测试服务。模型列表只展示已配置的元数据，不读取凭证；鉴权仅在推理时执行。推理在当前轮次捕获已认证提示的 principal，拒绝混合账号输入，并在解密前重新检查会话的当前归属。缺少有效轮次授权、同名凭证重复或目标接口变化时拒绝请求。Host 内部凭证 waterfall 不转发给浏览器，只有选定的传输层接收密钥。新增、替换和删除已绑定凭证只发布模型列表失效的元数据通知。
+
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
@@ -85,7 +87,7 @@ AES-256-GCM 将用户 ID、记录 ID 与加密版本绑定到每条记录，每�
 <a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
-- 主密钥轮换需要另行设计迁移，替换密钥文件会使已有密文不可读。名称是用户提供的元数据，不应填写凭证值。保密性依赖 Host 及其私有存储可信。
+- 推理仅支持显式绑定的 pi-ai 路由，不提供通用外部请求代理或凭证共享授权。没有独立认证提示的子代理或自主调用会被拒绝。主密钥轮换需要另行设计迁移，替换密钥文件会使已有密文不可读。名称是用户提供的元数据，不应填写凭证值。保密性依赖 Host 及其私有存储可信。
 
 <a id="dev-note"></a>
 ### 开发备注

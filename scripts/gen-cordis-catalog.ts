@@ -1029,6 +1029,7 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
 
 /** Project types deliberately documented outside the subsystems catalog. */
 export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
+  PiAiCredentialRequest: 'Host credential authorization inputs are owned by packages/llm/llm-pi-ai/README.md',
   ActionCardDecision: 'packages/experimental/action-cards/README.md',
   ActionCardKind: 'packages/experimental/action-cards/README.md',
   ActionCardResult: 'packages/experimental/action-cards/README.md',

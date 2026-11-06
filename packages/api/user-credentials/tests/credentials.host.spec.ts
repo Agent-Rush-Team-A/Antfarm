@@ -18,6 +18,10 @@ import Multiuser from '@deepseek-ai/dsh-api-multiuser'
 import type { PeerScope, UserId } from '@deepseek-ai/dsh-typert-protocol'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { brandString } from '@deepseek-ai/dsh-brand'
+import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
+import SessionStore from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import LlmRuntime, { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { afterEach, expect, it, vi } from 'vitest'
 import UserCredentials from '../src/index.ts'
 import { userCredentialsDomain } from '../src/spec.ts'
@@ -66,6 +70,56 @@ async function setup(root?: string, config = {}) {
   }
   return { ctx, root: directory, keyFile, fiber, login, invoke }
 }
+
+it('authorizes each current turn independently and refuses missing credentials, mixed callers and changed endpoints', async () => {
+  const baseURL = 'https://inference.example.test/v1'
+  const f = await setup(undefined, { inferenceBindings: [{ provider: 'personal-test', baseURL, credentialName: 'Test key' }] })
+  await f.ctx.plugin(SessionStore)
+  await f.ctx.plugin(SessionProjectionRegistry)
+  await f.ctx.plugin(AgentRegistry)
+  await f.ctx.plugin(LlmRuntime)
+  const alice = await f.login('alice')
+  const bob = await f.login('bob')
+  if (alice.principal.kind !== 'user' || bob.principal.kind !== 'user') throw new Error('Expected real user peers')
+  const ownerA = alice.principal
+  const ownerB = bob.principal
+  await f.invoke(alice, 'create', { name: 'Test key', value: 'ALICE-INFERENCE-CANARY' })
+  async function agentFor(userId: UserId): Promise<Agent> {
+    const workspace = await f.ctx.multiuser.createUserWorkspace(userId)
+    const session = f.ctx.sessions.create(undefined, { meta: { cwd: workspace.path } })
+    await workspace.attachSession(session.id)
+    return { id: session.id, session, ctx: f.ctx, status: 'running' } as Agent
+  }
+  const a = await agentFor(ownerA.userId)
+  const b = await agentFor(ownerB.userId)
+  async function claim(agent: Agent, principals: Array<typeof ownerA>, turn = 1, step = 1) {
+    const messages = principals.map(principal => createUserMessage({ source: { kind: 'user', principal }, content: [{ type: 'text', text: 'hi' }] }))
+    await f.ctx.waterfall('agent/pre-step', { agent, messages, turn, step, signal: new AbortController().signal,
+      modelSelection: { provider: 'personal-test', model: 'model' } }, () => Promise.resolve({ kind: 'enter' as const, messages }))
+  }
+  const fallback = vi.fn(async () => 'GLOBAL-MUST-NOT-BE-USED')
+  const requestFor = (agent: Agent) => ({ provider: 'personal-test', baseURL, model: 'model', credentialScope: 'request' as const, sessionId: agent.id })
+  const resolve = (agent: Agent) => f.ctx.agents.withInitiator(agent,
+    () => f.ctx.waterfall('llm-pi-ai/resolve-api-key', requestFor(agent), fallback))
+  await claim(a, [ownerA])
+  await claim(b, [ownerB])
+  await expect(resolve(a)).resolves.toBe('ALICE-INFERENCE-CANARY')
+  await expect(resolve(b)).rejects.toMatchObject({ code: 'MISSING_CREDENTIAL' })
+  await f.invoke(bob, 'create', { name: 'Test key', value: 'BOB-INFERENCE-CANARY' })
+  const concurrent = await Promise.all([resolve(a), resolve(b)])
+  expect(concurrent).toEqual(['ALICE-INFERENCE-CANARY', 'BOB-INFERENCE-CANARY'])
+  await expect(f.ctx.agents.withInitiator(a, () => f.ctx.waterfall('llm-pi-ai/resolve-api-key', {
+    ...requestFor(a), baseURL: 'https://other.example.test/v1',
+  }, fallback))).rejects.toMatchObject({ code: 'PERSONAL_CREDENTIAL_ENDPOINT' })
+  await claim(a, [ownerA, ownerB], 2)
+  await expect(resolve(a)).rejects.toMatchObject({ code: 'PERSONAL_CREDENTIAL_UNAUTHORIZED' })
+  await claim(a, [ownerA], 3)
+  await claim(a, [], 3, 2)
+  await expect(resolve(a)).resolves.toBe('ALICE-INFERENCE-CANARY')
+  Reflect.set(a, 'status', 'idle')
+  await expect(resolve(a)).rejects.toMatchObject({ code: 'PERSONAL_CREDENTIAL_UNAUTHORIZED' })
+  expect(fallback).not.toHaveBeenCalled()
+})
 
 it('isolates same-named credentials and rejects another user, owner and unscoped callers', async () => {
   const f = await setup()

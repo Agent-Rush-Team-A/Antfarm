@@ -12,9 +12,12 @@ import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-api-multiuser'
 import { loadCredentialKey, encryptCredential, decryptCredential } from './crypto.ts'
 import { userCredentialsDomain, type EncryptedCredential } from './spec.ts'
+import { inferenceBindingsSchema, installInferenceBindings } from './inference.ts'
+import type { InferenceBinding } from './inference.ts'
 import type { CreateCredentialRequest, CredentialRequest, ReplaceCredentialRequest, UserCredentialId, UserCredentialView } from './types.ts'
 
 export type * from './types.ts'
+export type { InferenceBinding } from './inference.ts'
 
 /** Host deployment values; no secret is stored in plugin configuration. */
 export interface Config {
@@ -24,6 +27,10 @@ export interface Config {
   maxCredentialBytes?: number
   /** Maximum credentials per account. @default 64 */
   maxRecordsPerUser?: number
+  /** Provider routes allowed to consume this account's named credentials. @default [] */
+  inferenceBindings?: InferenceBinding[]
+  /** Allow HTTP only for explicitly bound loopback test providers. @default false */
+  allowLoopbackHttp?: boolean
 }
 
 /** Validated deployment configuration. */
@@ -31,6 +38,10 @@ export const Config: schema<Config> = schema.object({
   encryptionKeyFile: schema.string().required(),
   maxCredentialBytes: schema.natural().min(1).default(16384),
   maxRecordsPerUser: schema.natural().min(1).default(64),
+  inferenceBindings: schema.array(schema.object({
+    provider: schema.string().required(), baseURL: schema.string().required(), credentialName: schema.string().required(),
+  })).default([]),
+  allowLoopbackHttp: schema.boolean().default(false),
 })
 
 const createSchema = z.object({ name: z.string().trim().min(1).max(128), value: z.string().min(1) }).strict()
@@ -58,6 +69,7 @@ export class UserCredentials extends TypertRemoteService {
   constructor(ctx: Context, config: Config) {
     super(ctx, 'userCredentials', { namespace: 'userCredentials' })
     this.config = Config(config) as Required<Config>
+    this.config.inferenceBindings = inferenceBindingsSchema.parse(this.config.inferenceBindings)
     const workspaceRoot = ctx.multiuser.workspaceRoot
     if (!isAbsolute(this.config.encryptionKeyFile)) throw new Error('Personal credential key path must be absolute.')
     const within = relative(workspaceRoot, this.config.encryptionKeyFile)
@@ -95,7 +107,14 @@ export class UserCredentials extends TypertRemoteService {
         throw new Error('Personal credential store cannot be decrypted; restore its original key and intact storage.')
       }
     }
-
+    installInferenceBindings(this.ctx, this.config.inferenceBindings, this.config.allowLoopbackHttp, (userId, name) => {
+      if (this.closed) throw new Error('Personal credential service is closed.')
+      const records = [...this.table.entries()].map(([, record]) => record)
+        .filter(record => record.ownerUserId === userId && record.name === name)
+      if (records.length > 1) throw new Error('Personal inference credential name is ambiguous.')
+      const record = records[0]
+      return record === undefined ? undefined : decryptCredential(this.key, record)
+    })
   }
 
   /**
@@ -130,6 +149,7 @@ export class UserCredentials extends TypertRemoteService {
         createdAt: now, updatedAt: now, encryptionVersion: 1 as const }
       const encrypted = { ...record, ...encryptCredential(this.key, record, parsed.value) }
       await this.table.put(record.id, encrypted)
+      await this.notifyModels(record.name)
       return view(encrypted)
     })
   }
@@ -149,6 +169,7 @@ export class UserCredentials extends TypertRemoteService {
       const record = this.owned(caller.userId, parsed.id)
       const encrypted = { ...record, updatedAt: new Date().toISOString(), ...encryptCredential(this.key, record, parsed.value) }
       await this.table.put(record.id, encrypted)
+      await this.notifyModels(record.name)
       return view(encrypted)
     })
   }
@@ -164,8 +185,9 @@ export class UserCredentials extends TypertRemoteService {
     const caller = this.caller(signal)
     const parsed = parse(idSchema, request)
     return this.enqueue(caller, async () => {
-      this.owned(caller.userId, parsed.id)
+      const record = this.owned(caller.userId, parsed.id)
       await this.table.delete(parsed.id)
+      await this.notifyModels(record.name)
       return { removed: true }
     })
   }
@@ -217,6 +239,16 @@ export class UserCredentials extends TypertRemoteService {
     }
   }
 
+  private async notifyModels(name: string): Promise<void> {
+    for (const binding of this.config.inferenceBindings) {
+      if (binding.credentialName !== name) continue
+      try { await this.ctx.parallel('llm/models-updated', binding.provider) }
+      catch (_error) {
+        // The credential is already committed; observer failure cannot turn it into a failed write.
+        this.ctx.logger.warn('Personal credential saved; model catalog refresh failed. Reopen the model selector.')
+      }
+    }
+  }
 
   private safe<T>(operation: () => T): T {
     try { return operation() } catch (error) { throw safeError(error) }
