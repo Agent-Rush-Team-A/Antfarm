@@ -117,6 +117,14 @@ declare module '@deepseek-ai/cordis' {
 
   interface Events {
     /**
+     * Guard one Workspace registration deletion before its durable writes.
+     * Providers may refuse by throwing and must await `next()` to hold their guard until deletion settles.
+     * @param workspaceId - Registration the trusted backend caller is removing.
+     * @param next - Continue deletion and return whether the registration existed.
+     * @mode waterfall
+     */
+    'workspace/before-delete'(workspaceId: WorkspaceId, next: () => Promise<boolean>): Promise<boolean>
+    /**
      * Ask the composed providers what still runs for a session before it is
      * archived. A listener prepends its own {@link SessionActivity} entries to
      * the result of `next()`; the registry's innermost callback returns an
@@ -178,6 +186,8 @@ export class WorkspaceRegistry extends Service {
   private readonly sessionPaths = new Map<SessionId, string>()
   private readonly missingSessionPaths = new Set<SessionId>()
   private readonly invalidSessionPaths = new Map<SessionId, string>()
+  private readonly deletionOwner: Context
+  private readonly deletionGuards = new Map<string, () => void>()
   private operationTail: Promise<void> = Promise.resolve()
 
   private readonly host: WorkspaceEntityHost = {
@@ -193,6 +203,7 @@ export class WorkspaceRegistry extends Service {
 
   constructor(ctx: Context) {
     super(ctx, 'workspaceRegistry')
+    this.deletionOwner = ctx
   }
 
   /** Open the domain, finish bootstrap when required, and rebuild the ordered cache. */
@@ -300,15 +311,34 @@ export class WorkspaceRegistry extends Service {
   }
 
   /**
+   * Install a named deletion guard owned by this registry, replacing the same name without binding to the caller's lifetime.
+   * The callback receives the registry's context and must resolve current services instead of retaining a disposable provider.
+   * @param name - Stable plugin registration name.
+   * @param guard - Middleware that remains installed until replacement or registry disposal.
+   */
+  registerDeletionGuard(
+    name: string,
+    guard: (scope: Context, workspaceId: WorkspaceId, next: () => Promise<boolean>) => Promise<boolean>,
+  ): void {
+    const owner = this.deletionOwner
+    this.deletionGuards.get(name)?.()
+    this.deletionGuards.set(name, owner.on('workspace/before-delete', (workspaceId, next) => guard(owner, workspaceId, next)))
+  }
+
+  /**
    * Delete one workspace registration while retaining its directory and every
    * session log. The durable order is updated before the table deletion; a
    * failed table write restores the prior order and keeps the entity
-   * published. Unknown ids are an idempotent no-op for domain callers.
+   * published. Composed deletion guards run before writes and may refuse the operation.
+   * Unknown ids are an idempotent no-op and do not dispatch guards.
    * @param id - Workspace registration to remove.
    * @returns `true` when a record was deleted, `false` when it was unknown.
    */
   delete(id: WorkspaceId): Promise<boolean> {
-    return this.enqueueOperation(() => this.deleteKnown(id))
+    return this.enqueueOperation(async () => {
+      if (!this.entities.has(id)) return false
+      return this.ctx.waterfall('workspace/before-delete', id, () => this.deleteKnown(id))
+    })
   }
 
   /**
