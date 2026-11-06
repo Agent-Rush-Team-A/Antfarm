@@ -51,7 +51,7 @@ export async function createWorkspaceSshServices(config: SshConfig): Promise<Wor
     await mount(ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', modelContext: false, workspaceRoot: config.workspace }))
     await mount(ctx.plugin(SshConnection, config))
     connection = ctx.ssh
-    await mount(ctx.plugin(SshFileSystem))
+    await mount(ctx.plugin(SshFileSystem, { confineTextReads: true }))
     await mount(ctx.plugin(SshSubprocessRuntime))
     const hello = await ctx.ssh.ready
     const root = await ctx.fs.resolve(hello.workspace)

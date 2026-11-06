@@ -94,6 +94,8 @@ describe.skipIf(bindings === undefined || process.platform === 'win32')('Workspa
         'Native write confirmation retains its exact format',
         'Native edit refuses a stale observed version',
         'Another Workspace cannot replace the first Workspace file',
+        'Loader-selected SSH text read refuses a directory replaced after resolve',
+        'Loader-selected SSH text stream refuses a directory replaced after resolve',
       ]))
       expect(report?.output).toEqual([{ type: 'text', text: 'output\n[stderr]\ndiagnostic\n[exit code: 7]' }])
       unload = report?.unload
