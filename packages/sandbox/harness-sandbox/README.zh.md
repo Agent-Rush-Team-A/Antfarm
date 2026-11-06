@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-使用可选的 [Web overlay](../../../apps/cli/config/examples/harness-sandbox.patch.yml)，并按照[部署指南](../../../docs/user/guide/workspace-sandboxes.zh.md)配置。它启用已有多用户登录和本服务，保留多用户对宿主工具的限制。Web 进程不能访问 Docker；Runner 独立运行。
+将可选的 [Web overlay](../../../apps/cli/config/examples/harness-sandbox.patch.yml) 加到 Antfarm 默认的 `start:web` 或 `dev:web` 命令，并按照[部署指南](../../../docs/user/guide/workspace-sandboxes.zh.md)配置。默认入口提供多用户登录和文件服务，此 overlay 增加沙箱管理。多用户对宿主工具的限制继续生效。Web 进程不能访问 Docker；Runner 独立运行。
 
 ```yaml
 - id: workspace-sandbox

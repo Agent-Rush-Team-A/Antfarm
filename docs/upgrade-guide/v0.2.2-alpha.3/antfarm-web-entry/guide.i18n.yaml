@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.2-alpha.3/antfarm-web-entry/guide.md
+/:
+  en: 8d195b4a842f0afa
+  zh: 7093cfd1d71bec8f
+/antfarm-web-uses-account-login:
+  en: 4dcfa19fc15afa73
+  zh: 78e080cc936a4744
+/antfarm-web-uses-account-login/change:
+  en: 43e89632c2a927b8
+  zh: 9bd58e7829cdc53b
+/antfarm-web-uses-account-login/migration:
+  en: 04fa2daacfc43ea3
+  zh: 46c4c3073c9f80dc

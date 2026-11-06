@@ -19,10 +19,10 @@ kind: "user-guide"
 ```sh
 export DSH_MULTIUSER_WORKSPACE_ROOT=/srv/agentrush/workspaces
 export DSH_SANDBOX_RUNNER_SOCKET=/run/agentrush-sandbox/runner.sock
-pnpm dsh --profile web --patch apps/cli/config/examples/harness-sandbox.patch.yml --no-open
+pnpm run start:web --patch apps/cli/config/examples/harness-sandbox.patch.yml --no-open
 ```
 
-overlay 启用多用户登录和沙箱管理，在执行隔离接入之前保留原生对模型工具、文件访问及终端交接的限制。它不会把有 Docker 权限的 Runner 加载进 Web。缺少必需配置时启动失败。
+Antfarm 默认 Web 入口提供账号登录和工作区文件服务，overlay 增加沙箱管理。在执行隔离接入之前，默认入口保留原生对模型工具和终端交接的限制。它不会把有 Docker 权限的 Runner 加载进 Web。缺少必需配置时启动失败。直接使用 `pnpm dsh web` 时，需在此 overlay 之前加载 `apps/cli/config/antfarm-web.patch.yml`。
 
 <a id="call-the-management-methods"></a>
 ## 调用管理方法
