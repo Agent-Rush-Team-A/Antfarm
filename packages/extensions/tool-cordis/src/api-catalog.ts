@@ -4815,6 +4815,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'workspaceUpload',
+    summary: 'Host upload provider; resources belong to the operation and survive its cancellation cleanup.',
+    description: 'Host upload provider; resources belong to the operation and survive its cancellation cleanup.',
+    methods: [
+      {
+        signature: '@Remote limits(request: WorkspaceUploadScope, signal: AbortSignal): WorkspaceUploadLimits',
+        description: 'Read the deployment byte limit for an authorized workspace.',
+        parameters: [{ name: 'request', description: 'workspace identity from the caller.' }, { name: 'signal', description: 'caller cancellation, including browser provider withdrawal.' }],
+        returns: 'inclusive per-file byte limit without exposing a host path.',
+      },
+    ],
+  },
+  {
     key: 'worktrees',
     summary: 'Creates retained Git worktrees under the mounted filesystem and sandbox providers.',
     description: 'Creates retained Git worktrees under the mounted filesystem and sandbox providers.',
@@ -10476,6 +10489,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceUnpinSessionRequest',
     declaration: 'export interface WorkspaceUnpinSessionRequest {\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'WorkspaceUploadLimits',
+    declaration: 'export interface WorkspaceUploadLimits {\n    readonly maxBytes: number;\n}',
+  },
+  {
+    name: 'WorkspaceUploadScope',
+    declaration: 'export interface WorkspaceUploadScope {\n    readonly workspaceId: WorkspaceId;\n}',
   },
   {
     name: 'WorkspaceValue',

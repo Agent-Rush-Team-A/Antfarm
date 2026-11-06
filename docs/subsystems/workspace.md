@@ -166,6 +166,18 @@ interface SessionActivity {
 
 `SessionActivityItem` carries the family-specific `id` (a session, job, or schedule id) and an optional display `label`. `archiveSession(sessionId)` asks the waterfall once, after the existence check, and rejects a non-empty answer with `WorkspaceActiveSessionError` (`sessionId`, `activity`) without writing; the controller maps it to the `workspace/session-active` error, whose details carry the same two fields. `archiveSession(sessionId, { stopActivity: true })` — the `ArchiveSessionOptions` field the transport request exposes as `stopActivity` — skips the check, writes the archive, then dispatches `workspace/session-stop`; a rejecting provider is logged and the archive stays, and the stopped work is never awaited to settlement. An already archived id neither asks nor stops. The shipped providers, what they stop, and the `agent/pre-step` gate that keeps an archived Session from running a model step are documented with the [registry package](../../packages/workspace/workspace/README.md#api-behavior); the decision record is the [archive-stops-running-work Agent Note](../../.agents/notes/implemented/feature/2026-09-21-archive-stops-running-session-work.md).
 
+## Workspace upload
+
+The optional [workspace upload provider](../../packages/api/workspace-upload/README.md) accepts raw file bytes for an authorized workspace identity. It owns upload admission and filesystem publication; the registry remains the authority for the target directory.
+
+### WorkspaceUploadScope
+
+`workspaceId: WorkspaceId` identifies the registered upload target; callers never provide its host path.
+
+### WorkspaceUploadLimits
+
+`maxBytes: number` is the deployment's inclusive per-file byte cap returned by `workspaceUpload/limits`.
+
 ## Consumers
 
 [`dsh-workspace-controller`](../../packages/api/workspace-controller) serves workspace CRUD to GUI clients over `ctx.workspaceRegistry`, and [`dsh-session-controller`](../../packages/api/session-controller) performs the create-session-then-attach flow above. [dsh-agent-instructions](../../packages/context/agent-instructions) is **not** a consumer despite the name: it discovers AGENTS.md-style instruction files under an agent's own cwd and never touches `ctx.workspaceRegistry` — the shared word refers to the user's working directory, not to this registry's entities.
@@ -592,6 +604,24 @@ async resolveByPath(path: string): Promise<Workspace | undefined>
 Types: [SessionId](core.md)
 
 Source: [`packages/workspace/workspace/src/index.ts`](../../packages/workspace/workspace/src/index.ts)
+
+<a id="ctxworkspaceupload--workspaceupload"></a>
+
+### `ctx.workspaceUpload` — `WorkspaceUpload`
+
+Host upload provider; resources belong to the operation and survive its cancellation cleanup.
+
+```ts cordis-catalog
+/**
+ * Read the deployment byte limit for an authorized workspace.
+ * @param request - workspace identity from the caller.
+ * @param signal - caller cancellation, including browser provider withdrawal.
+ * @returns inclusive per-file byte limit without exposing a host path.
+ */
+@Remote limits(request: WorkspaceUploadScope, signal: AbortSignal): WorkspaceUploadLimits
+```
+
+Source: [`packages/api/workspace-upload/src/index.ts`](../../packages/api/workspace-upload/src/index.ts)
 
 <a id="workspace-events"></a>
 

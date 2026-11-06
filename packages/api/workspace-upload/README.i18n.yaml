@@ -1,0 +1,43 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/api/workspace-upload/README.md
+/:
+  en: 7d8bb1fc26be7924
+  zh: 6f6891cbde47e7b3
+/deepseek-ai-dsh-api-workspace-upload:
+  en: 3a8a9b9805691256
+  zh: 9eb4018b30549aca
+/deepseek-ai-dsh-api-workspace-upload/summary:
+  en: ccbe85ec553e67e2
+  zh: 1947efdceaa69db2
+/deepseek-ai-dsh-api-workspace-upload/table-of-contents:
+  en: 122f0d41696980b1
+  zh: 90be2e0d6818a83c
+/deepseek-ai-dsh-api-workspace-upload/use-this-package:
+  en: ee8f59ad2cd46a8e
+  zh: a3cdd1663ffee98a
+/deepseek-ai-dsh-api-workspace-upload/understand-the-implementation:
+  en: 595f61a9838f73a6
+  zh: 851958b05b1314dd
+/deepseek-ai-dsh-api-workspace-upload/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-api-workspace-upload/model-experience/direct-effects:
+  en: 1829e1ba516199a1
+  zh: 0db077f63623bb52
+/deepseek-ai-dsh-api-workspace-upload/model-experience/direct-effects/what-the-model-sees:
+  en: dc0806da5aa5289d
+  zh: 3748d87b510d8089
+/deepseek-ai-dsh-api-workspace-upload/model-experience/direct-effects/token-effect:
+  en: fc4d3de1ed926051
+  zh: 3ff704d195f90d69
+/deepseek-ai-dsh-api-workspace-upload/model-experience/direct-effects/kv-cache-effect:
+  en: ee4d0894edebdf95
+  zh: f6d5bdb18dd196f6
+/deepseek-ai-dsh-api-workspace-upload/known-limitations-and-deferred-work:
+  en: 318ebd99f9f63872
+  zh: 561e618fab86afd2
+/deepseek-ai-dsh-api-workspace-upload/known-limitations-and-deferred-work/dev-note:
+  en: dc64e3a5f005b831
+  zh: 054e673a5170c9cf

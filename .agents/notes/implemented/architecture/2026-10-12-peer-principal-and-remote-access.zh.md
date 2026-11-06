@@ -93,7 +93,7 @@ wireStream.open(endpoint, payload, uplink, peer: PeerScope, signal)          // 
 | Host 进程内自动化 | 需要调用 Remote 方法时用 `createPeer({ principal })` 创建自己的 Peer。目前没有这类生产调用方，因此不预置固定的 Host Peer |
 | 多 Peer | `createPeer()` 每次返回独立 Peer；liveshare 将用它为读者的每条连接建一个 Peer（在 #3854 侧接入） |
 | 交互参与 | `Peer(owner, { principal, interactions? })` 与 `createPeer()` 省略 interactions 时默认 `answer`。`none` 对所有 principal 拒绝 `$events` 与 `$events/result`；交互模式不赋予方法权限。回答型 owner 能接收并回答 waterfall，非 owner 只能接收 RBAC 授权的广播，不能回答 |
-| exact Fetch route | file-upload、present-open、media-references、session-log-export、inspector 等 exact route 不经 Gateway；共享 Fetch handler 默认仅接纳 owner；显式路由授权器可接纳资源作用域调用 |
+| exact Fetch route | file-upload、present-open、media-references、session-log-export、inspector 等 exact route 不经 Gateway；共享 Fetch handler 默认仅接纳 owner；显式路由授权器可接纳资源作用域调用（[工作区上传](2026-11-05-workspace-upload-publication.zh.md)） |
 
 ### 身份类型
 
@@ -559,7 +559,7 @@ GlobalStandardProps.useWorkspaceAccess: (workspaceId: WorkspaceId, action: Remot
 - liveshare 接入（声明 `share-viewer`、每条读者连接一个 Peer、定义 role 并注册 policy、删除 `origin` / `prompt/origin` / `READ_ENDPOINTS`）：#3854 侧。
 - `session/cancel` 归属检查、fork 的 `childSessionId`、`ToolExecutionInput.turn`：不改。
 - 资源识别的精确方式（例如 Typert 生成器按 branded id 类型在请求对象中定位字段并写入描述符）：目前用 lookup 与 Context 声明的 `resource`、默认字段加 `resources` 读取函数，以后可替换资源解析而不改 policy 接口。
-- 精确 Fetch 路由默认仅接纳 owner；注册路由可以提供资源授权。
+- 精确 Fetch 路由默认仅接纳 owner；可选工作区上传服务声明显式资源授权。
 - subagent `prompt` 的资源声明待定：其请求字段为 `parentSessionId` / `childSessionId`，目前解析为 `global`。生产者为进程内调用方记录 `source.principal`；没有 role 列出它，非 owner 不能经 Gateway 到达。
 - 预定义与聚合 role：出现第二种非 owner principal kind 时，由各领域包以 `@Remote({ roles })` 声明方法所属的通用 role（如 `session:viewer`），各 policy 绑定这些 role；目前 role 由业务包以显式 action 清单定义。
 

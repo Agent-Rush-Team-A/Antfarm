@@ -93,7 +93,7 @@ wireStream.open(endpoint, payload, uplink, peer: PeerScope, signal)          // 
 | In-process Host automation | Code that calls Remote methods creates its own Peer with `createPeer({ principal })`. No production caller exists yet, so no fixed Host Peer is pre-provisioned |
 | Multiple Peers | Each `createPeer()` returns an independent Peer; liveshare is to create one per viewer connection (wired on the #3854 side) |
 | Interaction participation | `Peer(owner, { principal, interactions? })` and `createPeer()` default omitted `interactions` to `answer`. `none` refuses `$events` and `$events/result` for every principal, even owner; this is independent of method-level RBAC. Answering owner Peers receive waterfalls, and non-owner Peers receive only RBAC-authorized broadcasts and cannot answer |
-| Exact Fetch routes | Exact routes such as file-upload, present-open, media-references, session-log-export, and inspector bypass the Gateway; the shared Fetch handler defaults to owner-only admission; an explicit route authorizer can admit resource-scoped calls |
+| Exact Fetch routes | Exact routes such as file-upload, present-open, media-references, session-log-export, and inspector bypass the Gateway; the shared Fetch handler defaults to owner-only admission; an explicit route authorizer can admit resource-scoped calls ([workspace upload](2026-11-05-workspace-upload-publication.md)) |
 
 ### Identity types
 
@@ -559,7 +559,7 @@ The review rule's home is the "`@Remote` marks capability methods" section of [R
 - Liveshare integration (declaring `share-viewer`, one Peer per viewer connection, defining roles and registering a policy, removing `origin` / `prompt/origin` / `READ_ENDPOINTS`) happens on the #3854 side.
 - `session/cancel` ownership checks, the fork `childSessionId`, and `ToolExecutionInput.turn` do not change.
 - Precise resource recognition (for example, the Typert generator locating request fields by branded id type and writing them into descriptors): this change uses the `resource` that lookups and Contexts declare, default fields, and `resources` readers, and resource resolution can later be replaced without changing the policy interface.
-- Exact Fetch routes default to owner-only admission; registered routes may supply resource authorization.
+- Exact Fetch routes default to owner-only admission; the optional workspace upload provider declares explicit resource authorization.
 - The resource declaration of subagent `prompt` is open: its request fields are `parentSessionId` / `childSessionId`, so it currently resolves to `global`. The producer records `source.principal` for in-process callers; no role lists it, so non-owners cannot reach it through the Gateway.
 - Predefined and aggregate roles: when a second non-owner principal kind appears, domain packages declare the generic roles a method belongs to (such as `session:viewer`) with `@Remote({ roles })`, and each policy binds those roles; roles are currently defined by the business package as explicit action lists.
 
