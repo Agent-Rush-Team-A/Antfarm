@@ -17,6 +17,10 @@ const HOST_DEPENDENCY_PACKAGES: readonly string[] = [
 
 /** Required Cordis services whose Host imports are type-only. */
 const REQUIRED_SERVICE_PEERS = {
+  '@deepseek-ai/dsh-api-workspace-artifacts': [
+    '@deepseek-ai/dsh-api-remote-access', '@deepseek-ai/dsh-api-workspace-controller',
+    '@deepseek-ai/dsh-client-connection', '@deepseek-ai/dsh-workspace',
+  ],
   '@deepseek-ai/dsh-api-workspace-upload': [
     '@deepseek-ai/dsh-api-remote-access', '@deepseek-ai/dsh-api-workspace-controller',
     '@deepseek-ai/dsh-client-connection', '@deepseek-ai/dsh-workspace',
