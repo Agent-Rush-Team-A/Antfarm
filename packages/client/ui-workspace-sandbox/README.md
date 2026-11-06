@@ -25,7 +25,9 @@ Workspace sandbox resources observe the current workspace without opening a cont
 <a id="use-this-package"></a>
 ## Use this package
 
-Enable this plugin with the [Harness sandbox overlay](../../../apps/cli/config/examples/harness-sandbox.patch.yml). The independent Runner and canonical workspace root are deployment prerequisites. `pollIntervalMs` is the delay after a completed status query; its default is 2000 milliseconds.
+Mount this plugin alongside the [Harness sandbox overlay](../../../apps/cli/config/examples/harness-sandbox.patch.yml). The independent Runner and canonical workspace root are deployment prerequisites. `pollIntervalMs` is the delay after a completed status query; its default is 2000 milliseconds.
+
+The workspace menu and conversation input action open the same panel for the selected workspace. It displays current state, prevents repeated pending operations, refreshes explicitly and asks for confirmation before closing. Dismissing the panel leaves the sandbox running.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation

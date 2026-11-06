@@ -9,15 +9,17 @@ import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { Config } from '../config.ts'
 import { SandboxModel } from './model.ts'
 import { parseSandboxAddress } from './address.ts'
+import { mountUi } from './mount-ui.ts'
 export { Config } from '../config.ts'
 
 /** The browser never reaches Runner or Docker directly. */
-export const inject = ['remote', 'connection', 'resources']
+export const inject = ['remote', 'connection', 'resources', 'slots', 'locale', 'contextMenus', 'workspaces', 'uiWorkspace', 'remoteAccess']
 
 /** @param ctx - Browser-owned services. @param config - Validated polling cadence. @returns Ordered resource, model and Remote teardown. */
 export async function apply(ctx: Context, config: Config): Promise<() => Promise<void>> {
   const unmount = await ctx.remote.$mount(sandboxRemote)
-  const ui = ctx.inject(['remote.workspaceSandbox', 'connection', 'resources'], (scope) => {
+  const ui = ctx.inject(['remote.workspaceSandbox', 'slots', 'locale', 'contextMenus',
+    'connection', 'workspaces', 'uiWorkspace', 'remoteAccess', 'resources'], (scope) => {
     const remote = scope.remote.workspaceSandbox
     // Existing management calls settle on the wire; the model discards stale replies.
     const model = new SandboxModel({
@@ -36,6 +38,7 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
         yield* model.watch(workspaceId, signal)
       },
     }), 'workspace sandbox: resource provider')
+    mountUi(scope, model)
   })
   try { await ui } catch (error) { await ui.dispose(); await unmount(); throw error }
   return async () => { await ui.dispose(); await unmount() }

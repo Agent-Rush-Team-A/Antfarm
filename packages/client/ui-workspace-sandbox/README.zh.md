@@ -25,7 +25,9 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-通过 [Harness 沙箱 overlay](../../../apps/cli/config/examples/harness-sandbox.patch.yml) 启用此插件。部署前需准备独立 Runner 与规范工作区根目录。`pollIntervalMs` 是状态查询完成后的轮询间隔，默认为 2000 毫秒。
+配合 [Harness 沙箱 overlay](../../../apps/cli/config/examples/harness-sandbox.patch.yml) 启用此插件。部署前需准备独立 Runner 与规范工作区根目录。`pollIntervalMs` 是状态查询完成后的轮询间隔，默认为 2000 毫秒。
+
+工作区菜单和对话输入栏操作打开同一面板，面向选定的工作区。面板显示当前状态，防止重复提交未完成操作，支持手动刷新，并在关闭沙箱前要求确认。关闭面板不会关闭沙箱。
 
 <a id="understand-the-implementation"></a>
 ## 实现说明

@@ -1,0 +1,7 @@
+.dialog { width: min(480px, 100%); }
+.panel, .confirm { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.panel p { margin: 0; }
+.workspace { overflow-wrap: anywhere; font-weight: 500; }
+.status { min-height: 20px; color: var(--dsw-alias-label-primary); }
+.note { font-size: 13px; color: var(--dsw-alias-label-primary); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
