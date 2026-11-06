@@ -139,6 +139,14 @@ const homeAndGuide = pairedPages([
     order: 3,
   },
   {
+    source: 'docs/user/guide/personal-models.md',
+    route: 'guide/personal-models.md',
+    label: { root: 'Antfarm 个人模型凭证', en: 'Antfarm personal model credentials' },
+    sidebar: { root: 'zh-guide', en: 'en-guide' },
+    section: { root: '入门', en: 'Guide' },
+    order: 7,
+  },
+  {
     source: 'docs/user/guide/public-deployments.md',
     route: 'guide/public-deployments.md',
     label: { root: '公开部署', en: 'Public deployments' },

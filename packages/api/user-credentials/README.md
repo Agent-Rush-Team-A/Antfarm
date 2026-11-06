@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Manage personal test credentials through an authenticated browser API. The Host stores ciphertext in the `user_credentials` storage domain; workspace ownership never grants credential access. This package requires the multiuser composition and an explicitly provisioned master-key file.
+Manage personal credentials through an authenticated browser API. The Host stores ciphertext in the `user_credentials` storage domain; workspace ownership never grants credential access. This package requires the multiuser composition and a persistent private master-key file. Antfarm's [default Web entry](../../../docs/user/guide/personal-models.md) connects the credential UI, a Vultr catalog and request authorization.
 
 ## Table of Contents
 
@@ -32,7 +32,7 @@ Set `DSH_HOME` to the private Host data directory, then provision a key once out
 pnpm exec tsx scripts/user-credentials-key.ts --path "$DSH_HOME/secrets/user-credentials.key"
 ```
 
-The command exclusively creates a private 32-byte file and refuses existing paths. Back up the key securely with the encrypted store. Missing keys, unsafe file permissions, and ciphertext that cannot be authenticated refuse service startup; no key is regenerated automatically.
+The command exclusively creates a private 32-byte file and refuses existing paths. Back up the key securely with the encrypted store. `initializeKeyIfEmpty` defaults to false; when enabled, a missing file is created only if the persisted credential table is empty. Existing files are never replaced. Missing keys for nonempty stores, unsafe file permissions, and ciphertext that cannot be authenticated refuse service startup; restore the original key and storage.
 
 Mount the plugin after account authentication is configured:
 

@@ -80,7 +80,7 @@ export function installInferenceBindings(
       }
       const missing = (): LlmError => new LlmError(
         `Save a personal credential named "${binding.credentialName}" in My credentials to use this model.`,
-        'MISSING_CREDENTIAL',
+        'PERSONAL_CREDENTIAL_MISSING',
       )
       if (request.baseURL === undefined || endpoint(request.baseURL) !== binding.baseURL) {
         throw new LlmError('The model endpoint does not match its personal credential binding. Contact the administrator.', 'PERSONAL_CREDENTIAL_ENDPOINT')

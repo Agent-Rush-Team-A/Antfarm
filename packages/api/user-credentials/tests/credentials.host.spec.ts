@@ -1,6 +1,6 @@
 /** Authenticated personal credentials with real storage, Connection and Gateway. */
 import { randomBytes, randomUUID } from 'node:crypto'
-import { mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -36,10 +36,10 @@ afterEach(async () => {
   }
 })
 
-async function setup(root?: string, config = {}) {
+async function setup(root?: string, config = {}, provisionKey = true) {
   const directory = root ?? await mkdtemp(join(tmpdir(), 'personal-credentials-'))
   const keyFile = join(directory, 'key')
-  if (root === undefined) await writeFile(keyFile, randomBytes(32), { mode: 0o600, flag: 'wx' })
+  if (root === undefined && provisionKey) await writeFile(keyFile, randomBytes(32), { mode: 0o600, flag: 'wx' })
   const ctx = new Context()
   fixtures.push({ ctx, root: directory })
   await ctx.plugin(Storage)
@@ -70,6 +70,71 @@ async function setup(root?: string, config = {}) {
   }
   return { ctx, root: directory, keyFile, fiber, login, invoke }
 }
+
+it('initializes an empty deployment once and preserves the key and credentials across reloads', async () => {
+  const f = await setup(undefined, { initializeKeyIfEmpty: true }, false)
+  const firstKey = await readFile(f.keyFile)
+  expect(firstKey).toHaveLength(32)
+  if (process.platform !== 'win32') expect((await stat(f.keyFile)).mode & 0o077).toBe(0)
+  const alice = await f.login('alice')
+  const record = await f.invoke<UserCredentialView>(alice, 'create', { name: 'Vultr API Key', value: 'personal-key' })
+  await f.fiber.dispose()
+  const reloaded = f.ctx.plugin(UserCredentials, { encryptionKeyFile: f.keyFile, initializeKeyIfEmpty: true })
+  await reloaded.await()
+  expect(await readFile(f.keyFile)).toEqual(firstKey)
+  expect(await f.invoke(alice, 'list')).toEqual([record])
+  expect(await f.invoke(alice, 'check', { id: record.id })).toEqual({ readable: true })
+})
+
+it('refuses to generate a replacement key when the encrypted store is nonempty', async () => {
+  const f = await setup(undefined, { initializeKeyIfEmpty: true }, false)
+  const alice = await f.login('alice')
+  await f.invoke(alice, 'create', { name: 'Vultr API Key', value: 'personal-key' })
+  await f.fiber.dispose()
+  await rm(f.keyFile)
+  const rejected = f.ctx.plugin(UserCredentials, { encryptionKeyFile: f.keyFile, initializeKeyIfEmpty: true })
+  await expect(rejected.await()).rejects.toThrow('restore the original private 32-byte key')
+  await rejected.dispose()
+  await expect(stat(f.keyFile)).rejects.toMatchObject({ code: 'ENOENT' })
+})
+
+it('requires explicit initialization and never replaces an invalid existing key', async () => {
+  const f = await setup()
+  await f.fiber.dispose()
+  await rm(f.keyFile)
+  const missing = f.ctx.plugin(UserCredentials, { encryptionKeyFile: f.keyFile })
+  await expect(missing.await()).rejects.toThrow('Cannot load personal credential key')
+  await missing.dispose()
+  await expect(stat(f.keyFile)).rejects.toMatchObject({ code: 'ENOENT' })
+  for (const bytes of [Buffer.alloc(0), Buffer.alloc(31), Buffer.alloc(33)]) {
+    await writeFile(f.keyFile, bytes, { mode: 0o600 })
+    const invalid = f.ctx.plugin(UserCredentials, { encryptionKeyFile: f.keyFile, initializeKeyIfEmpty: true })
+    await expect(invalid.await()).rejects.toThrow('Cannot load personal credential key')
+    await invalid.dispose()
+    expect(await readFile(f.keyFile)).toEqual(bytes)
+  }
+  if (process.platform !== 'win32') {
+    await writeFile(f.keyFile, randomBytes(32))
+    await chmod(f.keyFile, 0o644)
+    const unsafe = f.ctx.plugin(UserCredentials, { encryptionKeyFile: f.keyFile, initializeKeyIfEmpty: true })
+    await expect(unsafe.await()).rejects.toThrow('Cannot load personal credential key')
+    await unsafe.dispose()
+    expect((await stat(f.keyFile)).mode & 0o077).not.toBe(0)
+  }
+})
+
+it('refuses initialization through a parent symlink into a workspace mount', async () => {
+  const f = await setup()
+  await f.fiber.dispose()
+  const alias = join(f.root, 'workspace-alias')
+  await symlink(join(f.root, 'workspaces'), alias, 'junction')
+  const rejected = f.ctx.plugin(UserCredentials, {
+    encryptionKeyFile: join(alias, 'new-key'), initializeKeyIfEmpty: true,
+  })
+  await expect(rejected.await()).rejects.toThrow('Cannot load personal credential key')
+  await rejected.dispose()
+  await expect(stat(join(f.root, 'workspaces', 'new-key'))).rejects.toMatchObject({ code: 'ENOENT' })
+})
 
 it('authorizes each current turn independently and refuses missing credentials, mixed callers and changed endpoints', async () => {
   const baseURL = 'https://inference.example.test/v1'
@@ -104,7 +169,7 @@ it('authorizes each current turn independently and refuses missing credentials, 
   await claim(a, [ownerA])
   await claim(b, [ownerB])
   await expect(resolve(a)).resolves.toBe('ALICE-INFERENCE-CANARY')
-  await expect(resolve(b)).rejects.toMatchObject({ code: 'MISSING_CREDENTIAL' })
+  await expect(resolve(b)).rejects.toMatchObject({ code: 'PERSONAL_CREDENTIAL_MISSING' })
   await f.invoke(bob, 'create', { name: 'Test key', value: 'BOB-INFERENCE-CANARY' })
   const concurrent = await Promise.all([resolve(a), resolve(b)])
   expect(concurrent).toEqual(['ALICE-INFERENCE-CANARY', 'BOB-INFERENCE-CANARY'])

@@ -25,9 +25,9 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-Web bundle 提供默认禁用的 `ui-user-credentials` 配置项。在多用户部署中将它与 [Host 插件](../../api/user-credentials/README.zh.md)一起启用，测试 overlay 已同时配置。可以新增命名凭证、替换凭证值、检查存储可读性或确认删除。弹窗说明共享工作区不会共享凭证，保存检查也不会认证外部服务。
+Web bundle 提供默认禁用的 `ui-user-credentials` 配置项。Antfarm 的[默认入口](../../../docs/user/guide/personal-models.zh.md)将它与 [Host 插件](../../api/user-credentials/README.zh.md)一起启用，其他多用户组合需要同时启用两者。可以新增命名凭证、替换凭证值、检查存储可读性或确认删除。弹窗说明共享工作区不会共享凭证，保存检查也不会认证外部服务。
 
-名称栏提示按服务配置填写凭证名称，例如 `Vultr API Key`。凭证值栏提示只填写服务商提供的 API Key 或令牌，不包含 `Bearer`、curl 命令或 JSON。输入时仍会显示填写说明。已配置的 Host 推理绑定使用当前账号的凭证；在对话中选择对应的服务与模型。
+名称栏提示按服务配置填写凭证名称，例如 `Vultr API Key`。凭证值栏提示只填写密钥本身，并说明 Vultr 需要 Cloud Inference 访问权限。输入时仍会显示填写说明。已配置的模型在保存凭证之前就可见；实际调用所选服务和模型时，Host 推理绑定使用当前账号的凭证。
 
 凭证值使用密码输入框。提交时先清空输入，再发送请求；响应不会重新填入原值。关闭、断线、权限撤销和切换账号都会销毁弹窗。表单和凭证列表不写入浏览器存储。请求失败时显示固定的本地化文案，不展示原始异常。
 

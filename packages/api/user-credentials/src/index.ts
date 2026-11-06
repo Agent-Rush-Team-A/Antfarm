@@ -1,7 +1,7 @@
 /** Personal credential management; secrets remain in the Host and never become model tools. */
 import { randomUUID } from 'node:crypto'
-import { isAbsolute, relative, sep } from 'node:path'
-import { realpath } from 'node:fs/promises'
+import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
+import { mkdir, realpath } from 'node:fs/promises'
 import { Context, Service } from '@deepseek-ai/cordis'
 import schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
@@ -10,7 +10,7 @@ import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typer
 import type { PeerScope, UserId } from '@deepseek-ai/dsh-typert-protocol'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-api-multiuser'
-import { loadCredentialKey, encryptCredential, decryptCredential } from './crypto.ts'
+import { loadCredentialKey, encryptCredential, decryptCredential, provisionCredentialKey } from './crypto.ts'
 import { userCredentialsDomain, type EncryptedCredential } from './spec.ts'
 import { inferenceBindingsSchema, installInferenceBindings } from './inference.ts'
 import type { InferenceBinding } from './inference.ts'
@@ -21,8 +21,10 @@ export type { InferenceBinding } from './inference.ts'
 
 /** Host deployment values; no secret is stored in plugin configuration. */
 export interface Config {
-  /** Absolute path of a provisioned private 32-byte file outside workspace mounts. */
+  /** Absolute path of a private 32-byte master-key file outside workspace mounts. */
   encryptionKeyFile: string
+  /** Create a missing key only when the persisted credential table is empty. @default false */
+  initializeKeyIfEmpty?: boolean
   /** Maximum UTF-8 secret bytes. @default 16384 */
   maxCredentialBytes?: number
   /** Maximum credentials per account. @default 64 */
@@ -36,6 +38,7 @@ export interface Config {
 /** Validated deployment configuration. */
 export const Config: schema<Config> = schema.object({
   encryptionKeyFile: schema.string().required(),
+  initializeKeyIfEmpty: schema.boolean().default(false),
   maxCredentialBytes: schema.natural().min(1).default(16384),
   maxRecordsPerUser: schema.natural().min(1).default(64),
   inferenceBindings: schema.array(schema.object({
@@ -79,26 +82,44 @@ export class UserCredentials extends TypertRemoteService {
   }
 
   protected async [Service.init](): Promise<void> {
+    let key: Buffer | undefined
+    this.ctx.effect(() => async () => {
+      this.closed = true
+      await this.operations
+      // Initialization can fail before either resource is acquired.
+      try { await this.domain?.close() } finally { key?.fill(0) }
+    }, 'user-credentials: key lifetime')
+    this.domain = await this.ctx.storageDomain.open(userCredentialsDomain)
+    this.table = this.domain.table('credentials')
     try {
-      const [workspaceRoot, keyFile] = await Promise.all([
-        realpath(this.ctx.multiuser.workspaceRoot), realpath(this.config.encryptionKeyFile),
-      ])
+      if (this.config.initializeKeyIfEmpty) {
+        await mkdir(dirname(this.config.encryptionKeyFile), { recursive: true, mode: 0o700 })
+      }
+      const workspaceRoot = await realpath(this.ctx.multiuser.workspaceRoot)
+      let keyFile: string
+      try { keyFile = await realpath(this.config.encryptionKeyFile) }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+        keyFile = join(await realpath(dirname(this.config.encryptionKeyFile)), basename(this.config.encryptionKeyFile))
+      }
       const within = relative(workspaceRoot, keyFile)
       if (within === '' || (within !== '..' && !within.startsWith(`..${sep}`) && !isAbsolute(within))) {
         throw new Error('Personal credential key must be outside workspace mounts.')
       }
-      this.key = await loadCredentialKey(this.config.encryptionKeyFile)
+      try {
+        key = await loadCredentialKey(this.config.encryptionKeyFile)
+      } catch (error) {
+        if (!this.config.initializeKeyIfEmpty || (error as NodeJS.ErrnoException).code !== 'ENOENT'
+          || [...this.table.entries()].length !== 0) throw error
+        await provisionCredentialKey(this.config.encryptionKeyFile)
+        key = await loadCredentialKey(this.config.encryptionKeyFile)
+        this.ctx.logger.info('Personal credential master key initialized. Back up the key file together with the encrypted credential store.')
+      }
     } catch (_error) {
       // File-system failures are operational facts; never attach secret-bearing causes.
-      throw new Error('Cannot load personal credential key; provision a private 32-byte key file.')
+      throw new Error('Cannot load personal credential key; restore the original private 32-byte key or provision one for an empty store.')
     }
-    this.ctx.effect(() => async () => {
-      this.closed = true
-      await this.operations
-      try { await this.domain?.close() } finally { this.key.fill(0) }
-    }, 'user-credentials: key lifetime')
-    this.domain = await this.ctx.storageDomain.open(userCredentialsDomain)
-    this.table = this.domain.table('credentials')
+    this.key = key
     // Validate existing ciphertext before exposing a store with the wrong master key.
     for (const [, record] of this.table.entries()) {
       try {

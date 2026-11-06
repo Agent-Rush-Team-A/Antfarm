@@ -25,9 +25,9 @@ Open **My credentials** from the sidebar footer to manage the logged-in account'
 <a id="use-this-package"></a>
 ## Use this package
 
-The Web bundle supplies a disabled `ui-user-credentials` row. Enable it together with the [Host plugin](../../api/user-credentials/README.md) in the multiuser deployment; the test overlay does both. Add a named credential, replace its value, check storage readability or confirm deletion. The dialog explains that workspace sharing does not share credentials and a storage check does not authenticate an external service.
+The Web bundle supplies a disabled `ui-user-credentials` row. Antfarm's [default entry](../../../docs/user/guide/personal-models.md) enables it together with the [Host plugin](../../api/user-credentials/README.md); other multiuser compositions must enable both. Add a named credential, replace its value, check storage readability or confirm deletion. The dialog explains that workspace sharing does not share credentials and a storage check does not authenticate an external service.
 
-The name field asks for the service's configured credential name, such as `Vultr API Key`. The value field asks for only the provider's API key or token, without `Bearer`, curl commands or JSON. Persistent hints remain visible while typing. Configured Host inference bindings use the current account's credential; select the corresponding provider and model in the conversation.
+The name field asks for the service's configured credential name, such as `Vultr API Key`. The value field asks for the secret itself and explains that Vultr requires Cloud Inference access. Persistent hints remain visible while typing. Configured models are visible before a credential is saved; Host inference bindings use the current account's credential when calling the selected provider and model.
 
 Credential values use a password input. Submission clears that input before the request; responses never refill it. Closing, disconnecting, access revocation and switching accounts discard the dialog. No form or credential list is written to browser storage. A failed request shows localized fixed copy rather than displaying raw exceptions.
 

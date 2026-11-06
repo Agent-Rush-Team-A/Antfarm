@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-通过需要登录的浏览器 API 管理个人测试凭证。Host 在 `user_credentials` 存储域保存密文，工作区权限不会授予凭证访问权。本插件需要多用户组合和明确初始化的主密钥文件。
+通过需要登录的浏览器 API 管理个人凭证。Host 在 `user_credentials` 存储域保存密文，工作区权限不会授予凭证访问权。本插件需要多用户组合和持久保存的私有主密钥文件。Antfarm 的[默认 Web 入口](../../../docs/user/guide/personal-models.zh.md)接通凭证 UI、Vultr 模型目录和请求授权。
 
 ## 目录
 
@@ -32,7 +32,7 @@ kind: "package-reference"
 pnpm exec tsx scripts/user-credentials-key.ts --path "$DSH_HOME/secrets/user-credentials.key"
 ```
 
-命令独占创建权限受限的 32 字节文件，并拒绝已有路径。请将主密钥与加密存储一起安全备份。缺失密钥、文件权限过宽或密文认证失败会拒绝服务启动，不会自动重新生成密钥。
+命令独占创建权限受限的 32 字节文件，并拒绝已有路径。请将主密钥与加密存储一起安全备份。`initializeKeyIfEmpty` 默认为 false；启用后，仅当持久化凭证表为空时才创建缺失的密钥文件，已有文件不会被替换。非空存储缺失密钥、文件权限过宽或密文认证失败会拒绝服务启动，请恢复原密钥和存储。
 
 配置账号认证后挂载插件：
 

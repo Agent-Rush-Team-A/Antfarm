@@ -44,13 +44,16 @@ it('logs in separate accounts, creates private workspaces, revokes all tabs, and
   if (address === null || typeof address === 'string') throw new Error('Inference fixture must listen on TCP')
   const inferenceBase = `http://127.0.0.1:${address.port}/v1`
   await writeFile(credentialKey, randomBytes(32), { flag: 'wx', mode: 0o600 })
-  await writeFile(overlay, `- id: connection\n  config:\n    multiuser: true\n- insert:\n    - id: multiuser\n      name: '@deepseek-ai/dsh-api-multiuser'\n      config:\n        workspaceRoot: ${JSON.stringify(join(root, 'workspaces'))}\n        sessionSweepIntervalMs: 1000\n`)
-  await writeFile(overlay, `- insert:\n    - id: user-credentials\n      name: '@deepseek-ai/dsh-api-user-credentials'\n      config:\n        encryptionKeyFile: ${JSON.stringify(credentialKey)}\n        allowLoopbackHttp: true\n        inferenceBindings:\n          - provider: personal-fixture\n            baseURL: ${JSON.stringify(inferenceBase)}\n            credentialName: Test key\n`, { flag: 'a' })
+  await writeFile(overlay, `- id: multiuser\n  config:\n    workspaceRoot: ${JSON.stringify(join(root, 'workspaces'))}\n    sessionSweepIntervalMs: 1000\n`)
+  await writeFile(overlay, `- id: user-credentials\n  config:\n    encryptionKeyFile: ${JSON.stringify(credentialKey)}\n    allowLoopbackHttp: true\n    inferenceBindings:\n      - provider: personal-fixture\n        baseURL: ${JSON.stringify(inferenceBase)}\n        credentialName: Test key\n`, { flag: 'a' })
   await writeFile(overlay, `- id: llm-pi-ai\n  config:\n    providers:\n      personal-fixture:\n        displayName: Personal fixture\n        credentialScope: request\n        apiKeyEnv: PERSONAL_FIXTURE_API_KEY\n        api: openai-completions\n        baseURL: ${JSON.stringify(inferenceBase)}\n        models:\n          - id: personal-model\n            name: Personal model\n`, { flag: 'a' })
-  await writeFile(overlay, '- id: ui-user-credentials\n  disabled: false\n', { flag: 'a' })
-  const scaffold = await launchWebScaffold({ firstUse: true, accountAuthentication: true, extraOverlayPath: overlay,
-    compareReplaySession: false,
-    replayFixture: fileURLToPath(new URL('../../../snapshots/web/lifecycle-chrome/session.v4.jsonl', import.meta.url)) })
+  // The account-flow assertions use recorded inference; credential assertions select personal-fixture explicitly.
+  await writeFile(overlay, '- id: agent-default-model\n  config:\n    provider: deepseek-official\n    model: deepseek-v4-flash\n', { flag: 'a' })
+  const scaffold = await launchWebScaffold({ firstUse: true, accountAuthentication: true, extraOverlayPath: [
+    fileURLToPath(new URL('../../cli/config/antfarm-web.patch.yml', import.meta.url)), overlay,
+  ],
+  compareReplaySession: false,
+  replayFixture: fileURLToPath(new URL('../../../snapshots/web/lifecycle-chrome/session.v4.jsonl', import.meta.url)) })
   expect([...scaffold.ctx.loader.entries()].filter(entry => entry.options.name.includes('user-credentials'))
     .map(entry => ({ name: entry.options.name, disabled: entry.disabled, state: entry.fiber?.state })))
     .toEqual(expect.arrayContaining([expect.objectContaining({ name: '@deepseek-ai/dsh-client-ui-user-credentials', disabled: false })]))
@@ -230,7 +233,7 @@ it('logs in separate accounts, creates private workspaces, revokes all tabs, and
     } })).toMatchObject({ ok: true })
     expect(await deniedTurn).toBe(bobSession)
     expect(inferenceCalls).toHaveLength(2)
-    expect(JSON.stringify(scaffold.ctx.sessions.get(bobSession)!.snapshotEvents())).toContain('MISSING_CREDENTIAL')
+    expect(JSON.stringify(scaffold.ctx.sessions.get(bobSession)!.snapshotEvents())).toContain('PERSONAL_CREDENTIAL_MISSING')
     const fallback = scaffold.ctx.agentDefaultModel.currentSelection()
     expect(await rpc(alice.request, 'session/selectModel', { request: { sessionId: aliceSession, ...fallback } })).toMatchObject({ ok: true })
     const before = scaffold.ctx.sessions.get(bobSession)!.snapshotEvents()

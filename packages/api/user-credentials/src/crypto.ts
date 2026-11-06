@@ -1,8 +1,28 @@
 /** Host-only authenticated encryption and explicit master-key loading. */
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
 import { constants } from 'node:fs'
-import { open } from 'node:fs/promises'
+import { mkdir, open } from 'node:fs/promises'
+import { dirname, isAbsolute } from 'node:path'
 import type { EncryptedCredential } from './spec.ts'
+
+/**
+ * Exclusively provision a durable private master key without replacing an existing path.
+ * @param path - absolute Host path already checked to be outside workspace mounts.
+ * @returns resolution after the new key is synced and its temporary buffer is cleared.
+ */
+export async function provisionCredentialKey(path: string): Promise<void> {
+  if (!isAbsolute(path)) throw new Error('Credential key path must be absolute.')
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 })
+  const handle = await open(path, 'wx', 0o600)
+  const key = randomBytes(32)
+  try {
+    await handle.writeFile(key)
+    await handle.sync()
+  } finally {
+    key.fill(0)
+    await handle.close()
+  }
+}
 
 /**
  * Load an explicitly provisioned 32-byte key from a private regular file.
