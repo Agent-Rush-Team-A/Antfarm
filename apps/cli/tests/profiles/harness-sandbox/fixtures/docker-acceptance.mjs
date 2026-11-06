@@ -150,7 +150,7 @@ try {
     { id: 'workspace-sandbox', config: { socketPath: harnessSocket, workspaceRoot: data, mutationTimeoutMs, queryTimeoutMs: 5000, execTimeoutMs: 30_000, cancelTimeoutMs: 10_000 } }]))
   const denial = start('docker-denial', ['--input-type=module', '-e', "import{connect}from'node:net';connect('/var/run/docker.sock').on('connect',()=>process.exit(9)).on('error',e=>{console.log(e.code);process.exit(e.code==='EACCES'?0:8)})"], {}, { uid, gid })
   assert.deepEqual(await denial.exited, [0, null]); assert.match(denial.log, /EACCES/); children.splice(children.indexOf(denial), 1)
-  const web = start('harness', [join(repo, 'apps/cli/lib/bin.js'), '--profile', 'web', '--patch', join(repo, 'apps/cli/config/examples/harness-sandbox.patch.yml'), '--patch', patch, '--host', '127.0.0.1', '--port', '0', '--no-open'], {
+  const web = start('harness', [join(repo, 'apps/cli/lib/bin.js'), '--profile', 'web', '--patch', join(repo, 'apps/cli/config/antfarm-web.patch.yml'), '--patch', join(repo, 'apps/cli/config/examples/harness-sandbox.patch.yml'), '--patch', patch, '--host', '127.0.0.1', '--port', '0', '--no-open'], {
     DSH_HOME: home, DSH_AGENTS_HOME: join(home, '.agents'), DSH_MULTIUSER_WORKSPACE_ROOT: data, DSH_SANDBOX_RUNNER_SOCKET: harnessSocket,
     DEEPSEEK_API_KEY: 'keyless-issue7-acceptance',
   }, { uid, gid })

@@ -19,7 +19,7 @@ interface BridgeServerResponse {
   readonly writableEnded: boolean
   on(event: 'close', listener: () => void): this
   off(event: 'close' | 'drain', listener: () => void): this
-  once(event: 'close' | 'drain', listener: () => void): this
+  once(event: 'close' | 'drain' | 'finish', listener: () => void): this
   writeHead(statusCode: number, headers?: Record<string, string>): unknown
   write(chunk: Uint8Array): boolean
   end(): unknown
@@ -98,9 +98,10 @@ export async function bridge(
   const requestUnread = bodyMode === 'streaming' && !req.readableEnded
   const responseHeaders = Object.fromEntries(response.headers.entries())
   res.writeHead(response.status, requestUnread ? { ...responseHeaders, connection: 'close' } : responseHeaders)
+  // Compression may wrap end(); the response finish event follows the actual flush.
+  if (requestUnread) res.once('finish', () => { req.destroy() })
   if (response.body === null) {
     res.end()
-    if (requestUnread) req.destroy()
     return
   }
   for await (const chunk of response.body) {
@@ -123,5 +124,4 @@ export async function bridge(
     }
   }
   res.end()
-  if (requestUnread) req.destroy()
 }

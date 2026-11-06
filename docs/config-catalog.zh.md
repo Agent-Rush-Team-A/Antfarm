@@ -339,6 +339,25 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-terminal-controller -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-api-workspace-artifacts -->
+<a id="deepseek-aidsh-api-workspace-artifacts"></a>
+
+## `@deepseek-ai/dsh-api-workspace-artifacts`
+
+- `inject`: `connection` · `remoteAccess` · `typert` · `workspaceRegistry` · `workspaceController`
+- `source`: [`packages/api/workspace-artifacts/src/index.ts:17`](../packages/api/workspace-artifacts/src/index.ts)
+
+```ts config-catalog
+/** Limits for bounded listing metadata and complete browser downloads. */
+export interface Config {
+  /** Maximum directory entries inspected per request, including omitted entries. */
+  readonly maxEntries?: number
+  /** Inclusive byte cap for one download; larger files are refused. */
+  readonly maxDownloadBytes?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-workspace-artifacts -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-api-workspace-controller -->
 <a id="deepseek-aidsh-api-workspace-controller"></a>
 
@@ -386,6 +405,23 @@ export interface Config {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-workspace-files -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-api-workspace-upload -->
+<a id="deepseek-aidsh-api-workspace-upload"></a>
+
+## `@deepseek-ai/dsh-api-workspace-upload`
+
+- `inject`: `connection` · `remoteAccess` · `typert` · `workspaceRegistry` · `workspaceController`
+- `source`: [`packages/api/workspace-upload/src/index.ts:17`](../packages/api/workspace-upload/src/index.ts)
+
+```ts config-catalog
+/** Per-file streamed intake limit. */
+export interface Config {
+  /** Inclusive maximum size of one uploaded file; uploads are never truncated. */
+  readonly maxBytes?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-workspace-upload -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-attachment-local -->
 <a id="deepseek-aidsh-attachment-local"></a>

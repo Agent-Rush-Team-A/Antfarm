@@ -25,7 +25,7 @@ Open, query, and close workspace sandboxes after checking the authenticated nati
 <a id="use-this-package"></a>
 ## Use this package
 
-Use the optional [Web overlay](../../../apps/cli/config/examples/harness-sandbox.patch.yml) with the [deployment guide](../../../docs/user/guide/workspace-sandboxes.md). It enables existing multiuser login and this service, while retaining the multiuser restrictions on host tools. The Web process must not have Docker access; run the Runner separately.
+Add the optional [Web overlay](../../../apps/cli/config/examples/harness-sandbox.patch.yml) to Antfarm's default `start:web` or `dev:web` command using the [deployment guide](../../../docs/user/guide/workspace-sandboxes.md). The default entry supplies multiuser login and file services; this overlay adds sandbox management, authenticated message preparation and foreground Runner Bash. The multiuser restrictions on host tools remain in effect. The Web process must not have Docker access; run the Runner separately.
 
 ```yaml
 - id: workspace-sandbox

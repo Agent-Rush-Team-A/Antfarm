@@ -52,6 +52,7 @@ interface RegisteredFetchRoute {
   readonly methods: ReadonlySet<string>
   readonly requestBody: ConnectionFetchRoute['requestBody']
   readonly fetch: ConnectionFetchRoute['fetch']
+  readonly authorize: ConnectionFetchRoute['authorize']
 }
 
 interface ConnectionServerResponse {
@@ -285,9 +286,11 @@ export class HostConnectionService extends Service implements HostConnectionHand
         const pathname = new URL(request.url).pathname
         const route = this.fetchRoutes.get(pathname)
         if (route?.methods.has(request.method) === true) {
-          // Exact routes bypass Gateway access checks, so only the owner reaches them.
-          if (peer.principal.kind !== 'owner') return Promise.resolve(new Response('forbidden', { status: 403 }))
-          return route.fetch(request)
+          const allowed = route.authorize === undefined
+            ? peer.principal.kind === 'owner'
+            : route.authorize(request, peer)
+          if (!allowed) return Promise.resolve(new Response('forbidden', { status: 403 }))
+          return route.fetch(request, peer)
         }
         const endpoint = endpointFromPath(channel, pathname)
         const interceptor = this.interceptors.get(channel)
@@ -308,6 +311,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
       methods: new Set(route.methods),
       requestBody: route.requestBody,
       fetch: route.fetch,
+      authorize: route.authorize,
     }
     return owner.effect(() => {
       if (this.fetchRoutes.has(route.path)) {

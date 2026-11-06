@@ -18,11 +18,11 @@
   en: 17f2ab8566beee13
   zh: a055836ba56f2867
 /deepseek-ai-dsh-api-multiuser/routes:
-  en: 9b406414b544826d
-  zh: 94e742f3aeb91d0a
+  en: 33ca52810596d50a
+  zh: d3c33ad3051f4141
 /deepseek-ai-dsh-api-multiuser/remote-access-policy:
-  en: 938a8d390022d439
-  zh: 878938834fb010a5
+  en: 25f897f74dbab362
+  zh: 02f104c3e693bf3c
 /deepseek-ai-dsh-api-multiuser/configuration:
   en: 6ea3a814f3943f5a
   zh: 9e3f3db9ab44196c
@@ -36,8 +36,8 @@
   en: a093f0800092ee20
   zh: 0c1f2b519125c086
 /deepseek-ai-dsh-api-multiuser/known-limitations-and-deferred-work:
-  en: aa3397c223d9c1b1
-  zh: 2337bb2d15db6416
+  en: 849d8eac0599aa73
+  zh: 83426215652f299c
 /deepseek-ai-dsh-api-multiuser/known-limitations-and-deferred-work/dev-note:
   en: 691c939c7712ea48
   zh: ca51e360a7517450

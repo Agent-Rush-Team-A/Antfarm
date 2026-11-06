@@ -23,6 +23,8 @@
   // this client-registered project must not also hold them (one program
   // cannot see both sides of the cordis Context merges).
   "exclude": [
+    "tests/workspace-upload.e2e.ts",
+    "tests/workspace-artifacts.e2e.ts",
     "tests/multiuser.e2e.ts",
     "tests/sidebar-drawer.e2e.ts",
     "tests/creation-recommendations.e2e.ts",

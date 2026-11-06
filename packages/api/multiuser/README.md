@@ -44,7 +44,7 @@ Tool execution is denied by default, including preset contributions. A trusted i
 | `/auth/client.js` | GET | Login document and account badge helper. |
 | `/auth/sign-in` | GET | Public login page, without the application or private boot state. |
 
-Unauthenticated index requests redirect to the public `/auth/sign-in` document. Authenticated pages show the account and a logout control. Login changes refresh other tabs, and switching accounts clears browser-persisted application views before boot. A failed logout stays visible and can be retried. Active Peers expire at the login deadline; authentication responses and personalized index documents are not cacheable.
+Unauthenticated index requests redirect to the public `auth/sign-in` document relative to the index URL. Script references, login/logout requests and account refreshes preserve the deployment prefix; the browser derives the application root from the account script URL. Authenticated pages show the account and a logout control. Login changes refresh other tabs, and switching accounts clears browser-persisted application views before boot. A failed logout stays visible and can be retried. Active Peers expire at the login deadline; authentication responses and personalized index documents are not cacheable.
 
 <a id="remote-access-policy"></a>
 ## Remote access policy
@@ -54,10 +54,10 @@ The `user` policy denies by default and grants actions only on resources the acc
 | Scope | Allowed actions | Notes |
 | --- | --- | --- |
 | global | `workspace/create`, `workspace/follow`, `session/list`, `session/search`, `session/control`, `session/modelCatalog`, `session/canOpenWorkspacePath` | Listing and follow methods filter each item through `ctx.remoteAccess.allows()`. |
-| workspace | `session/create`, `workspace/follow`, `workspace/rename`, `workspace/delete`, `workspace/insertBefore`, `workspace/insertSessionBefore` | Conditions recheck the ownership row at decision time. |
+| workspace | `session/create`, `workspace/follow`, `workspace/rename`, `workspace/delete`, `workspace/insertBefore`, `workspace/insertSessionBefore`, `workspaceUpload/limits`, `workspaceUpload/upload`, `workspaceArtifacts/list`, `workspaceArtifacts/download` | Conditions recheck the ownership row at decision time. |
 | session | `workspace/follow`, `session/create`, `session/list`, `session/search`, `session/control`, `session/page`, `session/events`, `session/observeEvent`, `session/observeProjections`, `session/state`, `session/observeState`, `session/wait`, `session/follow`, `session/projections`, `session/prompt`, `session/updateQueue`, `session/cancel`, `session/rename`, `session/fork`, `session/selectModel`, `workspace/insertSessionBefore`, `workspace/archiveSession`, `workspace/unarchiveSession`, `workspace/pinSession`, `workspace/unpinSession`, and the five `event:api-session/*` notifications | Session membership comes from the authoritative workspace record. |
 
-Everything else is denied before dispatch, including `workspace/initializeDefault`, cwd-only `session/create`, model-default writes, attachment reads, file services, terminal, jobs, settings, credentials, and exact Fetch routes. A denied request reports `remote-access/denied` with `reason: "not-found"` for a non-global resource, so another account's identity is not disclosed.
+Everything else is denied before dispatch, including `workspace/initializeDefault`, cwd-only `session/create`, model-default writes, attachment reads, file services, terminal, jobs, settings, credentials, and exact Fetch routes without explicit scoped authorization. [Workspace upload](../workspace-upload/README.md) checks owned-workspace access through both its limit reader and raw upload route. [Workspace files](../workspace-artifacts/README.md) checks ownership for listings and rechecks it throughout binary downloads. A denied request reports `remote-access/denied` with `reason: "not-found"` for a non-global resource, so another account's identity is not disclosed.
 
 <a id="configuration"></a>
 ## Configuration
@@ -99,7 +99,7 @@ No direct effect; login and ownership changes do not alter model requests.
 
 ## Known Limitations and Deferred Work
 
-- File, attachment, export, terminal, settings, and exact Fetch routes remain closed to ordinary users until their ownership rules are implemented.
+- Legacy file, attachment, export, terminal, settings, and exact Fetch routes remain closed to ordinary users. The explicitly mounted workspace upload provider implements its own ownership checks.
 - Ordinary users cannot change global settings or default model selections.
 - Account authentication supplies no process isolation. Only registered isolated implementations can receive a tool-execution exception; ordinary host tools remain denied.
 - Self-service registration, password recovery, OAuth/OIDC, sharing, and user API keys are out of scope.

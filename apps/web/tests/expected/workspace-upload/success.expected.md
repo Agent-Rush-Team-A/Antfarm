@@ -1,0 +1,1 @@
+- text: Uploaded “sample.bin” to workspace

@@ -182,7 +182,7 @@ export class MultiuserService extends Service implements ConnectionAdmissionProv
           ...(user === undefined ? {} : { user }),
         },
       })
-      table.push({ kind: 'script-src', placement: 'head', src: '/auth/client.js' })
+      table.push({ kind: 'script-src', placement: 'head', src: 'auth/client.js' })
       table.push({ kind: 'style', text: MULTIUSER_CLIENT_STYLE })
     })
     this.ctx.inject(['tools'], (ctx) => {
@@ -353,12 +353,12 @@ export class MultiuserService extends Service implements ConnectionAdmissionProv
    * Render an authenticated page or redirect to the public login document.
    * @param request - index request headers after the trust fence.
    * @param _secure - listener TLS state.
-   * @returns the authenticated Peer or a login-page redirect.
+   * @returns the authenticated Peer or a document-relative login-page redirect.
    */
   admitIndex(request: { readonly headers: AdmissionHeaders }, _secure: boolean): ConnectionIndexAdmission {
     const authenticated = this.authenticateToken(cookieValue(request.headers, COOKIE_NAME))
     return authenticated === undefined
-      ? { serve: false, redirect: '/auth/sign-in' }
+      ? { serve: false, redirect: 'auth/sign-in' }
       : { serve: true, peer: this.peerFor(authenticated.record) }
   }
 
@@ -734,7 +734,7 @@ export class MultiuserService extends Service implements ConnectionAdmissionProv
       res.setHeader('cache-control', 'no-store')
       res.setHeader('x-content-type-options', 'nosniff')
       res.end('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-        + `<style>${MULTIUSER_CLIENT_STYLE}</style></head><body><script src="/auth/client.js"></script></body></html>`)
+        + `<style>${MULTIUSER_CLIENT_STYLE}</style></head><body><script src="client.js"></script></body></html>`)
     })
 
     route('/auth/client.js', (req, res) => {

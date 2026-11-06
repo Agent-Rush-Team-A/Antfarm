@@ -18,6 +18,7 @@ import { withDefaultWeb, webRequest } from '../../../apps/cli/tests/profiles/web
 const directory = fileURLToPath(new URL('.', import.meta.url))
 const fixture = join(directory, 'session.v4.jsonl')
 const overlay = fileURLToPath(new URL('../../../apps/cli/config/examples/harness-sandbox.patch.yml', import.meta.url))
+const antfarmWeb = fileURLToPath(new URL('../../../apps/cli/config/antfarm-web.patch.yml', import.meta.url))
 const stdout = '中\0'.repeat(16_384)
 const stderr = `${'e'.repeat(65_525)}diagnostic\n`
 
@@ -29,7 +30,7 @@ test('snapshot: Web sandbox Bash returns real results through the admitted produ
   const task = parseSessionLog(source).flatMap(event => event.type === 'user/message' && event.data.source.kind === 'user'
       ? event.data.content.flatMap(block => block.type === 'text' ? [block.text] : []) : [])[0]!
   const password = randomUUID()
-  const patches = [overlay]
+  const patches = [antfarmWeb, overlay]
   const calls: Array<{ method: string | undefined; path: string; body: Record<string, unknown> }> = []
   const socketPath = process.platform === 'win32' ? `\\\\.\\pipe\\dsh-sandbox-snapshot-${randomUUID()}` : `/tmp/dsh-sandbox-${randomUUID()}.sock`
   const server = createServer((request, response) => {

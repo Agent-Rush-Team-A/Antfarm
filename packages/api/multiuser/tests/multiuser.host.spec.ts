@@ -329,6 +329,14 @@ describe('multiuser authentication and ownership', () => {
 
     const alicePeer = userPeer(fixture.ctx, aliceUser.userId)
     const bobPeer = userPeer(fixture.ctx, bobUser.userId)
+    for (const action of ['workspaceArtifacts/list', 'workspaceArtifacts/download'] as const) {
+      expect(fixture.ctx.remoteAccess.decide({ principal: alicePeer.principal, action,
+        resources: [{ kind: 'workspace', id: aliceEntity.id }],
+      })).toMatchObject({ kind: 'allow' })
+      expect(fixture.ctx.remoteAccess.decide({ principal: bobPeer.principal, action,
+        resources: [{ kind: 'workspace', id: aliceEntity.id }],
+      })).toMatchObject({ kind: 'deny' })
+    }
     expect(await followWorkspaces(fixture.ctx, alicePeer)).toMatchObject([
       { workspaceId: aliceWorkspace, sessionIds: [aliceSession] },
     ])

@@ -2185,7 +2185,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'admitIndex(request: { readonly headers: AdmissionHeaders }, _secure: boolean): ConnectionIndexAdmission',
         description: 'Render an authenticated page or redirect to the public login document.',
         parameters: [{ name: 'request', description: 'index request headers after the trust fence.' }, { name: '_secure', description: 'listener TLS state.' }],
-        returns: 'the authenticated Peer or a login-page redirect.',
+        returns: 'the authenticated Peer or a document-relative login-page redirect.',
       },
       {
         signature: 'ownsWorkspace(userId: UserId, workspaceId: WorkspaceId): boolean',
@@ -4667,6 +4667,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'workspaceArtifacts',
+    summary: 'Optional Linux file provider; teardown cancels and awaits open requests and bodies.',
+    description: 'Optional Linux file provider; teardown cancels and awaits open requests and bodies.',
+    methods: [
+      {
+        signature: '@Remote async list(request: WorkspaceArtifactScope, path: string, signal: AbortSignal): Promise<WorkspaceArtifactListing>',
+        description: 'List one authorized directory without revealing Host paths or starting a sandbox.',
+        parameters: [{ name: 'request', description: 'registered workspace identity.' }, { name: 'path', description: 'slash-separated relative directory; empty names the root.' }, { name: 'signal', description: 'caller lifetime, combined with provider withdrawal.' }],
+        returns: 'bounded file metadata and the configured download cap.',
+      },
+    ],
+  },
+  {
     key: 'workspaceChanges',
     summary: 'Serves the summaries and file comparisons the recorder keeps for live Sessions.',
     description: 'Serves the summaries and file comparisons the recorder keeps for live Sessions.',
@@ -4921,6 +4934,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Ends all commands in this container without deleting workspace files or sessions.',
         parameters: [{ name: 'userId', description: 'Authenticated initiating user.' }, { name: 'workspaceId', description: 'Native workspace id.' }, { name: 'target', description: 'Optional original execution generation; stale cleanup cannot close a newer generation.' }],
         returns: 'Confirmed container absence.',
+      },
+    ],
+  },
+  {
+    key: 'workspaceUpload',
+    summary: 'Host upload provider; resources belong to the operation and survive its cancellation cleanup.',
+    description: 'Host upload provider; resources belong to the operation and survive its cancellation cleanup.',
+    methods: [
+      {
+        signature: '@Remote limits(request: WorkspaceUploadScope, signal: AbortSignal): WorkspaceUploadLimits',
+        description: 'Read the deployment byte limit for an authorized workspace.',
+        parameters: [{ name: 'request', description: 'workspace identity from the caller.' }, { name: 'signal', description: 'caller cancellation, including browser provider withdrawal.' }],
+        returns: 'inclusive per-file byte limit without exposing a host path.',
       },
     ],
   },
@@ -6233,7 +6259,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConnectionFetchRoute',
-    declaration: 'export interface ConnectionFetchRoute {\n    readonly path: string;\n    readonly methods: readonly ConnectionFetchMethod[];\n    readonly requestBody: ConnectionRequestBodyMode;\n    readonly fetch: (request: Request) => Promise<Response>;\n}',
+    declaration: 'export interface ConnectionFetchRoute {\n    readonly path: string;\n    readonly methods: readonly ConnectionFetchMethod[];\n    readonly requestBody: ConnectionRequestBodyMode;\n    readonly fetch: (request: Request, peer: PeerScope) => Promise<Response>;\n    readonly authorize?: (request: Request, peer: PeerScope) => boolean;\n}',
   },
   {
     name: 'ConnectionIndexAdmission',
@@ -10544,6 +10570,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface WorkspaceArchiveValue {\n    readonly archivedSessionIds: readonly SessionId[];\n}',
   },
   {
+    name: 'WorkspaceArtifactEntry',
+    declaration: 'export interface WorkspaceArtifactEntry {\n    readonly name: string;\n    readonly kind: \'file\' | \'directory\';\n    readonly bytes?: number;\n}',
+  },
+  {
+    name: 'WorkspaceArtifactListing',
+    declaration: 'export interface WorkspaceArtifactListing {\n    readonly path: string;\n    readonly entries: readonly WorkspaceArtifactEntry[];\n    readonly truncated: boolean;\n    readonly maxDownloadBytes: number;\n}',
+  },
+  {
+    name: 'WorkspaceArtifactScope',
+    declaration: 'export interface WorkspaceArtifactScope {\n    readonly workspaceId: WorkspaceId;\n}',
+  },
+  {
     name: 'WorkspaceBaseline',
     declaration: 'export interface WorkspaceBaseline {\n    readonly creationMode?: \'allocated\';\n    readonly items: readonly WorkspaceView[];\n    readonly archivedSessionIds: readonly SessionId[];\n    readonly pinnedSessionIds: readonly SessionId[];\n}',
   },
@@ -10662,6 +10700,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceUnpinSessionRequest',
     declaration: 'export interface WorkspaceUnpinSessionRequest {\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'WorkspaceUploadLimits',
+    declaration: 'export interface WorkspaceUploadLimits {\n    readonly maxBytes: number;\n}',
+  },
+  {
+    name: 'WorkspaceUploadScope',
+    declaration: 'export interface WorkspaceUploadScope {\n    readonly workspaceId: WorkspaceId;\n}',
   },
   {
     name: 'WorkspaceValue',

@@ -110,6 +110,11 @@ flowchart LR
   pkg_api_settings_controller["api-settings-controller"]
   svc_credentialsController["ctx.credentialsController<br/>Host credential-surface Remote controller"]
   svc_settingsController["ctx.settingsController<br/>Host settings-surface Remote controller"]
+  pkg_api_workspace_upload["api-workspace-upload"]
+  svc_workspaceUpload["ctx.workspaceUpload<br/>Workspace upload endpoint"]
+  pkg_client_ui_workspace["client-ui-workspace"]
+  pkg_api_workspace_artifacts["api-workspace-artifacts"]
+  svc_workspaceArtifacts["ctx.workspaceArtifacts<br/>Authorized workspace files and downloads"]
   pkg_api_workspace_files["api-workspace-files"]
   svc_workspaceFiles["ctx.workspaceFiles<br/>Host workspace file Remote service"]
   pkg_workspace_changes["workspace-changes"]
@@ -339,9 +344,11 @@ flowchart LR
   pkg_api_settings_controller --> svc_credentialsController
   pkg_api_settings_controller --> svc_settingsController
   pkg_api_terminal_controller --> svc_terminalController
+  pkg_api_workspace_artifacts --> svc_workspaceArtifacts
   pkg_api_workspace_controller --> svc_directoryPickerController
   pkg_api_workspace_controller --> svc_workspaceController
   pkg_api_workspace_files --> svc_workspaceFiles
+  pkg_api_workspace_upload --> svc_workspaceUpload
   pkg_app_boot --> svc_profileContext
   pkg_attachment --> svc_attachments
   pkg_attachment_local --> svc_attachments
@@ -656,8 +663,10 @@ flowchart LR
   svc_workingDirectory --> pkg_tool_fs
   svc_workingDirectory --> pkg_tool_pwsh
   svc_workingDirectory --> pkg_tool_working_directory
+  svc_workspaceArtifacts --> pkg_client_ui_workspace
   svc_workspaceRegistry --> pkg_api_session_controller
   svc_workspaceRegistry --> pkg_api_workspace_controller
+  svc_workspaceUpload --> pkg_client_ui_workspace
   svc_worktrees --> pkg_experimental_tool_worktree
   svc_fs -. event gate .-> pkg_fs_observation_policy
 ```
@@ -700,6 +709,8 @@ flowchart LR
 | `ctx.jobController` | `core` | [`api-job-controller`](../packages/api/job-controller) | - | - | - | Streams one background job's observation record over the generated Remote namespace; the roster stays on the session control stream. |
 | `ctx.credentialsController` | `core` | [`api-settings-controller`](../packages/api/settings-controller) | - | - | - | Projects the credential-reference seam onto the generated Remote namespace: batch fan-out, view projection, and refusal mapping live here, not on the seam Definition. |
 | `ctx.settingsController` | `core` | [`api-settings-controller`](../packages/api/settings-controller) | - | - | - | Projects the user-settings seam onto the generated Remote namespace: the read is always redacted and every refusal is classified here, not on the seam Definition. |
+| `ctx.workspaceUpload` | `core` | [`api-workspace-upload`](../packages/api/workspace-upload) | - | [`client-ui-workspace`](../packages/client/ui-workspace) | - | An optional Linux provider authorizes workspace-root uploads and publishes bounded file streams without replacing existing entries. |
+| `ctx.workspaceArtifacts` | `core` | [`api-workspace-artifacts`](../packages/api/workspace-artifacts) | - | [`client-ui-workspace`](../packages/client/ui-workspace) | - | An optional Linux provider lists regular workspace files and streams descriptor-pinned downloads independently of sandbox lifetime. |
 | `ctx.workspaceFiles` | `core` | [`api-workspace-files`](../packages/api/workspace-files) | - | - | - | Serves stat, paged text, byte windows, directory listings, and the change feed for files inside a Session's workspace root, confined by lstat, containment, and a stat re-check. |
 | `ctx.workspaceChanges` | `core` | [`workspace-changes`](../packages/deliverables/workspace-changes) | - | - | - | Serves the summary each workspace/changes event announced and each listed file's turn-start and turn-end comparison, by Session and event sequence, until that Session is disposed; the log carries only the turn. |
 | `ctx.terminalController` | `core` | [`api-terminal-controller`](../packages/api/terminal-controller) | - | - | - | Owns user terminal processes, default shell resolution and bounded screen recovery through the subprocess provider and typed Remote transport. |

@@ -19,10 +19,10 @@ kind: "user-guide"
 ```sh
 export DSH_MULTIUSER_WORKSPACE_ROOT=/srv/agentrush/workspaces
 export DSH_SANDBOX_RUNNER_SOCKET=/run/agentrush-sandbox/runner.sock
-pnpm dsh --profile web --patch apps/cli/config/examples/harness-sandbox.patch.yml --no-open
+pnpm run start:web --patch apps/cli/config/examples/harness-sandbox.patch.yml --no-open
 ```
 
-overlay 启用多用户登录、沙箱管理，以及已认证用户向所属工作区会话发送消息时的自动准备。准备失败会拒绝消息。其 standard preset 只暴露前台 Runner Bash；文件工具与终端交接仍被拒绝。有 Docker 权限的 Runner 仍独立于 Web。缺少必需配置时启动失败。
+Antfarm 默认 Web 入口提供账号登录和工作区文件服务，overlay 增加沙箱管理，以及已认证用户向所属工作区会话发送消息时的自动准备。准备失败会拒绝消息。其 standard preset 只暴露前台 Runner Bash；宿主文件工具与终端交接仍被拒绝。有 Docker 权限的 Runner 仍独立于 Web。缺少必需配置时启动失败。直接使用 `pnpm dsh web` 时，需在此 overlay 之前加载 `apps/cli/config/antfarm-web.patch.yml`。
 
 <a id="call-the-management-methods"></a>
 ## 调用管理方法

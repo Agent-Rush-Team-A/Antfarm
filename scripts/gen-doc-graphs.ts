@@ -390,6 +390,22 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Projects the user-settings seam onto the generated Remote namespace: the read is always redacted and every refusal is classified here, not on the seam Definition.',
   },
   {
+    key: 'workspaceUpload',
+    pkg: 'api-workspace-upload',
+    title: 'Workspace upload endpoint',
+    mode: 'core',
+    consumers: ['client-ui-workspace'],
+    note: 'An optional Linux provider authorizes workspace-root uploads and publishes bounded file streams without replacing existing entries.',
+  },
+  {
+    key: 'workspaceArtifacts',
+    pkg: 'api-workspace-artifacts',
+    title: 'Authorized workspace files and downloads',
+    mode: 'core',
+    consumers: ['client-ui-workspace'],
+    note: 'An optional Linux provider lists regular workspace files and streams descriptor-pinned downloads independently of sandbox lifetime.',
+  },
+  {
     key: 'workspaceFiles',
     pkg: 'api-workspace-files',
     title: 'Host workspace file Remote service',

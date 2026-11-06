@@ -23,6 +23,15 @@
 /workspaces/archive-admission:
   en: f4ae8ce5eb2ef329
   zh: 333106e86263be40
+/workspaces/workspace-upload:
+  en: 1e23c860dbd69f94
+  zh: e464e80dc8a35d0b
+/workspaces/workspace-upload/workspaceuploadscope:
+  en: 09abd237f52d2287
+  zh: 2db6520810aa3fa2
+/workspaces/workspace-upload/workspaceuploadlimits:
+  en: cff117a7320dd865
+  zh: 6ba4a0c7a5657e07
 /workspaces/consumers:
   en: 6b592294ff18b4d3
   zh: a48bec961b8182a9

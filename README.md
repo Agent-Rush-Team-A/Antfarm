@@ -28,17 +28,24 @@ The command starts the Web UI at `http://127.0.0.1:3080` by default and opens it
 
 ### Run from source
 
-To run from a repository checkout:
+To run Antfarm from a Linux repository checkout:
 
 ```sh
-git clone https://github.com/deepseek-ai/deepseek-harness.git
-cd deepseek-harness
 pnpm install
 pnpm run build
-pnpm dsh web
 ```
 
-`pnpm run build` prepares the repository artifacts. `pnpm dsh web` uses those built artifacts without rebuilding.
+Before the first startup, choose a persistent data home and provision a team account while the service is stopped. The maintenance command prompts for a password without displaying it and rejects existing usernames:
+
+```sh
+export DSH_HOME="$HOME/.antfarm"
+pnpm exec tsx scripts/multiuser-provision.ts --storage-root "$DSH_HOME/storages" --username alice
+pnpm run start:web --no-open
+```
+
+Open `http://127.0.0.1:3080/` and sign in with that account. Antfarm's `start:web` and `dev:web` commands load account login, workspace upload, file listing and download by default; the URL needs no launch token. Restarts reuse the same `DSH_HOME` without provisioning again. Workspaces default to `$DSH_HOME/workspaces`; set `DSH_MULTIUSER_WORKSPACE_ROOT` to an absolute path to select a deployment root. `start:web` reuses built Web artifacts; `dev:web` builds before serving. The underlying `pnpm dsh web` command keeps the upstream profile defaults.
+
+Agent tool execution remains unavailable until the sandbox Bash integration is complete. Optional sandbox management uses the [deployment guide](docs/user/guide/workspace-sandboxes.md).
 
 ## Community and support
 

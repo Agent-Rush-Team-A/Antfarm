@@ -41,7 +41,9 @@
         "@deepseek-ai/dsh-client-ui-renderer",
         "@deepseek-ai/dsh-client-ui-session",
         "@deepseek-ai/dsh-client-ui-sidebar",
-        "@deepseek-ai/dsh-client-ui-context-menu"
+        "@deepseek-ai/dsh-client-ui-context-menu",
+        "@deepseek-ai/dsh-api-workspace-upload",
+        "@deepseek-ai/dsh-api-workspace-artifacts"
       ],
       "platform": "web"
     }
@@ -84,7 +86,9 @@
     "react": "^18.2.0",
     "@deepseek-ai/dsh-client-shortcuts": "workspace:*",
     "@deepseek-ai/dsh-client-product-analytics": "workspace:*",
-    "@deepseek-ai/dsh-client-ui-context-menu": "workspace:*"
+    "@deepseek-ai/dsh-client-ui-context-menu": "workspace:*",
+    "@deepseek-ai/dsh-api-workspace-upload": "workspace:*",
+    "@deepseek-ai/dsh-api-workspace-artifacts": "workspace:*"
   },
   "files": [
     "locale/*.json",

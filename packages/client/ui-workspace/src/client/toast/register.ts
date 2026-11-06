@@ -1,4 +1,5 @@
 /** Business-owned mappings into the keyed Workspace Toast slot. */
+import { fileFailureKey } from '../file-failures.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { RowToastActions, WorkspaceViewStoreHandle } from '../contract/slots.ts'
@@ -21,6 +22,40 @@ export function registerToasts(
   })
   ctx.slots.registerFactory({ name: 'workspace.toast.content', scope: 'root' }, WorkspaceToast)
   ctx.slots.inject('workspace.toast', function* () {
+    yield ctx.slots.register({
+      name: 'workspace.toast', key: 'downloaded', locale: 'workspace',
+      inject: (): ToastDisplayInjected<'downloaded'> => ({
+        display: (notice, t) => ({ text: t('files.saved', { name: notice.name }), tone: 'success' }),
+      }),
+    }, ToastEntry<PropsRuntime<'workspace.toast', 'downloaded'>>)
+    yield ctx.slots.register({
+      name: 'workspace.toast', key: 'downloadFailed', locale: 'workspace',
+      inject: (): ToastDisplayInjected<'downloadFailed'> => ({
+        display: (notice, t) => ({ text: t(fileFailureKey(notice.reason)), tone: 'warning', holdMs: 6000 }),
+      }),
+    }, ToastEntry<PropsRuntime<'workspace.toast', 'downloadFailed'>>)
+
+    yield ctx.slots.register({
+      name: 'workspace.toast', key: 'uploaded', locale: 'workspace',
+      inject: (): ToastDisplayInjected<'uploaded'> => ({
+        display: (notice, t) => ({ text: t('upload.success', { name: notice.name }), tone: 'success' }),
+      }),
+    }, ToastEntry<PropsRuntime<'workspace.toast', 'uploaded'>>)
+    yield ctx.slots.register({
+      name: 'workspace.toast', key: 'uploadFailed', locale: 'workspace',
+      inject: (): ToastDisplayInjected<'uploadFailed'> => ({
+        display: (notice, t) => ({
+          text: t(notice.stored ? 'upload.storedWarning'
+            : notice.reason === 'unknown' ? 'upload.unknown'
+              : notice.reason === 'exists' ? 'upload.exists'
+                : notice.reason === 'too-large' ? 'upload.tooLarge'
+                  : notice.reason === 'invalid-name' || notice.reason === 'invalid-request' ? 'upload.invalidName'
+                    : notice.reason === 'denied' || notice.reason === 'unavailable' ? 'upload.denied'
+                      : notice.reason === 'cancelled' ? 'upload.cancelled' : 'upload.failed'),
+          tone: 'warning', holdMs: 6000,
+        }),
+      }),
+    }, ToastEntry<PropsRuntime<'workspace.toast', 'uploadFailed'>>)
     yield ctx.slots.register({
       name: 'workspace.toast', key: 'sessionIdCopied', locale: 'workspace',
       inject: (): ToastDisplayInjected<'sessionIdCopied'> => ({

@@ -1,15 +1,7 @@
-# Optional Web conversation Bash. Runner runs independently with Docker access.
+# Optional Runner Bash over the default Antfarm Web composition.
+# Runner runs independently with Docker access.
 # Both services use the same canonical Linux workspace root and filesystem UID.
-- id: connection
-  config:
-    multiuser: true
-    trustedHosts: !!js ctx.webStartup.trustedHosts
-
 - insert:
-    - id: multiuser
-      name: '@deepseek-ai/dsh-api-multiuser'
-      config:
-        workspaceRoot: !!js process.env.DSH_MULTIUSER_WORKSPACE_ROOT
     - id: workspace-sandbox
       name: '@deepseek-ai/dsh-harness-sandbox'
       config:

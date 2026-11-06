@@ -34,6 +34,7 @@ const ACCOUNT_COPY = {
 /** Login document, account controls, and cross-tab authentication refresh. */
 export const MULTIUSER_CLIENT_SCRIPT = `(() => {
   'use strict'
+  var appRoot = new URL('../', document.currentScript.src).href
   var state = globalThis.__DSH_MULTIUSER__
   // Clear persisted application views before a different account boots.
   try {
@@ -50,7 +51,7 @@ export const MULTIUSER_CLIENT_SCRIPT = `(() => {
   var channel
   try { channel = new BroadcastChannel('dsh-multiuser') } catch (failure) { /* focus refresh remains available */ }
   function changed() { if (channel) channel.postMessage('changed') }
-  if (channel) channel.addEventListener('message', function () { location.replace('/') })
+  if (channel) channel.addEventListener('message', function () { location.replace(appRoot) })
   if (!state || state.authenticated !== true) {
     var html = ''
       + '<main class="dsh-login-card"><h1>' + copy.signIn + '</h1><p>' + copy.team + '</p>'
@@ -68,11 +69,11 @@ export const MULTIUSER_CLIENT_SCRIPT = `(() => {
       error.textContent = ''
       submit.disabled = true
       try {
-        var response = await fetch('/auth/login', {
+        var response = await fetch(new URL('auth/login', appRoot), {
           method: 'POST', headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ username: form.username.value, password: form.password.value })
         })
-        if (response.ok) { changed(); location.replace('/'); return }
+        if (response.ok) { changed(); location.replace(appRoot); return }
         error.textContent = response.status === 429 ? copy.limited : response.status === 403 ? copy.forbidden : copy.invalid
       } catch (failure) { error.textContent = copy.unavailable }
       submit.disabled = false
@@ -81,11 +82,11 @@ export const MULTIUSER_CLIENT_SCRIPT = `(() => {
   }
   async function verifyIdentity() {
     try {
-      var response = await fetch('/auth/me', { cache: 'no-store' })
-      if (response.status === 401) { location.replace('/'); return }
+      var response = await fetch(new URL('auth/me', appRoot), { cache: 'no-store' })
+      if (response.status === 401) { location.replace(appRoot); return }
       if (!response.ok) return
       var current = await response.json()
-      if (current.user.userId !== state.user.userId) location.replace('/')
+      if (current.user.userId !== state.user.userId) location.replace(appRoot)
     } catch (failure) { /* A network failure does not assert that the login was revoked. */ }
   }
   window.addEventListener('focus', verifyIdentity)
@@ -106,10 +107,12 @@ export const MULTIUSER_CLIENT_SCRIPT = `(() => {
       button.disabled = true
       error.textContent = ''
       try {
-        var response = await fetch('/auth/logout', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+        var response = await fetch(new URL('auth/logout', appRoot), {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}'
+        })
         if (!response.ok) throw new Error('logout rejected')
         changed()
-        location.replace('/')
+        location.replace(appRoot)
       } catch (failure) {
         error.textContent = copy.logoutFailed
         button.disabled = false
