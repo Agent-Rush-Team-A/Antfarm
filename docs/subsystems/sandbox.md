@@ -185,6 +185,8 @@ The internal `ctx.sandboxRunnerClient` transport accepts a complete `RunnerExecu
 
 The [Workspace SSH backend](../../packages/sandbox/harness-sandbox/README.md#workspace-ssh) supplies files from the same execution generation as Bash. Trusted consumers enforce their original user and turn permissions and path policy, recheck `assertCurrent()` and pass the captured signal for every operation. Closing or losing that connection invalidates the capability; the local Runner does not substitute host files.
 
+The [Workspace text entry](../../packages/sandbox/harness-sandbox/README.md#workspace-text-tools) applies these checks to native read/write/edit. It preserves native result rendering and optional observed-version policy, confines paths to the captured remote root, and separates observation keys by Workspace and generation. Helper closure waits for accepted file requests; cancellation does not roll back committed writes. Web file transfer requires its own remote integration.
+
 ```ts type-equiv
 /** Files and directory of one original execution generation, never the Harness project directory. */
 interface WorkspaceRuntimeFiles {

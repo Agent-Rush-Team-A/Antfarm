@@ -1,4 +1,4 @@
-# Optional bare-VM SSH Bash over the default Antfarm Web composition.
+# Optional bare-VM SSH Bash and text files over the default Antfarm Web composition.
 # Prepare fixed per-Workspace SSH bindings before launch; VM allocation is external.
 - insert:
     - id: workspace-ssh-backend
@@ -44,6 +44,8 @@
           prefix: You are a coding agent powered by the {{model}} model.
       - id: sandbox-bash
         name: '@deepseek-ai/dsh-harness-sandbox/bash'
+      - id: sandbox-files
+        name: '@deepseek-ai/dsh-harness-sandbox/files'
 - id: preset-ptc
   disabled: true
 - id: preset-cordis

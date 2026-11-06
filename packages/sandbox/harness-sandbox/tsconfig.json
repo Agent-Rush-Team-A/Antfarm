@@ -70,6 +70,15 @@
     },
     {
       "path": "../../session/session-projection"
+    },
+    {
+      "path": "../../fs/tool-fs"
+    },
+    {
+      "path": "../../session/working-directory"
+    },
+    {
+      "path": "../../core/system-prompt"
     }
   ]
 }

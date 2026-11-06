@@ -67,9 +67,18 @@ Runner 失败使用 `sandbox/failed`，详情为 `{ reason, outcomeUnknown }`。
 
 重复打开复用同一运行时代次。执行标识保存原始请求和结果；修改请求会冲突，执行前取消不会启动命令，记录达到容量后拒绝新标识而不淘汰修改历史。超时和取消等待受管理进程清理。SSH 中断立即撤销文件访问并停止接纳该代次的新任务，显示 `cleanup_required`。关闭会等待已接纳命令结束，并要求原 helper 确认清理后才允许新代次。无法确认时，必须在外部核实远程清理后再重启拥有该连接的服务；重新加载本身不是清理证据。
 
-`files(workspaceId, containerId, signal)` 提供原代次的文件系统、远程根目录、取消信号和 `assertCurrent()`。受信任调用方须保留原用户和轮次权限，在每次操作前复核权限与访问有效性，传递访问取消信号，并实施路径约束。本前置任务不注册 read/write/edit 工具。本机 Runner 拒绝文件能力请求，不访问宿主文件。
+`files(workspaceId, containerId, signal)` 提供原代次的文件系统、远程根目录、取消信号和 `assertCurrent()`。受信任调用方须保留原用户和轮次权限，在每次操作前复核权限与访问有效性，传递访问取消信号，并实施路径约束。后端本身不注册模型工具。本机 Runner 拒绝文件能力请求，不访问宿主文件。
 
 SSH 关闭只释放 helper 及其受管理进程，不关闭或删除 VM。云实例创建、快照、空闲 VM 回收和网页上传下载适配由云迁移负责。绑定和执行记录仅保存在当前进程中；实例隔离依赖正确部署的独立 VM 及 SSH 别名，不能仅凭不同 `instanceId` 字符串确认。同宿主机 SSH 测试验证分派与目录分离，不证明 VM 隔离。
+
+<a id="workspace-text-tools"></a>
+### Workspace 文本工具
+
+可选入口 `@deepseek-ai/dsh-harness-sandbox/files` 在 SSH Bash 旁注册原生 `read`、`write`、`edit`。SSH 配置在标准预设中加载两个入口，并禁用宿主文件工具。文本入口复用 [tool-fs](../../fs/tool-fs/README.zh.md) 的参数、提示、行窗口、字面匹配、差异元数据及结果渲染。原有参数继续可用；未声明的额外参数，包括 Workspace 和代次覆盖字段，均被拒绝。`readLimit`、`readMaxLineLength`、`readMaxBytes` 使用原生默认值，接受正整数。远程读取使用流式接口，避免 helper 的整文件 RPC 限制。
+
+每次调用捕获具体工具定义、Agent、已接纳轮次及原始消息权限。私有文件系统将原生项目 cwd 和 `/workspace` 路径映射到该代次的远程根目录。相对路径保留远端文件系统解析，包括 `symlink/..`；规范化后位于根目录外的路径被拒绝。每项操作复核权限与目录包含关系，写操作还携带远程 workspace-write 策略。目标标识包含 Workspace 和代次，观察记录不能跨代次使用。文件调用不回退到 Harness 文件系统，取消后也不选择更新的连接。
+
+已有可选插件 `fs-observation-policy` 继续提供防覆盖和版本检查；未启用时，原生写入、编辑保持无条件行为。匹配失败和版本过期不会改变文件。取消不保证回滚已经提交的写入。helper 关闭会等待已接纳文件请求结束后确认清理；丢失确认会阻止复用。卸载文本入口会取消并等待调用结束，并移除三个定义。网页上传、下载仍需云迁移的远程文件适配；本入口不改变这些接口。
 
 <a id="conversation-admission"></a>
 ### 对话接纳

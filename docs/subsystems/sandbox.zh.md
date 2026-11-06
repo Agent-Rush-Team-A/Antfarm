@@ -185,6 +185,8 @@ interface ConfinedArgv {
 
 [Workspace SSH 后端](../../packages/sandbox/harness-sandbox/README.zh.md#workspace-ssh) 提供与 Bash 相同运行时代次的文件系统。受信任调用方须实施原用户与轮次权限及路径约束，在每次操作前复核 `assertCurrent()` 并传递访问取消信号。连接关闭或中断会撤销该能力；本机 Runner 不会代为访问宿主文件。
 
+[Workspace 文本入口](../../packages/sandbox/harness-sandbox/README.zh.md#workspace-text-tools)将这些检查应用于原生 read/write/edit。它保留原生结果渲染和可选的已观察版本策略，将路径限制在捕获的远程根目录中，并按 Workspace 和代次区分观察标识。helper 关闭会等待已接纳文件请求；取消不回滚已经提交的写入。网页文件传输需要独立的远程集成。
+
 ```ts type-equiv
 /** Files and directory of one original execution generation, never the Harness project directory. */
 interface WorkspaceRuntimeFiles {
