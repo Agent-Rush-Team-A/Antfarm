@@ -538,6 +538,32 @@ it('requires the shared Web injection entry in the published payload', () => {
   } })).toEqual([expect.stringContaining('package.json files must be')])
 })
 
+it('requires Runner image inputs and deployment documentation in the published payload', () => {
+  const dir = 'packages/sandbox/sandbox-runner'
+  const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
+  expect(checkWorkspaceManifest({ dir, manifest })).toEqual([])
+  for (const omitted of ['assets/supervisor.py', 'docs/', 'image/Dockerfile']) {
+    expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, files: manifest.files!.filter(file => file !== omitted) } }))
+      .toEqual([expect.stringContaining('package.json files must be')])
+  }
+  expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, files: [...manifest.files!, 'assets/**'] } }))
+    .toEqual([expect.stringContaining('package.json files must be')])
+})
+
+it.each([
+  ['packages/sandbox/harness-sandbox', ['lib/conversation.js', 'lib/bash.js', 'lib/shared-*.js']],
+  ['packages/shell/tool-bash', ['lib/render.js']],
+])('requires the public Bash bundles in %s while rejecting unrelated payloads', (dir, entries) => {
+  const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
+  expect(checkWorkspaceManifest({ dir, manifest })).toEqual([])
+  for (const omitted of entries) {
+    expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, files: manifest.files!.filter(file => file !== omitted) } }))
+      .toEqual([expect.stringContaining('package.json files must be')])
+  }
+  expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, files: [...manifest.files!, 'lib/**'] } }))
+    .toEqual([expect.stringContaining('package.json files must be')])
+})
+
 it('requires Office skill bodies and helpers in the published payload', () => {
   const manifest = JSON.parse(readFileSync(new URL('../packages/skill/skill-office/package.json', import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
   expect(checkWorkspaceManifest({ dir: 'packages/skill/skill-office', manifest })).toEqual([])
