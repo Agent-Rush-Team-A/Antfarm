@@ -22,7 +22,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-将 Host provider 作为 Cordis 插件挂载，并提供经过校验的配置。依赖 Connection、Remote Access、Typert、Workspace Controller 和 Workspace Registry。默认 profile 不启用此服务。
+通过 Web profile 加载[可选上传覆盖配置](../../../apps/cli/config/examples/workspace-upload.patch.yml)。依赖 Connection、Remote Access、Typert、Workspace Controller 和 Workspace Registry。默认 profile 不启用此服务。
 
 | 配置 | 默认值 | 含义 |
 |---|---|---|

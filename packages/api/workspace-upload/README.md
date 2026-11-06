@@ -22,7 +22,7 @@ Uploads browser files into the root of an authorized registered workspace. The o
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the Host provider as a Cordis plugin with its validated configuration. It requires Connection, Remote Access, Typert, Workspace Controller and Workspace Registry. It is absent from default profiles.
+Load the [opt-in upload overlay](../../../apps/cli/config/examples/workspace-upload.patch.yml) through a Web profile. It requires Connection, Remote Access, Typert, Workspace Controller and Workspace Registry. It is absent from default profiles.
 
 | Config | Default | Meaning |
 |---|---|---|

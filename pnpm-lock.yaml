@@ -1556,6 +1556,9 @@ importers:
       '@deepseek-ai/dsh-api-workspace-files':
         specifier: workspace:*
         version: link:../workspace-files
+      '@deepseek-ai/dsh-api-workspace-upload':
+        specifier: workspace:*
+        version: link:../workspace-upload
       '@deepseek-ai/dsh-client-connection':
         specifier: workspace:*
         version: link:../../client/connection
@@ -3061,6 +3064,9 @@ importers:
       '@deepseek-ai/dsh-api-workspace-files':
         specifier: workspace:*
         version: link:../../api/workspace-files
+      '@deepseek-ai/dsh-api-workspace-upload':
+        specifier: workspace:*
+        version: link:../../api/workspace-upload
       '@deepseek-ai/dsh-app-boot':
         specifier: workspace:*
         version: link:../../boot/app-boot
