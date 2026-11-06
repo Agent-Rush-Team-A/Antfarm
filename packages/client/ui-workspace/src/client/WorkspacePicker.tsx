@@ -35,7 +35,7 @@ export interface WorkspacePickFlowProps {
   /** Selector hook over the workspace list (framework standard hook). */
   useWorkspaces: <S>(selector: (state: WorkspaceSnapshot) => S) => S
   /** Adopt a picked host directory as a real Workspace. */
-  createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
+  createWorkspace: (input: { path?: string; title?: string }) => Promise<WorkspaceView>
   /** Bound occupancy selector hook for this surface's directory-flow hole (empty leaves the surface with no add action). */
   useDirectoryFlow: SnapshotSelectorHook<boolean>
   /** Render this surface's directory-flow hole with the owner conversation (the entry's narrowed renderSlot). */
@@ -95,7 +95,9 @@ export function WorkspacePickFlow({
   // entry simply is not there (the seam's documented no-flow default). The
   // framework-bound hook keeps occupancy live: flow plugins activate (and
   // HMR-reload) independently of this menu's renders.
-  const flowAvailable = useDirectoryFlow(occupied => occupied)
+  const flowOccupied = useDirectoryFlow(occupied => occupied)
+  const serverAllocated = workspaceSnapshot.creationMode === 'allocated'
+  const flowAvailable = flowOccupied || serverAllocated
   // An occupant that unloads mid-interaction leaves nobody to cancel: an
   // open flow over an empty hole withdraws so the menu actions come back.
   // flowOpen is a dependency because the flow can also OPEN over an already
@@ -166,8 +168,18 @@ export function WorkspacePickFlow({
     onClose()
     setErrorOpen(false)
     setModalError(null)
-    setFlowOpen(true)
-  }, [onClose])
+    if (serverAllocated) {
+      setPickingFolder(true)
+      void createWorkspace({}).then((workspace) => {
+        onPick(workspace.workspaceId)
+      }).catch((reason: unknown) => {
+        setModalError(reason instanceof Error ? reason.message : String(reason))
+        setErrorOpen(true)
+      }).finally(() => { setPickingFolder(false) })
+    } else {
+      setFlowOpen(true)
+    }
+  }, [onClose, serverAllocated, createWorkspace, onPick])
 
   // A menu exists to disambiguate between targets. With no workspaces listed
   // and the add action the only entry left, the anchor gesture IS that action:

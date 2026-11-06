@@ -440,6 +440,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Associates generated Remote descriptors with live Cordis services, resolves registered identities, and exposes unary calls through the shared Connection RPC carrier.',
   },
   {
+    key: 'multiuser',
+    pkg: 'api-multiuser',
+    title: 'Account login and workspace ownership',
+    mode: 'service',
+    consumers: ['api-workspace-controller', 'api-session-controller'],
+    note: 'Authenticates browser accounts, persists workspace ownership, and registers per-user Remote access policy.',
+  },
+  {
     key: 'remoteAccess',
     pkg: 'api-remote-access',
     title: 'Remote method access control',

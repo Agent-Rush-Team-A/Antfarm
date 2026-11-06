@@ -306,6 +306,8 @@ export interface WebScaffold {
 
 /** Options for {@link launchWebScaffold}. */
 export interface LaunchOptions {
+  /** Account tests perform their own login; skip the owner-token exchange. */
+  accountAuthentication?: boolean
   /** Override the developer-tools preference; omitted uses the shipped default. */
   developerTools?: boolean
   /** Enable the real Open In rows with deterministic launch-environment facts. */
@@ -930,18 +932,20 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       baseUrl = `http://${publicHost}:${String(publicProxy.port)}${publicPrefix}`
     }
     authenticatedUrl = ctx.connection.authenticatedUrl(baseUrl)
-    // Chromium resolves *.localhost itself; Node may not. Both scaffold
-    // listeners bind loopback, including the optional prefix proxy.
-    const loginUrl = new URL(authenticatedUrl)
-    loginUrl.hostname = '127.0.0.1'
-    const login = await fetch(loginUrl, { redirect: 'manual' })
-    const setCookie = login.headers.get('set-cookie')
-    if (login.status !== 303 || login.headers.get('location') !== './' || setCookie === null) {
-      throw new Error('web e2e scaffold: browser token exchange did not return its session cookie')
-    }
-    cookieHeader = setCookie.split(';', 1)[0] ?? ''
-    if (cookieHeader.length === 0) {
-      throw new Error('web e2e scaffold: browser token exchange returned an empty session cookie')
+    if (options.accountAuthentication !== true) {
+      // Chromium resolves *.localhost itself; Node may not. Both scaffold
+      // listeners bind loopback, including the optional prefix proxy.
+      const loginUrl = new URL(authenticatedUrl)
+      loginUrl.hostname = '127.0.0.1'
+      const login = await fetch(loginUrl, { redirect: 'manual' })
+      const setCookie = login.headers.get('set-cookie')
+      if (login.status !== 303 || login.headers.get('location') !== './' || setCookie === null) {
+        throw new Error('web e2e scaffold: browser token exchange did not return its session cookie')
+      }
+      cookieHeader = setCookie.split(';', 1)[0] ?? ''
+      if (cookieHeader.length === 0) {
+        throw new Error('web e2e scaffold: browser token exchange returned an empty session cookie')
+      }
     }
   } catch (error) {
     if (process.cwd() !== originalCwd) process.chdir(originalCwd)

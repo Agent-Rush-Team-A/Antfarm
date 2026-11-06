@@ -20,6 +20,8 @@ kind: "package-reference"
 - [已知限制与延期工作](#known-limitations-and-deferred-work)
 - [开发备注](#dev-note)
 
+个性化首页响应使用 `Cache-Control: no-store`，并按 Cookie 区分。在多用户模式下，Connection 可以把未登录浏览器重定向到账号 provider 的公开登录页。
+
 -----
 
 <a id="use-this-package"></a>
@@ -43,7 +45,7 @@ kind: "package-reference"
 
 所服务的 HTML 携带唯一的文档 base `<base href="./">`，位于每一条注入资源行之前，因此它冻结页面加载时所处的入口目录：shell 自身的应用目录相对引用与宿主的插件资源行都在服务该页面的挂载下解析。同一份 index 因而既服务源站根目录，也服务剥离前缀的代理所拥有的任一挂载；本插件只为 dist 根目录与配置的 index 路径渲染它。
 
-对根路径与配置 index 的 HTTP 请求会在读取 HTML 前调用 `ctx.connection.authorizeIndex`。有效进程 token 会得到 303 重定向与持久浏览器 cookie；已有有效 cookie 时直接提供 index；其他 index 请求得到 Connection 所有的 401 响应。非 index 文件仍是公开静态资源。Token、cookie、过期时间与签名记录语义都归 Connection 所有。
+对根路径与配置 index 的 HTTP 请求会在读取 HTML 前调用 `ctx.connection.admitIndex`。本地 owner 组合返回 token 重定向、通过 cookie 认证的 index，或 Connection 所有的 401；多用户组合返回已认证或 anonymous Peer，并把登录文档留给页面处理。非 index 文件仍是公开静态资源。Token、cookie、过期时间、准入 provider 与签名记录语义都归 Connection 所有。
 
 除 index 外，所有提供的文件都由浏览器重新验证。这类响应携带 `cache-control: no-cache` 和由文件内容 SHA-1 生成的弱 ETag，因此文件内容变化后即使名字不变也会得到新的 ETag；`If-None-Match` 等于当前 ETag 的请求得到空的 304。渲染出的 index 不带缓存头。
 
@@ -61,7 +63,7 @@ kind: "package-reference"
 
 ### 设计理念
 
-本包是围绕 `serveStatic` 的一个函数插件，`serveStatic` 把 Fetch `Request` 映射为 `Response`：`apply` 从 `distIndex` 解析出 dist 根目录，并在 effect 作用域下注册回退 resource。每个请求中，resource 交给 `serveStatic` 一个 `authorizeIndex` 闭包——只在请求没有携带 Peer 时运行 `ctx.connection.authorizeIndex`——以及一个 `renderIndex` 闭包：它为该 Peer 或浏览器 Peer 对原始 `index.html` 运行 `ctx.webServer.renderIndex`，并把文档 base 拼接在起始 head 标签之后（在原始转换之后执行，因此也先于其标记）。按 webserver 的约定，席位只有单一所有者——第二次注册会抛错——且受 effect 作用域约束，因此 dispose fiber 即释放席位。
+本包是围绕 `serveStatic` 的一个函数插件，`serveStatic` 把 Fetch `Request` 映射为 `Response`：`apply` 从 `distIndex` 解析出 dist 根目录，并在 effect 作用域下注册回退 resource。每个请求中，resource 交给 `serveStatic` 一个 `admitIndex` 闭包——只在请求没有携带 Peer 时运行 `ctx.connection.admitIndex`——以及一个 `renderIndex` 闭包：它为已准入 Peer 对原始 `index.html` 运行 `ctx.webServer.renderIndex`，并把文档 base 拼接在起始 head 标签之后（在原始转换之后执行，因此也先于其标记）。按 webserver 的约定，席位只有单一所有者——第二次注册会抛错——且受 effect 作用域约束，因此 dispose fiber 即释放席位。
 
 ### 遍历栅栏
 

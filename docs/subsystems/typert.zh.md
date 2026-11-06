@@ -199,6 +199,11 @@ interface RemoteStreamHandle<Out, In> extends AsyncIterable<Out> {
 ```
 
 ```ts type-equiv
+/** Stable identity of one authenticated account. */
+type UserId = Branded<'UserId'>
+```
+
+```ts type-equiv
 /**
  * Merge-extensible caller identities. Each driver declares its own entry.
  * Every entry is a JSON value with a unique literal `kind`, carries no
@@ -207,6 +212,10 @@ interface RemoteStreamHandle<Out, In> extends AsyncIterable<Out> {
 interface PrincipalMap {
   /** The local user who owns this Host. */
   owner: { readonly kind: 'owner' }
+  /** One authenticated account in a multiuser deployment. */
+  user: { readonly kind: 'user'; readonly userId: UserId }
+  /** A browser page with no valid login; every business action is denied. */
+  anonymous: { readonly kind: 'anonymous' }
 }
 ```
 
@@ -507,6 +516,129 @@ interface TypertClientRemote extends TypertRemoteNamespaceMap {
 ## Cordis API
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.zh.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+
+<a id="ctxmultiuser--multiuserservice"></a>
+
+### `ctx.multiuser` — `MultiuserService`
+
+Account and ownership service installed by the multiuser composition.
+
+```ts cordis-catalog
+/**
+ * Create one account through an explicit provisioning step. Existing names
+ * are never overwritten and passwords are never reset implicitly.
+ * @param username - display name users type at login.
+ * @param password - plaintext to hash once; never stored.
+ * @returns the public account.
+ * @throws Error when the name is invalid or already provisioned.
+ */
+provisionUser(username: string, password: string): Promise<MultiuserUser>
+
+/**
+ * Disable one account and revoke every login it still holds.
+ * @param userId - account identity.
+ * @returns whether the account existed.
+ */
+disableUser(userId: UserId): Promise<boolean>
+
+/**
+ * Validate one account password and issue a persistent login.
+ * @param username - submitted account name.
+ * @param password - submitted password.
+ * @param rateKey - caller identity used for the attempt window.
+ * @returns a token on success, or a stable failure reason.
+ */
+async login(username: string, password: string, rateKey: string): Promise<LoginOutcome>
+
+/**
+ * Revoke the login named by a token. Repeating the call is harmless and
+ * never affects another login.
+ * @param token - browser token from the request cookie.
+ * @returns whether a live login was revoked.
+ */
+async logout(token: string | undefined): Promise<boolean>
+
+/**
+ * Read the account and login behind a token without changing state.
+ * @param token - browser token from the request cookie.
+ * @returns the live login, or undefined when the token is unknown, expired, revoked, or disabled.
+ */
+authenticateToken(token: string | undefined): AuthenticatedLogin | undefined
+
+/**
+ * Admit only a live login and reuse its connection scope.
+ * @param request - request headers after the trust fence.
+ * @param _secure - listener TLS state; credentials have the same validity on both carriers.
+ * @returns the authenticated Peer or a 401 refusal.
+ */
+admit(request: { readonly headers: AdmissionHeaders }, _secure: boolean): PeerAdmission
+
+/**
+ * Render an authenticated page or redirect to the public login document.
+ * @param request - index request headers after the trust fence.
+ * @param _secure - listener TLS state.
+ * @returns the authenticated Peer or a login-page redirect.
+ */
+admitIndex(request: { readonly headers: AdmissionHeaders }, _secure: boolean): ConnectionIndexAdmission
+
+/**
+ * Check live account ownership of a registered workspace.
+ * @param userId - account identity.
+ * @param workspaceId - workspace identity.
+ * @returns false for deleted workspaces, disabled accounts, or absent ownership.
+ */
+ownsWorkspace(userId: UserId, workspaceId: WorkspaceId): boolean
+
+/**
+ * Check access through the session's authoritative workspace membership.
+ * @param userId - account identity.
+ * @param sessionId - session identity.
+ * @returns whether the account owns the session's live workspace.
+ */
+ownsSession(userId: UserId, sessionId: SessionId): boolean
+
+/**
+ * Enumerate ownership bindings for one account.
+ * @param userId - account identity.
+ * @returns workspace identities whose conditions are rechecked by the policy.
+ */
+ownedWorkspaces(userId: UserId): readonly WorkspaceId[]
+
+/**
+ * Enumerate sessions in the account's owned workspaces.
+ * @param userId - account identity.
+ * @returns current session identities from committed workspace membership.
+ */
+ownedSessions(userId: UserId): readonly SessionId[]
+
+/**
+ * Allocate a private directory and register one workspace owned by `userId`.
+ * The ownership row commits before the workspace becomes accessible. If it
+ * fails, the registration is withdrawn and the new empty directory removed.
+ * @param userId - authenticated account identity.
+ * @param title - optional display title.
+ * @returns the committed workspace.
+ */
+createUserWorkspace(userId: UserId, title?: string): Promise<Workspace>
+
+/**
+ * Drop ownership when its workspace registration is deleted.
+ * @param workspaceId - deleted workspace identity.
+ * @returns resolution after the owner row is gone.
+ */
+async forgetWorkspace(workspaceId: WorkspaceId): Promise<void>
+
+/**
+ * Read a workspace's stored owner identity.
+ * @param workspaceId - workspace identity.
+ * @returns the owning account id, or undefined when no ownership row exists.
+ */
+ownerOfWorkspace(workspaceId: WorkspaceId): string | undefined
+```
+
+Types: [SessionId](core.zh.md) · [Workspace](workspace.zh.md) · [WorkspaceId](workspace.zh.md)
+
+Source: [`packages/api/multiuser/src/service.ts`](../../packages/api/multiuser/src/service.ts)
 
 <a id="ctxremoteaccess--remoteaccessservice"></a>
 

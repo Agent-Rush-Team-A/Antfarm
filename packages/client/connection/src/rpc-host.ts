@@ -29,6 +29,7 @@ import type {
   ConnectionRpcResult,
   ConnectionRequestRejection,
   ConnectionTrustRequest,
+  ConnectionAdmissionProvider,
   HostConnectionHandle,
   HostConnectionRpc,
 } from './rpc.ts'
@@ -68,9 +69,10 @@ declare module '@deepseek-ai/cordis' {
 
 /** Host Connection service whose channel registrations belong to the caller fiber. */
 export class HostConnectionService extends Service implements HostConnectionHandle {
-  /** The Peer every authenticated browser connection shares. */
+  /** The Peer every authenticated browser connection shares; anonymous in multiuser mode. */
   readonly browserPeer: PeerScope
   private readonly peers = new Map<PeerId, PeerRecord>()
+  private admissionProvider: ConnectionAdmissionProvider | undefined
   private readonly owner: Context
   private disposed = false
   private readonly interceptors = new Map<string, ConnectionRpcInterceptor>()
@@ -83,15 +85,17 @@ export class HostConnectionService extends Service implements HostConnectionHand
    * @param ctx - owning Connection plugin context.
    * @param trustedHosts - deployment authorities accepted by the Host/Origin fence.
    * @param browserAuth - process token and persistent browser-session owner.
+   * @param multiuser - require an installed admission provider and never expose the owner.
    */
   constructor(
     ctx: Context,
     private readonly trustedHosts: readonly string[],
     private readonly browserAuth: BrowserAuth,
+    private readonly multiuser = false,
   ) {
     super(ctx, 'connection')
     this.owner = ctx
-    this.browserPeer = new Peer(ctx, { principal: { kind: 'owner' } })
+    this.browserPeer = new Peer(ctx, { principal: multiuser ? { kind: 'anonymous' } : { kind: 'owner' } })
     ctx.effect(() => async () => {
       this.disposed = true
       const peers = [this.browserPeer, ...Array.from(this.peers.values(), record => record.peer)]
@@ -125,15 +129,39 @@ export class HostConnectionService extends Service implements HostConnectionHand
     return 'rejection' in admission ? admission.rejection : undefined
   }
 
-  /** Browser requests share an owner Peer; API HTTP does not depend on an attached socket. */
+  /** Browser requests share the login Peer; API HTTP does not depend on an attached socket. */
   admit(request: ConnectionTrustRequest): PeerAdmission {
     if (!this.isTrusted(request)) return { rejection: 403 }
     if (this.disposed) return { rejection: 401 }
     const secure = this.owner.get('webServer')?.protocol === 'https:'
+    if (this.multiuser) {
+      const provider = this.admissionProvider
+      return provider === undefined ? { rejection: 401 } : provider.admit(request, secure)
+    }
     if (this.browserAuth.isAuthenticated(request, secure)) return { peer: this.browserPeer }
     const id = this.browserAuth.authenticateApi(request, secure)
     const record = id === undefined ? undefined : this.peers.get(id)
     return record === undefined ? { rejection: 401 } : { peer: record.peer }
+  }
+
+  /**
+   * Install the multiuser admission provider; one provider owns authentication.
+   * @param provider - credential verification and Peer creation policy.
+   * @returns disposer removing this provider and refusing every request again.
+   */
+  installAdmissionProvider(provider: ConnectionAdmissionProvider): () => Promise<void> {
+    if (!this.multiuser) throw new Error('client-connection: admission providers require multiuser mode')
+    if (this.admissionProvider !== undefined) throw new Error('client-connection: an admission provider is already installed')
+    return this.ctx.effect(() => {
+      this.admissionProvider = provider
+      return () => { this.admissionProvider = undefined }
+    }, 'client-connection: multiuser admission provider')
+  }
+
+  /** Whether the Host/Origin fence accepts this request. */
+  isTrusted(request: ConnectionTrustRequest): boolean {
+    const carrier = this.owner.get('webServer')
+    return isTrustedApiRequest(request, this.trustedHosts, carrier?.host, carrier?.protocol ?? 'http:')
   }
 
   /** Create one in-process Peer owned by the Context that read this service. */
@@ -161,11 +189,6 @@ export class HostConnectionService extends Service implements HostConnectionHand
     }
   }
 
-  private isTrusted(request: ConnectionTrustRequest): boolean {
-    const carrier = this.owner.get('webServer')
-    return isTrustedApiRequest(request, this.trustedHosts, carrier?.host, carrier?.protocol ?? 'http:')
-  }
-
   private publishPeer(interactions: ConnectionInteractions): PeerId {
     const peer = new Peer(this.owner, { principal: { kind: 'owner' }, interactions })
     this.peers.set(peer.id, { peer, ownsSocket: false })
@@ -178,6 +201,11 @@ export class HostConnectionService extends Service implements HostConnectionHand
    * @param response - response owned to completion.
    */
   authorizeConnect(request: ConnectionIndexRequest, response: ConnectionIndexResponse): void {
+    if (this.multiuser) {
+      response.writeHead(404, { 'cache-control': 'no-store' })
+      response.end()
+      return
+    }
     if (!this.isTrusted(request) || this.disposed) {
       response.writeHead(this.disposed ? 401 : 403)
       response.end(this.disposed ? 'unauthorized' : 'forbidden')
@@ -191,12 +219,53 @@ export class HostConnectionService extends Service implements HostConnectionHand
    * Authenticate an index request; native TLS listeners mint Secure cookies.
    */
   authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean {
-    return this.browserAuth.authorizeIndex(request, response, this.ctx.get('webServer')?.protocol === 'https:')
+    return this.admitIndex(request, response).serve
   }
 
-  /** Add this process's launch token to the clean application URL. */
+  /**
+   * Admit an index request and return the Peer its injected rows speak for.
+   * In multiuser mode an unauthenticated page still renders, with the
+   * anonymous Peer, so the login document can load.
+   */
+  admitIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): { readonly serve: boolean; readonly peer: PeerScope } {
+    if (!this.isTrusted(request)) {
+      response.writeHead(403, { 'cache-control': 'no-store' })
+      response.end('forbidden')
+      return { serve: false, peer: this.browserPeer }
+    }
+    if (this.disposed) {
+      response.writeHead(401, { 'cache-control': 'no-store' })
+      response.end('unauthorized')
+      return { serve: false, peer: this.browserPeer }
+    }
+    const secure = this.owner.get('webServer')?.protocol === 'https:'
+    if (this.multiuser) {
+      const provider = this.admissionProvider
+      if (provider === undefined) {
+        response.writeHead(401, { 'cache-control': 'no-store' })
+        response.end('unauthorized')
+        return { serve: false, peer: this.browserPeer }
+      }
+      const admission = provider.admitIndex(request, secure)
+      if (!admission.serve) {
+        if ('redirect' in admission) {
+          response.writeHead(303, { location: admission.redirect, 'cache-control': 'no-store' })
+          response.end()
+        } else {
+          response.writeHead(admission.rejection, { 'cache-control': 'no-store' })
+          response.end(admission.rejection === 401 ? 'unauthorized' : 'forbidden')
+        }
+        return { serve: false, peer: this.browserPeer }
+      }
+      return { serve: true, peer: admission.peer }
+    }
+    const served = this.browserAuth.authorizeIndex(request, response, secure)
+    return { serve: served, peer: this.browserPeer }
+  }
+
+  /** Add this process's launch token to the clean application URL; multiuser has none. */
   authenticatedUrl(baseUrl: string): string {
-    return this.browserAuth.authenticatedUrl(baseUrl)
+    return this.multiuser ? baseUrl : this.browserAuth.authenticatedUrl(baseUrl)
   }
 
   /**
@@ -217,7 +286,6 @@ export class HostConnectionService extends Service implements HostConnectionHand
         const route = this.fetchRoutes.get(pathname)
         if (route?.methods.has(request.method) === true) {
           // Exact routes bypass Gateway access checks, so only the owner reaches them.
-          // oxlint-disable-next-line typescript/no-unnecessary-condition -- other packages merge non-owner kinds into PrincipalMap.
           if (peer.principal.kind !== 'owner') return Promise.resolve(new Response('forbidden', { status: 403 }))
           return route.fetch(request)
         }

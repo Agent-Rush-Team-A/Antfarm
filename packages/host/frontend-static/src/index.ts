@@ -23,6 +23,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-host-webserver'
+import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 
 /** Stable Cordis plugin name. */
 export const name = 'frontend-static'
@@ -81,10 +82,10 @@ function bytesBody(bytes: Uint8Array): ReadableStream<Uint8Array> {
  * @param request - the request; only its method and URL path are read.
  * @param distRoot - absolute dist root directory (resolved by the caller).
  * @param distIndex - absolute path of index.html inside distRoot.
- * @param authorizeIndex - answers an index request before its bytes are read:
- * the response to send instead of the index, or undefined to serve it.
+ * @param admitIndex - answers an index request before its bytes are read:
+ * the response to send instead of the index, or the Peer to render for.
  * @param renderIndex - turns the raw index.html body into the served document
- * for the dist root and configured index path.
+ * for the dist root, configured index path, and admitted Peer.
  * @returns the dist response; a HEAD response carries the GET status and
  * headers without a body. A file other than the index carries
  * `cache-control: no-cache` and a weak ETag from a SHA-1 of its bytes, and a
@@ -92,8 +93,8 @@ function bytesBody(bytes: Uint8Array): ReadableStream<Uint8Array> {
  */
 async function serveStatic(
   request: Request, distRoot: string, distIndex: string,
-  authorizeIndex: () => Response | undefined,
-  renderIndex: (html: string) => string,
+  admitIndex: () => { readonly refusal?: Response; readonly peer?: PeerScope },
+  renderIndex: (html: string, peer: PeerScope) => string,
 ): Promise<Response> {
   const target = resolve(normalize(join(distRoot, decodeURIComponent(new URL(request.url).pathname))))
   // Traversal rejection: the target must be distRoot itself (`/`) or stay under
@@ -104,10 +105,11 @@ async function serveStatic(
   let headers: Record<string, string>
   try {
     if (target === distRoot || target === distIndex) {
-      const refusal = authorizeIndex()
-      if (refusal !== undefined) return refusal
-      body = renderIndex(await readFile(distIndex, 'utf8'))
-      headers = { 'content-type': HTML_MIME }
+      const admission = admitIndex()
+      if (admission.refusal !== undefined) return admission.refusal
+      // Admit always returns a Peer whenever it returns no refusal.
+      body = renderIndex(await readFile(distIndex, 'utf8'), admission.peer as PeerScope)
+      headers = { 'content-type': HTML_MIME, 'cache-control': 'no-store', vary: 'Cookie' }
     } else {
       body = await readFile(target)
       // Weak: gzip changes the transferred bytes.
@@ -133,21 +135,24 @@ async function serveStatic(
 export function apply(ctx: Context, config: Config): void {
   const distIndex = config.distIndex
   const distRoot = dirname(distIndex)
-  // Connection's browser authentication writes the token exchange's 303 or
-  // the 401 through a writeHead/end response; capture it as a Fetch response.
-  // The answer stays a 401 unless Connection writes another one.
-  const authorizeIndex = (request: Request): Response | undefined => {
+  // Connection writes a token exchange redirect, a 401, or a 403 through a
+  // writeHead/end response; capture it as a Fetch response. In multiuser mode
+  // it also names the Peer the page speaks for, including the anonymous Peer
+  // of the login document.
+  const admitIndex = (request: Request): { readonly refusal?: Response; readonly peer?: PeerScope } => {
     let status = 401
     let headers = new Headers()
     let body: string | undefined
-    const admitted = ctx.connection.authorizeIndex(request, {
+    const admitted = ctx.connection.admitIndex(request, {
       writeHead(nextStatus, nextHeaders) {
         status = nextStatus
         headers = new Headers(nextHeaders)
       },
       end(text) { body = text },
     })
-    return admitted ? undefined : new Response(body, { status, headers })
+    return admitted.serve
+      ? { peer: admitted.peer }
+      : { refusal: new Response(body, { status, headers }) }
   }
   ctx.effect(() => ctx.webServer.registerFallback({
     resource: (request, peer) => serveStatic(
@@ -155,12 +160,11 @@ export function apply(ctx: Context, config: Config): void {
       distRoot,
       distIndex,
       // A read with a Peer was admitted by its caller; an HTTP request carries
-      // none and passes Connection's browser authentication instead.
-      () => peer === undefined ? authorizeIndex(request) : undefined,
-      // The browser authentication admits the owner's shared browser Peer. The
-      // base goes in after all index transforms, so it precedes every resource
-      // reference they insert.
-      html => ctx.webServer.renderIndex(html, peer ?? ctx.connection.browserPeer)
+      // none and passes Connection's admission policy instead.
+      () => peer === undefined ? admitIndex(request) : { peer },
+      // The base goes in after all index transforms, so it precedes every
+      // resource reference they insert.
+      (html, admittedPeer) => ctx.webServer.renderIndex(html, admittedPeer)
         .replace(/<head(?:\s[^>]*)?>/i, open => `${open}<base href="./">`),
     ),
   }), 'frontend-static: fallback seat')

@@ -447,6 +447,9 @@ export interface InvocationDescriptor {
  */
 export type PeerId = Branded<'PeerId'>
 
+/** Stable identity of one authenticated account. */
+export type UserId = Branded<'UserId'>
+
 /**
  * Merge-extensible caller identities. Each driver declares its own entry.
  * Every entry is a JSON value with a unique literal `kind`, carries no
@@ -455,6 +458,10 @@ export type PeerId = Branded<'PeerId'>
 export interface PrincipalMap {
   /** The local user who owns this Host. */
   owner: { readonly kind: 'owner' }
+  /** One authenticated account in a multiuser deployment. */
+  user: { readonly kind: 'user'; readonly userId: UserId }
+  /** A browser page with no valid login; every business action is denied. */
+  anonymous: { readonly kind: 'anonymous' }
 }
 
 /** One caller identity; the authorization layer reads only this. */

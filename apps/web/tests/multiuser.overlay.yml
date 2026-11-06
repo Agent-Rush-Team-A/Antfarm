@@ -1,0 +1,35 @@
+# Multiuser composition for an isolated test instance.
+# Set DSH_MULTIUSER_WORKSPACE_ROOT to an absolute directory outside the
+# running demo's Harness home. Accounts are provisioned separately.
+- id: connection
+  config:
+    multiuser: true
+    trustedHosts: !!js ctx.webStartup.trustedHosts
+
+- insert:
+    - id: multiuser
+      name: '@deepseek-ai/dsh-api-multiuser'
+      config:
+        workspaceRoot: !!js process.env.DSH_MULTIUSER_WORKSPACE_ROOT
+
+# An ordinary account must not reach host execution, file reads, terminal
+# state, attachments, or native desktop handoffs before those capabilities
+# implement per-user resource ownership.
+- id: tool-bash
+  disabled: true
+- id: tool-pwsh
+  disabled: true
+- id: tool-fs
+  disabled: true
+- id: tool-fs-search
+  disabled: true
+- id: tool-jobs
+  disabled: true
+- id: terminal-controller
+  disabled: true
+- id: open-in-app
+  disabled: true
+
+# The shared UI still needs the directory-picker namespace to mount. Its
+# methods remain denied to users; allocated workspace creation never calls it.
+# The service's execution guard also denies tools contributed by any preset.

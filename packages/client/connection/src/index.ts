@@ -30,6 +30,8 @@ export type {
   ConnectionRequestRejection,
   ConnectionRpcResult,
   ConnectionRequestBodyMode,
+  ConnectionAdmissionProvider,
+  ConnectionIndexAdmission,
   ConnectionTrustRequest,
   ClientRequest,
   HostConnectionHandle,
@@ -107,6 +109,13 @@ export interface ConnectionConfig {
   cookieMaxAgeDays?: number
   /** Maximum buffered JSON body for every `/api` request. Default: 300 MiB. */
   maxRequestBodyBytes?: number
+  /**
+   * Require an installed `ConnectionAdmissionProvider` and expose no owner
+   * credentials. A multiuser composition mounts its authentication package,
+   * which installs the provider; no provider means every request is refused.
+   * Default: false.
+   */
+  multiuser?: boolean
 }
 
 export const Config: z<ConnectionConfig> = z.object({
@@ -114,6 +123,7 @@ export const Config: z<ConnectionConfig> = z.object({
   trustedHosts: z.array(String).default([]),
   cookieMaxAgeDays: z.natural().min(1).default(30),
   maxRequestBodyBytes: z.natural().min(1).default(DEFAULT_MAX_REQUEST_BODY_BYTES),
+  multiuser: z.boolean().default(false),
 })
 
 /**
@@ -129,6 +139,7 @@ export async function apply(ctx: Context, config?: ConnectionConfig): Promise<vo
   const trustedHosts = config?.trustedHosts ?? []
   const cookieMaxAgeDays = config?.cookieMaxAgeDays ?? 30
   const maxRequestBodyBytes = config?.maxRequestBodyBytes ?? DEFAULT_MAX_REQUEST_BODY_BYTES
+  const multiuser = config?.multiuser ?? false
   // Config boundary: a malformed entry fails the load loudly here rather than
   // silently authorizing its hostname prefix at request time.
   for (const entry of trustedHosts) assertTrustedAuthority(entry)
@@ -137,6 +148,7 @@ export async function apply(ctx: Context, config?: ConnectionConfig): Promise<vo
     ctx,
     trustedHosts,
     await BrowserAuth.create(ctx.root, ctx.credentials, cookieMaxAgeDays),
+    multiuser,
   )
   ctx.inject(['webServer'], (webCtx) => {
     assertImageBodyCapacity(webCtx, maxRequestBodyBytes)

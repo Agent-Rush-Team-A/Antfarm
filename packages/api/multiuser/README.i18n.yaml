@@ -1,0 +1,43 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/api/multiuser/README.md
+/:
+  en: 2146b8bbb9e2f0a2
+  zh: a54b50d7efc520a1
+/deepseek-ai-dsh-api-multiuser:
+  en: 737155e4def92fc6
+  zh: f782a4f385fde627
+/deepseek-ai-dsh-api-multiuser/summary:
+  en: c1fe18f376d34ecb
+  zh: 171193a33b676fd7
+/deepseek-ai-dsh-api-multiuser/table-of-contents:
+  en: 201b272a7c1f4c5d
+  zh: cce60694cba8c266
+/deepseek-ai-dsh-api-multiuser/behavior:
+  en: 52d0bd07e886fb49
+  zh: bd2c8c44668a3f79
+/deepseek-ai-dsh-api-multiuser/routes:
+  en: 9b406414b544826d
+  zh: 94e742f3aeb91d0a
+/deepseek-ai-dsh-api-multiuser/remote-access-policy:
+  en: 938a8d390022d439
+  zh: 878938834fb010a5
+/deepseek-ai-dsh-api-multiuser/configuration:
+  en: 6ea3a814f3943f5a
+  zh: 9e3f3db9ab44196c
+/deepseek-ai-dsh-api-multiuser/workspace-creation:
+  en: 250b8ae2b4ecfb83
+  zh: 99d5c92de4862e2a
+/deepseek-ai-dsh-api-multiuser/model-experience:
+  en: 352c444bb761f6f2
+  zh: 21c4a7c4fa5e2919
+/deepseek-ai-dsh-api-multiuser/model-experience/kv-cache-effect:
+  en: a093f0800092ee20
+  zh: 0c1f2b519125c086
+/deepseek-ai-dsh-api-multiuser/known-limitations-and-deferred-work:
+  en: 6c5f37479096f501
+  zh: 3ed3d36d6b46b10d
+/deepseek-ai-dsh-api-multiuser/known-limitations-and-deferred-work/dev-note:
+  en: 691c939c7712ea48
+  zh: ca51e360a7517450

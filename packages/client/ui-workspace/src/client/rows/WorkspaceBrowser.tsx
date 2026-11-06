@@ -952,7 +952,9 @@ export function WorkspaceBrowser({
   const pinnedSessionIds = useWorkspaces(state => state.pinnedSessionIds)
   // Live occupancy of this surface's directory-flow hole (the same source the
   // flow reads): a composition without a picking affordance can add nothing.
-  const directoryFlowAvailable = useDirectoryFlow(occupied => occupied)
+  const directoryFlowOccupied = useDirectoryFlow(occupied => occupied)
+  const serverAllocated = useWorkspaces(state => state.creationMode === 'allocated')
+  const directoryFlowAvailable = directoryFlowOccupied || serverAllocated
   const groupBy = useStore(s => s.groupBy)
   const orderBy = useStore(s => s.orderBy)
   // Persisted view blobs written before the archived filter existed rehydrate

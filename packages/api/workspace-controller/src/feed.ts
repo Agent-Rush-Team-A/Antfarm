@@ -81,6 +81,21 @@ export class WorkspaceFeed {
   }
 
   /**
+   * Publish one committed Workspace plus the current order. Multiuser
+   * creation commits ownership after registration, so the registration's own
+   * event was filtered out for its owner; this frame makes the workspace
+   * visible without waiting for another registry mutation.
+   * @param workspace - the newly owned Workspace.
+   */
+  publishWorkspace(workspace: Workspace): void {
+    const id = String(workspace.id)
+    this.knownIds.add(id)
+    this.publish({ type: 'upsert', workspace: workspaceView(workspace) })
+    this.order = this.ctx.workspaceRegistry.list().map(candidate => String(candidate.id))
+    this.publish({ type: 'order', workspaceIds: this.ctx.workspaceRegistry.list().map(candidate => candidate.id) })
+  }
+
+  /**
    * Open one generation beginning with a complete baseline.
    * @param signal - generation cancellation.
    * @returns baseline followed by ordered Workspace increments.

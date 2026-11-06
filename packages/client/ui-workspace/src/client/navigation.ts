@@ -484,6 +484,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     }
     let target = workspace?.workspaceId ?? recentWorkspace(workspaces.items, sessions.byId)
     if (target === undefined && workspaces.items.length === 0 && sessions.ids.length === 0) {
+      if (workspaces.creationMode === 'allocated') return
       const prepared = await this.initializeDefaultWorkspace(navigation)
       if (navigation.aborted) return
       target = prepared?.workspaceId

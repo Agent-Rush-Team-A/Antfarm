@@ -2,10 +2,11 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { Remote, TypertRemoteService, principalOf } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-api-remote-access'
+import type {} from '@deepseek-ai/dsh-api-multiuser'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { WorkspaceCommands } from './commands.ts'
+import { WorkspaceCommands, type WorkspaceVisibility } from './commands.ts'
 import { DirectoryPickerController } from './directory-picker.ts'
 import { WorkspaceFeed, workspaceView } from './feed.ts'
 import { defaultWorkspaceDirectory, validateDocumentsDirectory } from './default-directory.ts'
@@ -88,8 +89,14 @@ export class WorkspaceController extends TypertRemoteService {
    * @returns the Workspace and whether this call created it.
    */
   @Remote('create')
-  create(request: WorkspaceCreateRequest): Promise<WorkspaceCreateValue> {
-    return this.commands.create(request)
+  async create(request: WorkspaceCreateRequest): Promise<WorkspaceCreateValue> {
+    const principal = principalOf(this.ctx.invocation)
+    const value = await this.commands.create(request, principal?.kind === 'user' ? principal : undefined)
+    if (principal?.kind === 'user') {
+      const workspace = this.ctx.workspaceRegistry.get(value.workspace.workspaceId)
+      if (workspace !== undefined) this.feed.publishWorkspace(workspace)
+    }
+    return value
   }
 
   /**
@@ -118,7 +125,7 @@ export class WorkspaceController extends TypertRemoteService {
    */
   @Remote('rename')
   rename(request: WorkspaceRenameRequest): Promise<WorkspaceValue> {
-    return this.commands.rename(request)
+    return this.commands.rename(request, workspaceId => this.ctx.remoteAccess.allows({ kind: 'workspace', id: workspaceId }))
   }
 
   /**
@@ -136,9 +143,16 @@ export class WorkspaceController extends TypertRemoteService {
    * @param request - moved Workspace and optional anchor.
    * @returns the complete resulting Workspace order.
    */
-  @Remote('insertBefore')
+  @Remote({
+    resources: {
+      workspace: (request: WorkspaceInsertBeforeRequest) => [
+        request.workspaceId,
+        ...request.beforeWorkspaceId === undefined ? [] : [request.beforeWorkspaceId],
+      ],
+    },
+  })
   insertBefore(request: WorkspaceInsertBeforeRequest): Promise<WorkspaceOrderValue> {
-    return this.commands.insertBefore(request)
+    return this.commands.insertBefore(request, this.visibility())
   }
 
   /**
@@ -146,9 +160,16 @@ export class WorkspaceController extends TypertRemoteService {
    * @param request - Workspace, Session, and optional anchor identities.
    * @returns the updated Workspace projection.
    */
-  @Remote('insertSessionBefore')
+  @Remote({
+    resources: {
+      session: (request: WorkspaceInsertSessionBeforeRequest) => [
+        request.sessionId,
+        ...request.beforeSessionId === undefined ? [] : [request.beforeSessionId],
+      ],
+    },
+  })
   insertSessionBefore(request: WorkspaceInsertSessionBeforeRequest): Promise<WorkspaceValue> {
-    return this.commands.insertSessionBefore(request)
+    return this.commands.insertSessionBefore(request, this.visibility())
   }
 
   /**
@@ -158,7 +179,7 @@ export class WorkspaceController extends TypertRemoteService {
    */
   @Remote('archiveSession')
   archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue> {
-    return this.commands.archiveSession(request)
+    return this.commands.archiveSession(request, this.visibility())
   }
 
   /**
@@ -168,7 +189,7 @@ export class WorkspaceController extends TypertRemoteService {
    */
   @Remote('unarchiveSession')
   unarchiveSession(request: WorkspaceUnarchiveSessionRequest): Promise<WorkspaceArchiveValue> {
-    return this.commands.unarchiveSession(request)
+    return this.commands.unarchiveSession(request, this.visibility())
   }
 
   /**
@@ -178,7 +199,7 @@ export class WorkspaceController extends TypertRemoteService {
    */
   @Remote('pinSession')
   pinSession(request: WorkspacePinSessionRequest): Promise<WorkspacePinValue> {
-    return this.commands.pinSession(request)
+    return this.commands.pinSession(request, this.visibility())
   }
 
   /**
@@ -188,7 +209,16 @@ export class WorkspaceController extends TypertRemoteService {
    */
   @Remote('unpinSession')
   unpinSession(request: WorkspaceUnpinSessionRequest): Promise<WorkspacePinValue> {
-    return this.commands.unpinSession(request)
+    return this.commands.unpinSession(request, this.visibility())
+  }
+
+  /** Visibility of one call's response items, read from its Peer-bound access policy. */
+  private visibility(): WorkspaceVisibility {
+    const access = this.ctx.remoteAccess
+    return {
+      workspace: workspaceId => access.allows({ kind: 'workspace', id: workspaceId }),
+      session: sessionId => access.allows({ kind: 'session', id: sessionId }),
+    }
   }
 
   /**
@@ -211,11 +241,13 @@ export class WorkspaceController extends TypertRemoteService {
     /** Workspaces this generation has delivered and not yet removed. */
     const delivered = new Set<WorkspaceId>()
     /** The admitted part of `value`; it becomes the delivered set. */
+    const principal = principalOf(this.ctx.invocation)
     const filtered = (value: WorkspaceBaseline): WorkspaceBaseline => {
       const items = value.items.filter(item => visible(item.workspaceId))
       delivered.clear()
       for (const item of items) delivered.add(item.workspaceId)
       return {
+        ...(principal?.kind === 'user' ? { creationMode: 'allocated' as const } : {}),
         items: items.map(item => ({ ...item, sessionIds: sessions(item.sessionIds) })),
         archivedSessionIds: sessions(value.archivedSessionIds),
         pinnedSessionIds: sessions(value.pinnedSessionIds),

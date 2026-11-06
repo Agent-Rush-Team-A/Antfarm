@@ -873,7 +873,7 @@ resolveAgent(sessionId: SessionId): Promise<ApiSessionAgentResult>
 /**
  * Search visible Session content without resuming an Agent. A non-owner
  * receives only the hits whose Session `allows()` admits; `hasMore`
- * describes the bounded result before that filtering.
+ * describes the authorized result before the response limit.
  * @param request - literal message-content query.
  * @param signal - cancellation for list and search reads.
  * @returns authorized bounded Session search results.

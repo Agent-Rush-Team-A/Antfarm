@@ -18,6 +18,7 @@ import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import { buildForkSeed } from '@deepseek-ai/dsh-session/fork'
 import { SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
+import type { PrincipalMap } from '@deepseek-ai/dsh-typert-protocol'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
@@ -32,6 +33,7 @@ import {
   hasApiSessionSubagentOwner,
   type ApiSessionCreated,
 } from './agent.ts'
+import type {} from '@deepseek-ai/dsh-api-multiuser'
 import type {
   SessionAttachmentRequest,
   SessionAttachmentValue,
@@ -98,11 +100,33 @@ export class SessionCommandController {
    * Create one ordinary Session for a new conversation, reusing the named
    * blank Session while it is an unarchived member of the requested Workspace.
    * @param request - optional blank Session to reuse, location, and Agent preset.
+   * @param principal - authenticated account whose workspace must contain the Session.
    * @returns the created or reused Session identity and its preset when configured.
    */
-  async create(request: SessionCreateRequest): Promise<SessionCreateValue> {
+  async create(request: SessionCreateRequest, principal?: PrincipalMap['user']): Promise<SessionCreateValue> {
     if (request.workspaceId !== undefined && request.cwd !== undefined) {
       throw new RemoteError('gateway/bad-request', 'session.create accepts workspaceId or cwd, not both', {})
+    }
+    if (principal?.kind === 'user') {
+      if (request.cwd !== undefined) {
+        throw new RemoteError('gateway/bad-request', 'multiuser accounts cannot create a session from a directory', {})
+      }
+      if (request.workspaceId === undefined) {
+        throw new RemoteError('gateway/bad-request', 'multiuser session creation requires a workspaceId', {})
+      }
+      const multiuser = this.ctx.get('multiuser')
+      if (multiuser === undefined || !multiuser.ownsWorkspace(principal.userId, request.workspaceId)) {
+        throw new RemoteError('workspace/not-found', `workspace "${request.workspaceId}" not found`, {
+          workspaceId: request.workspaceId,
+        })
+      }
+      if (request.sessionId !== undefined
+        && (!this.ctx.workspaceRegistry.get(request.workspaceId)?.sessionIds.includes(request.sessionId)
+          || !multiuser.ownsSession(principal.userId, request.sessionId))) {
+        throw new RemoteError('session/not-found', `session "${request.sessionId}" is not reusable in this workspace`, {
+          sessionId: request.sessionId,
+        })
+      }
     }
     let workspace: Workspace | undefined
     if (request.workspaceId !== undefined) {
@@ -144,9 +168,10 @@ export class SessionCommandController {
   /**
    * Validate and record one Session model selection; save the default in the background.
    * @param request - Session identity and requested model selection.
+   * @param principal - caller identity recorded with the model selection.
    * @returns the normalized selection recorded for the Session, without waiting for default persistence.
    */
-  async selectModel(request: SessionSelectModelRequest): Promise<SessionSelectModelValue> {
+  async selectModel(request: SessionSelectModelRequest, principal?: PrincipalMap['user']): Promise<SessionSelectModelValue> {
     const agent = await this.resolveAgent(request.sessionId)
     return this.agents.serializeImageAdmission(agent, async () => {
       try {
@@ -160,11 +185,15 @@ export class SessionCommandController {
         }
         await this.ctx.llm.resolveCallConfig(selected)
         agent.model.select(selected)
-        void this.ctx.agentDefaultModel.saveSelection(selected).catch((error: unknown) => {
-          this.ctx.logger.warn(
-            `session-controller: model selection changed for the Session but the default was not saved: ${String(error)}`,
-          )
-        })
+        // A non-owner choice is Session-local: it must not change the default
+        // every other account receives on its next Session.
+        if (principal === undefined) {
+          void this.ctx.agentDefaultModel.saveSelection(selected).catch((error: unknown) => {
+            this.ctx.logger.warn(
+              `session-controller: model selection changed for the Session but the default was not saved: ${String(error)}`,
+            )
+          })
+        }
         return { selected: { ...selected } }
       } catch (error) {
         if (remoteErrorOf(error) !== undefined) throw error

@@ -318,7 +318,7 @@ Host service backing the generated `ctx.remote.workspace` namespace.
  * @param request - directory path to register.
  * @returns the Workspace and whether this call created it.
  */
-@Remote('create') create(request: WorkspaceCreateRequest): Promise<WorkspaceCreateValue>
+@Remote('create') async create(request: WorkspaceCreateRequest): Promise<WorkspaceCreateValue>
 
 /**
  * Initialize or reuse the default Workspace during first-use startup. The
@@ -349,14 +349,14 @@ Host service backing the generated `ctx.remote.workspace` namespace.
  * @param request - moved Workspace and optional anchor.
  * @returns the complete resulting Workspace order.
  */
-@Remote('insertBefore') insertBefore(request: WorkspaceInsertBeforeRequest): Promise<WorkspaceOrderValue>
+@Remote({ resources: { workspace: (request: WorkspaceInsertBeforeRequest) => [ request.workspaceId, ...request.beforeWorkspaceId === undefined ? [] : [request.beforeWorkspaceId], ], }, }) insertBefore(request: WorkspaceInsertBeforeRequest): Promise<WorkspaceOrderValue>
 
 /**
  * Move one accounted Session within a Workspace.
  * @param request - Workspace, Session, and optional anchor identities.
  * @returns the updated Workspace projection.
  */
-@Remote('insertSessionBefore') insertSessionBefore(request: WorkspaceInsertSessionBeforeRequest): Promise<WorkspaceValue>
+@Remote({ resources: { session: (request: WorkspaceInsertSessionBeforeRequest) => [ request.sessionId, ...request.beforeSessionId === undefined ? [] : [request.beforeSessionId], ], }, }) insertSessionBefore(request: WorkspaceInsertSessionBeforeRequest): Promise<WorkspaceValue>
 
 /**
  * Hide one known Session from Workspace grouping surfaces.

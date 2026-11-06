@@ -28,6 +28,7 @@
     "src/skill-catalog.ts"
   ],
   "references": [
+    { "path": "../multiuser/tsconfig.host.json" },
     {
       "path": "../gateway/tsconfig.host.json"
     },

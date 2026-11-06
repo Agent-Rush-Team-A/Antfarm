@@ -171,6 +171,30 @@ admitConnection(request: ConnectionTrustRequest): ConnectionAdmission
 authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean
 
 /**
+ * Admit one frontend index request and name the Peer its injected state
+ * speaks for. A refusal has already written its response through `response`.
+ * @param request - root or configured-index HTTP request.
+ * @param response - response owned when the result is not served.
+ * @returns the render Peer, or serve false after the refusal was written.
+ */
+admitIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): { readonly serve: boolean; readonly peer: PeerScope }
+
+/**
+ * Install the authentication provider of a multiuser composition. The
+ * caller owns the provider's lifetime; installing a second provider fails.
+ * @param provider - credential verification, Peer creation, and index admission.
+ * @returns disposer restoring Connection's deny-all multiuser state.
+ */
+installAdmissionProvider(provider: ConnectionAdmissionProvider): () => Promise<void>
+
+/**
+ * Apply only the Host/Origin fence to another public Web route.
+ * @param request - request headers from the HTTP or upgrade request.
+ * @returns whether the request authority and Origin are trusted.
+ */
+isTrusted(request: ConnectionTrustRequest): boolean
+
+/**
  * Add the fresh process token to an ordinary Web application URL.
  * @param baseUrl - clean application URL whose authority and mount are preserved.
  * @returns tokenized URL for initial login; a mount proxy strips its prefix before {@link authorizeIndex}.

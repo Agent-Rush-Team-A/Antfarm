@@ -22,6 +22,8 @@ This package lets users browse grouped or flat Session lists, choose a Workspace
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
 
+In multiuser deployments, **Add workspace** allocates a private directory on the server and opens its Session. It does not show a directory picker or automatically create the owner's default workspace.
+
 -----
 
 <a id="use-this-package"></a>
