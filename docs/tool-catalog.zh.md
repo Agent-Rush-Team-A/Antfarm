@@ -9,7 +9,7 @@
 
 英文源文件由系统**生成**，并通过 `pnpm run verify-tool-catalog`（`doc-sync`（文档同步门禁）的一部分）验证新鲜度；本中文文件作为经评审对侧通过双语配对维护。与 Cordis 目录（纯源码 AST 处理）不同，英文生成器会在真实上下文中**启动**每个工具插件并读取 `ctx.tools.schemas()`，因为工具 schema 无法通过静态分析完全确定，例如运行时展开的枚举、拼接的描述、由配置决定的名称以及使用原始 JSON Schema 的 MCP 工具。完整性守卫会 glob 匹配 `packages/*/tool-*`；如果生成器的启动 manifest（元数据清单）遗漏任何包，检查就会失败，因此新工具不会在无人察觉的情况下缺少文档。
 
-范围：`packages/*/tool-*` 下已发布的产品工具，每个工具均使用其**默认**配置启动；但如果某个 Config 字段是**必填项**且没有默认值，生成器就必须作出选择，对应包的说明会记录本页展示的是哪个分支。注册的工具**名称**可以是加载时配置，例如 `tool-subagent` 的 `toolName`，因此部署可能以不同名称或额外名称提供某个包；如果存在随产品发布的别名，对应包的说明会予以记录。`examples/` 中的演示工具（例如 `echo`）不在范围内，这与 Cordis 目录仅涵盖包的范围一致。
+范围：`packages/*/tool-*` 下的模型工具定义以及可选的 `harness-sandbox/bash` 入口，每个工具均使用其**默认**配置启动；但如果某个 Config 字段是**必填项**且没有默认值，生成器就必须作出选择，对应包的说明会记录本页展示的是哪个分支。注册的工具**名称**可以是加载时配置，例如 `tool-subagent` 的 `toolName`，因此部署可能以不同名称或额外名称提供某个包；如果存在随产品发布的别名，对应包的说明会予以记录。`examples/` 中的演示工具（例如 `echo`）不在范围内，这与 Cordis 目录仅涵盖包的范围一致。
 
 <a id="tool-package-map"></a>
 
@@ -19,6 +19,7 @@
 
 | 工具包 | 模型可见名称 | 依赖 | 写入／影响 | 随产品发布的别名 | 部署说明 |
 | --- | --- | --- | --- | --- | --- |
+| `@deepseek-ai/dsh-harness-sandbox/bash` | `bash` | `ctx.tools`, `ctx.multiuser`, `ctx.sandboxConversation`, `ctx.sandboxRunnerClient`, `ctx.workspaceSandbox` | `tool/call`, `tool/result` | - | 前台 Runner Bash 使用原消息许可和容器身份。workdir 限于 /workspace 内；超时默认为 30000 ms，上限为 60000 ms。后台、权限升级和管理参数均被拒绝。可选 Web overlay 只通过多用户 guard 接纳这个确切定义和原消息，其他工具仍被拒绝。 |
 | `@deepseek-ai/dsh-plugin-manager` | `plugin_manager` | `ctx.tools`, `ctx.pluginManager`, `ctx.sandboxPolicy` | `tool/call`, `tool/result`, `user/message` | - | - |
 | `@deepseek-ai/dsh-plugin-market` | `plugin_market` | `ctx.tools`, `ctx.pluginMarket` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-mcp-resources` | `list_mcp_resource_templates`, `list_mcp_resources`, `read_mcp_resource` | `ctx.tools`, `ctx.mcpResources` | `tool/call`, `tool/result` | - | - |
@@ -54,6 +55,46 @@
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`、`ctx.workflowEngine`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents the script children)` | `tool/call`、`tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-workspace-dependencies` | `load_workspace_dependencies` | `ctx.tools` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`、`web_search` | `ctx.tools`、`ctx.web`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可见 schema 在更换后端时保持稳定。 |
+
+<a id="deepseek-aidsh-harness-sandboxbash"></a>
+
+## `@deepseek-ai/dsh-harness-sandbox/bash`
+
+### `bash`
+
+执行前台 Bash 命令，返回 stdout、stderr 和退出状态。每次调用启动新的 Shell；使用 workdir 选择 /workspace 内的目录。输出可能被截断。参数中先提供 description，再提供 command。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "description": {
+      "type": "string",
+      "description": "Concise active-voice description of the command."
+    },
+    "command": {
+      "type": "string",
+      "description": "The bash command to execute."
+    },
+    "workdir": {
+      "type": "string",
+      "description": "Directory within /workspace. Omitted means /workspace."
+    },
+    "timeoutMs": {
+      "type": "integer",
+      "description": "Command deadline in milliseconds, 1–60000. Default 30000; the process is stopped on expiry."
+    }
+  },
+  "required": [
+    "description",
+    "command"
+  ]
+}
+```
+
+来源： [`packages/sandbox/harness-sandbox/src/bash.ts`](../packages/sandbox/harness-sandbox/src/bash.ts)
+
+前台 Runner Bash 使用原消息许可和容器身份。workdir 限于 /workspace 内；超时默认为 30000 ms，上限为 60000 ms。后台、权限升级和管理参数均被拒绝。可选 Web overlay 只通过多用户 guard 接纳这个确切定义和原消息，其他工具仍被拒绝。
 
 <a id="deepseek-aidsh-plugin-manager"></a>
 

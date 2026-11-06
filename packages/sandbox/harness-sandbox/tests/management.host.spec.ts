@@ -1,106 +1,11 @@
-/** Real login, durable ownership, workspace allocation, Gateway and local Runner HTTP. */
-
 import { randomUUID } from 'node:crypto'
-import { once } from 'node:events'
-import { mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises'
-import { createServer, type ServerResponse } from 'node:http'
-import { tmpdir } from 'node:os'
+import { readFile, rename, symlink, writeFile } from 'node:fs/promises'
+import type { ServerResponse } from 'node:http'
 import { basename, join } from 'node:path'
-import { Context } from '@deepseek-ai/cordis'
-import Storage from '@deepseek-ai/dsh-storage'
-import * as StorageJson from '@deepseek-ai/dsh-storage-json'
-import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
-import WorkspaceRegistry, { WorkspaceId } from '@deepseek-ai/dsh-workspace'
-import WorkspaceController from '@deepseek-ai/dsh-api-workspace-controller'
-import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
-import Gateway from '@deepseek-ai/dsh-api-gateway'
-import RemoteAccess from '@deepseek-ai/dsh-api-remote-access'
-import WebServer from '@deepseek-ai/dsh-host-webserver'
-import * as Connection from '@deepseek-ai/dsh-client-connection'
-import Multiuser from '@deepseek-ai/dsh-api-multiuser'
-import { expect, test, vi, onTestFinished } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import WorkspaceSandbox, { Config } from '../src/index.ts'
-
-const running = { state: 'running', containerId: 'a'.repeat(64) }
-interface Call { method: string | undefined; path: string | undefined; body: unknown }
-interface RpcResult { ok: boolean; value?: unknown; error?: { code: string; message: string; details: unknown } }
-
-async function fixture(mutationTimeoutMs = 1000) {
-  const home = await mkdtemp(join(await realpath(tmpdir()), 'dsh-management-'))
-  const workspaceRoot = join(home, 'workspaces')
-  const socketPath = process.platform === 'win32' ? `\\\\.\\pipe\\dsh-management-${randomUUID()}` : join(home, 'runner.sock')
-  const ctx = new Context()
-  const calls: Call[] = []
-  const control = { respond: (response: ServerResponse, method: string | undefined) => { response.end(JSON.stringify(method === 'DELETE' ? { state: 'closed' } : running)) } }
-  const server = createServer((request, response) => {
-    const chunks: Buffer[] = []
-    request.on('data', (chunk: Buffer) => { chunks.push(chunk) })
-    request.on('end', () => {
-      const body = Buffer.concat(chunks).toString()
-      const parsed: unknown = body === '' ? undefined : JSON.parse(body)
-      calls.push({ method: request.method, path: request.url, body: parsed })
-      control.respond(response, request.method)
-    })
-  })
-  onTestFinished(async () => {
-    vi.restoreAllMocks()
-    await ctx.fiber.dispose()
-    if (server.listening) await new Promise<void>((resolve, reject) => {
-      server.close((error) => { if (error) reject(error); else resolve() })
-      server.closeAllConnections()
-    })
-    await rm(home, { recursive: true, force: true })
-  })
-  await once(server.listen(socketPath), 'listening')
-  await ctx.plugin(Storage)
-  await ctx.plugin(StorageJson, { root: join(home, 'storage') })
-  await ctx.plugin(StorageDomain, { backend: 'json' })
-  // Session event bodies and owner credentials are outside these account lifecycle operations.
-  ctx.provide('sessionPersistence', { list: async () => [], open: () => { throw new Error('unused') }, stat: () => { throw new Error('unused') } } as never)
-  let credentialRecord: unknown
-  ctx.provide('credentials', { readRecord: async () => credentialRecord, modifyRecord: async (_key: unknown, mutate: (current: unknown) => Promise<unknown>) => { credentialRecord = await mutate(credentialRecord); return credentialRecord } } as never)
-  await ctx.plugin(WorkspaceRegistry)
-  await ctx.plugin(TypertRegistry)
-  await ctx.plugin(RemoteAccess)
-  await ctx.plugin(Gateway)
-  await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 })
-  await ctx.plugin(Connection, { multiuser: true })
-  await ctx.plugin(WorkspaceController, {})
-  await ctx.plugin(Multiuser, { workspaceRoot })
-  const sandboxFiber = ctx.plugin(WorkspaceSandbox, { socketPath, workspaceRoot, mutationTimeoutMs, queryTimeoutMs: 1000 })
-  await sandboxFiber
-  const base = `http://127.0.0.1:${String(ctx.webServer.port)}`
-  async function raw(cookie: string, method: string, args: unknown, origin = base) {
-    return fetch(`${base}/api/${method}`, { method: 'POST', headers: { 'content-type': 'application/json', origin, cookie },
-      body: JSON.stringify({ type: 'client-request', rpcId: randomUUID(), method, payload: { args } }) })
-  }
-  async function rpc(cookie: string, operation: string, request: unknown): Promise<RpcResult> {
-    const response = await raw(cookie, `workspaceSandbox/${operation}`, { request })
-    expect(response.status).toBe(200)
-    return (await response.json() as { result: RpcResult }).result
-  }
-  async function remove(cookie: string, workspaceId: string): Promise<RpcResult> {
-    const response = await raw(cookie, 'workspace/delete', { request: { workspaceId } })
-    expect(response.status).toBe(200)
-    return (await response.json() as { result: RpcResult }).result
-  }
-  async function account(username: string) {
-    const password = randomUUID()
-    const user = await ctx.multiuser.provisionUser(username, password)
-    const response = await fetch(`${base}/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json', origin: base }, body: JSON.stringify({ username, password }) })
-    expect(response.status).toBe(200)
-    const cookie = response.headers.getSetCookie()[0]!.split(';', 1)[0]!
-    const created = await raw(cookie, 'workspace/create', { request: { title: username } })
-    const result = (await created.json() as { result: RpcResult }).result
-    expect(result.ok).toBe(true)
-    const id = WorkspaceId((result.value as { workspace: { workspaceId: string } }).workspace.workspaceId)
-    return { user, cookie, id, workspace: ctx.workspaceRegistry.get(id)! }
-  }
-  const alice = await account('alice')
-  const bob = await account('bob')
-  return { ctx, home, workspaceRoot, socketPath, server, control, calls, sandboxFiber, base, raw, rpc, remove, alice, bob }
-}
-
+import type {} from '../src/lifecycle.ts'
+import { fixture, running } from './fixtures/management.ts'
 test('two real logins manage their own allocated directories and cross-user operations never reach Runner', async () => {
   const f = await fixture()
   expect(basename(f.alice.workspace.path)).not.toBe(f.alice.id)
@@ -170,7 +75,7 @@ test.each(['sandbox_capacity', 'sandbox_not_ready', 'sandbox_closing', 'sandbox_
   expect(f.calls).toHaveLength(1)
 })
 
-test.each(['timeout', 'invalid', 'incomplete'])('unconfirmed %s modification is never replayed or compensated and fresh GET can observe completion', async (kind) => {
+test.each(['timeout', 'invalid', 'incomplete'])('unconfirmed %s modification keeps reopening blocked even after a later DELETE', async (kind) => {
   const f = await fixture(100)
   f.control.respond = (response) => {
     if (kind === 'invalid') response.end('{"state":"closed"}')
@@ -179,25 +84,31 @@ test.each(['timeout', 'invalid', 'incomplete'])('unconfirmed %s modification is 
   expect(await f.rpc(f.alice.cookie, 'open', { workspaceId: f.alice.id })).toMatchObject({ ok: false, error: { details: { outcomeUnknown: true } } })
   expect(f.calls.map(call => call.method)).toEqual(['PUT'])
   f.control.respond = (response) => { response.end(JSON.stringify(running)) }
-  expect(await f.rpc(f.alice.cookie, 'status', { workspaceId: f.alice.id })).toEqual({ ok: true, value: { workspaceId: f.alice.id, state: 'running' } })
-  expect(f.calls.map(call => call.method)).toEqual(['PUT', 'GET'])
+  expect(await f.rpc(f.alice.cookie, 'status', { workspaceId: f.alice.id })).toEqual({ ok: true, value: { workspaceId: f.alice.id, state: 'closing' } })
+  f.control.respond = (response) => { response.end(JSON.stringify({ state: 'closed' })) }
+  expect(await f.rpc(f.alice.cookie, 'close', { workspaceId: f.alice.id })).toMatchObject({ ok: false, error: { details: { reason: 'sandbox_outcome_unknown', outcomeUnknown: true } } })
+  expect(await f.rpc(f.alice.cookie, 'open', { workspaceId: f.alice.id })).toMatchObject({ ok: false, error: { details: { reason: 'sandbox_closing' } } })
+  expect(f.calls.map(call => call.method)).toEqual(['PUT', 'DELETE'])
 })
 
-test('concurrent open and close reach Runner immediately; Harness owns no operation queue or state cache', async () => {
+test('close drains the admitted PUT and refuses immediate reopening instead of queuing it', async () => {
   const f = await fixture()
   const received = Promise.withResolvers<undefined>()
   const pending: Array<{ response: ServerResponse; method: string | undefined }> = []
-  f.control.respond = (response, method) => { pending.push({ response, method }); if (pending.length === 3) received.resolve(undefined) }
-  const results = ['open', 'close', 'open'].map(operation => f.rpc(f.alice.cookie, operation, { workspaceId: f.alice.id }))
-  await received.promise
-  expect(f.calls.map(call => call.method).sort()).toEqual(['DELETE', 'PUT', 'PUT'])
-  let opened = false
-  for (const { response, method } of pending) {
-    if (method === 'DELETE') response.end(JSON.stringify({ state: 'closed' }))
-    else if (!opened) { opened = true; response.end(JSON.stringify(running)) }
-    else response.writeHead(409).end(JSON.stringify({ error: 'sandbox_closing' }))
+  f.control.respond = (response, method) => {
+    pending.push({ response, method })
+    if (method === 'PUT') received.resolve(undefined)
+    else response.end(JSON.stringify({ state: 'closed' }))
   }
-  expect((await Promise.all(results)).filter(result => result.ok)).toHaveLength(2)
+  const open = f.ctx.workspaceSandbox.openForUser(f.alice.user.userId, f.alice.id)
+  await received.promise
+  const close = f.ctx.workspaceSandbox.closeForUser(f.alice.user.userId, f.alice.id)
+  await expect(f.ctx.workspaceSandbox.openForUser(f.alice.user.userId, f.alice.id)).rejects.toMatchObject({ details: { reason: 'sandbox_closing' } })
+  expect(f.calls.map(call => call.method)).toEqual(['PUT'])
+  pending[0]!.response.end(JSON.stringify(running))
+  await expect(open).resolves.toEqual(running)
+  await expect(close).resolves.toEqual({ state: 'closed' })
+  expect(f.calls.map(call => call.method)).toEqual(['PUT', 'DELETE'])
 })
 
 test('unload cancels waits, unregisters endpoints and sends no DELETE', async () => {
@@ -211,6 +122,15 @@ test('unload cancels waits, unregisters endpoints and sends no DELETE', async ()
   expect(f.calls.map(call => call.method)).toEqual(['PUT'])
   expect(f.ctx.get('workspaceSandbox')).toBeUndefined()
   expect((await f.raw(f.alice.cookie, 'workspaceSandbox/status', { request: { workspaceId: f.alice.id } })).status).toBe(404)
+})
+
+test('close revokes an opening before directory validation can issue its PUT', async () => {
+  const f = await fixture()
+  const open = f.ctx.workspaceSandbox.openForUser(f.alice.user.userId, f.alice.id)
+  const result = Promise.allSettled([open])
+  await f.ctx.workspaceSandbox.closeForUser(f.alice.user.userId, f.alice.id)
+  expect((await result)[0]?.status).toBe('rejected')
+  expect(f.calls.map(call => call.method)).toEqual(['DELETE'])
 })
 
 test('configuration has no implicit workspace root or Runner address', () => {
@@ -375,4 +295,17 @@ test('deleting an unowned backend registration does not depend on Runner', async
   const workspace = await f.ctx.workspaceRegistry.create(f.home)
   await expect(f.ctx.workspaceRegistry.delete(workspace.id)).resolves.toBe(true)
   expect(f.calls).toEqual([])
+})
+
+test.each(['replaced', 'starting', 'cleanup_required'])('execution cleanup refuses an unproven original generation: %s', async (state) => {
+  const f = await fixture()
+  const original = await f.ctx.workspaceSandbox.openForUser(f.alice.user.userId, f.alice.id)
+  const version = f.ctx.workspaceSandboxState.capture(f.alice.id).version
+  f.control.respond = (response) => {
+    response.end(JSON.stringify(state === 'replaced' ? { state: 'running', containerId: 'b'.repeat(64) } : { state }))
+  }
+  await expect(f.ctx.workspaceSandbox.closeForUser(f.alice.user.userId, f.alice.id, { containerId: original.containerId, version }))
+    .rejects.toMatchObject({ code: 'sandbox/failed', details: { reason: 'sandbox_workspace_conflict' } })
+  expect(f.calls.map(call => call.method)).toEqual(['PUT', 'GET'])
+  expect(await f.ctx.workspaceSandbox.statusForUser(f.alice.user.userId, f.alice.id)).toEqual({ state: 'closing' })
 })

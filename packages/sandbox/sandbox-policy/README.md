@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to apply one file-effect policy to every confined bash, filesystem, and terminal call. Deployments choose a default mode and fallback workspace root, while each session can switch modes independently. Session choices survive restart, and all enforcing capabilities use the same mode and workspace for a call. Before each model request, the model receives the effective policy and workspace without an inventory of mounted capabilities.
+Use this package to apply one file-effect policy to every confined bash, filesystem, and terminal call. Deployments choose a default mode and fallback workspace root, while each session can switch modes independently. Session choices survive restart, and all enforcing capabilities use the same mode and workspace for a call. By default, the model receives the effective policy and workspace before each request, without an inventory of mounted capabilities.
 
 ## Table of Contents
 
@@ -44,6 +44,7 @@ Load the package with a default mode; the fail-safe default is `read-only`, and 
 
 | Field | Default | Meaning |
 |---|---|---|
+| `modelContext` | `true` | Include the host file policy in model context; set false when model tools use a separate execution world. Enforcement and Session policy records remain unchanged |
 | `mode` | `read-only` | The deployment default mode a session starts from, validated at load |
 | `workspaceRoot` | `process.cwd()` | Absolute fallback root for agentless calls or sessions without a cwd; relative values fail at load. Normal agent calls use the session's immutable cwd |
 | `additionalWritableRoots` | `[]` | Explicit physical absolute directories also writable under `workspace-write`; other confined modes grant no access to them |
@@ -111,7 +112,7 @@ Start with the subsystem reference for the shared vocabulary, then the seam cont
 
 #### What the model sees
 
-One `sandbox:policy` contribution in the current runtime-context snapshot for every agent session. It does not enumerate mounted capabilities. Tool plugins retain operation and escalation guidance, approval policy contributes separately to the same snapshot, and plan guidance remains `dsh-plan-mode`'s system section.
+With `modelContext: true`, one `sandbox:policy` contribution appears in each agent session's runtime-context snapshot. Setting false omits this contribution without changing enforcement. It does not enumerate mounted capabilities. Tool plugins retain operation and escalation guidance, approval policy contributes separately to the same snapshot, and plan guidance remains `dsh-plan-mode`'s system section.
 
 ##### Read-only
 
@@ -139,7 +140,7 @@ Current DSH file policy: danger-full-access. The DSH file sandbox does not restr
 
 #### Token effect
 
-One concise durable context message on the first request and each effective policy change; unchanged requests add nothing. `workspace-write` carries the recorded session workspace path and any explicit additional directories; platform-specific temporary paths are summarized without adding host-dependent bytes.
+When model context is enabled, one concise durable context message appears on the first request and each effective policy change; unchanged requests add nothing. `workspace-write` carries the recorded session workspace path and any explicit additional directories; platform-specific temporary paths are summarized without adding host-dependent bytes.
 
 #### KV Cache effect
 

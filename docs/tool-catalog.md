@@ -7,7 +7,7 @@ Every model-facing tool a shipped plugin contributes to `ctx.tools`: the `name`,
 
 This file is GENERATED and verified fresh by `pnpm run verify-tool-catalog` (part of `doc-sync`) — do not edit it by hand. Unlike the cordis catalog (a pure source-AST pass), this generator BOOTS each tool plugin on a real context and reads `ctx.tools.schemas()`, because a tool schema is not statically knowable (runtime-spread enums, concatenated descriptions, config-driven names, raw-JSON-Schema MCP tools). A completeness guard globs `packages/*/tool-*` and fails if any package is missing from the generator's boot manifest, so a new tool cannot be silently undocumented.
 
-Scope: shipped product tools under `packages/*/tool-*`, each booted with its DEFAULT config, except where a Config field is REQUIRED with no default — there the generator must choose, and the per-package note records which branch this page shows. The registered tool NAME can be a load-time config (e.g. `tool-subagent`'s `toolName`), so a deployment may expose a package under a different or additional name — a per-package note records those shipped aliases where they exist. The `examples/` demo tools (e.g. `echo`) are excluded, matching the cordis catalog's packages-only scope.
+Scope: model tool definitions under `packages/*/tool-*` and the optional `harness-sandbox/bash` entry, each booted with its DEFAULT config, except where a Config field is REQUIRED with no default — there the generator must choose, and the per-package note records which branch this page shows. The registered tool NAME can be a load-time config (e.g. `tool-subagent`'s `toolName`), so a deployment may expose a package under a different or additional name — a per-package note records those shipped aliases where they exist. The `examples/` demo tools (e.g. `echo`) are excluded, matching the cordis catalog's packages-only scope.
 
 ## Tool Package Map
 
@@ -15,6 +15,7 @@ This table connects model-visible tool names to the plugin package and service s
 
 | Tool package | Model-visible names | Requires | Writes / affects | Shipped aliases | Deployment note |
 | --- | --- | --- | --- | --- | --- |
+| `@deepseek-ai/dsh-harness-sandbox/bash` | `bash` | `ctx.tools`, `ctx.multiuser`, `ctx.sandboxConversation`, `ctx.sandboxRunnerClient`, `ctx.workspaceSandbox` | `tool/call`, `tool/result` | - | Foreground Runner Bash uses original message permission and container identity. Workdir stays inside /workspace; timeout defaults to 30000 ms and is capped at 60000 ms. Background, escalation and management arguments are rejected. The optional Web overlay admits only this exact definition and original message through the multiuser guard; other tools remain denied. |
 | `@deepseek-ai/dsh-plugin-manager` | `plugin_manager` | `ctx.tools`, `ctx.pluginManager`, `ctx.sandboxPolicy` | `tool/call`, `tool/result`, `user/message` | - | - |
 | `@deepseek-ai/dsh-plugin-market` | `plugin_market` | `ctx.tools`, `ctx.pluginMarket` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-mcp-resources` | `list_mcp_resource_templates`, `list_mcp_resources`, `read_mcp_resource` | `ctx.tools`, `ctx.mcpResources` | `tool/call`, `tool/result` | - | - |
@@ -50,6 +51,46 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-workspace-dependencies` | `load_workspace_dependencies` | `ctx.tools` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
+
+<a id="deepseek-aidsh-harness-sandboxbash"></a>
+
+## `@deepseek-ai/dsh-harness-sandbox/bash`
+
+### `bash`
+
+Execute a foreground bash command and return stdout, stderr and exit status. Each call starts a fresh shell; use workdir to choose a directory within /workspace. Output may be truncated. Provide description before command.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "description": {
+      "type": "string",
+      "description": "Concise active-voice description of the command."
+    },
+    "command": {
+      "type": "string",
+      "description": "The bash command to execute."
+    },
+    "workdir": {
+      "type": "string",
+      "description": "Directory within /workspace. Omitted means /workspace."
+    },
+    "timeoutMs": {
+      "type": "integer",
+      "description": "Command deadline in milliseconds, 1–60000. Default 30000; the process is stopped on expiry."
+    }
+  },
+  "required": [
+    "description",
+    "command"
+  ]
+}
+```
+
+Source: [`packages/sandbox/harness-sandbox/src/bash.ts`](../packages/sandbox/harness-sandbox/src/bash.ts)
+
+Foreground Runner Bash uses original message permission and container identity. Workdir stays inside /workspace; timeout defaults to 30000 ms and is capped at 60000 ms. Background, escalation and management arguments are rejected. The optional Web overlay admits only this exact definition and original message through the multiuser guard; other tools remain denied.
 
 <a id="deepseek-aidsh-plugin-manager"></a>
 

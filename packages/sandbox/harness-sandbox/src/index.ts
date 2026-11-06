@@ -11,11 +11,22 @@ import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import { z } from 'zod'
 import { RunnerConfig } from './config.ts'
 import SandboxRunnerClient from './transport.ts'
+import WorkspaceSandboxState from './lifecycle.ts'
 import { RunnerRequestError, RunnerResponseError, type RunnerRunningSandbox, type RunnerClosedSandbox, type RunnerSandboxStatus } from './runner-client.ts'
-import type { SandboxRequest, SandboxValue, SandboxFailureReason } from './types.ts'
+import type { SandboxRequest, SandboxValue, SandboxFailureReason, SandboxActivity } from './types.ts'
 
 export type * from './types.ts'
 export type { RunnerRunningSandbox, RunnerClosedSandbox, RunnerSandboxStatus, SandboxContainerId } from './runner-client.ts'
+export { RunnerExecutionError, RunnerRequestError, RunnerResponseError } from './runner-client.ts'
+export type { default as SandboxRunnerClient } from './transport.ts'
+export type { default as SandboxConversation, SandboxExecutionPermit } from './conversation.ts'
+
+/** Original execution generation required when cleanup requests a workspace close. */
+export interface SandboxCloseTarget {
+  readonly containerId: import('./runner-client.ts').SandboxContainerId
+  readonly version: number
+}
+export type { RunnerCancellationResult, RunnerExecutionFailure, RunnerExecutionIdentity, RunnerExecutionRequest, RunnerExecutionResult, RunnerExecutionId } from './execution.ts'
 
 /** Deployment-trusted Runner settings and the existing multiuser workspace root. */
 export interface Config extends RunnerConfig {
@@ -58,7 +69,9 @@ export default class WorkspaceSandbox extends TypertRemoteService {
   private readonly transportFiber
   private client!: SandboxRunnerClient
   private readonly deleting = new Map<WorkspaceId, Promise<boolean>>()
-  private readonly opening = new Set<{ readonly workspaceId: WorkspaceId }>()
+  private state!: WorkspaceSandboxState
+  private accepting = false
+  private readonly owner = Symbol('workspace-sandbox')
 
   /** @param ctx - Native multiuser Harness context. @param config - Trusted deployment configuration. */
   constructor(ctx: Context, config: Config) {
@@ -82,10 +95,23 @@ export default class WorkspaceSandbox extends TypertRemoteService {
   }
 
   async [Service.init](): Promise<void> {
+    let state = this.ctx.get('workspaceSandboxState')
+    if (state === undefined) {
+      await this.ctx.root.plugin(WorkspaceSandboxState)
+      state = this.ctx.get('workspaceSandboxState')
+    }
+    if (state === undefined) throw new Error('Workspace sandbox state did not load')
+    this.state = state
     await this.transportFiber
     const client = this.ctx.get('sandboxRunnerClient')
     if (!client) throw new Error('Sandbox Runner transport did not load')
     this.client = client
+    this.state.attach(this.owner)
+    this.accepting = true
+    this.ctx.effect(() => () => {
+      this.accepting = false
+      this.state.detach(this.owner)
+    })
   }
 
   /**
@@ -132,37 +158,68 @@ export default class WorkspaceSandbox extends TypertRemoteService {
    */
   async openForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerRunningSandbox> {
     this.authorize(userId, workspaceId, 'open')
-    const request = { workspaceId }
-    this.opening.add(request)
-    try {
-      return await this.runner(async () => {
-        const path = await this.directory(workspaceId)
-        this.authorize(userId, workspaceId, 'open')
-        return this.client.open(workspaceId, path)
-      })
-    } finally {
-      this.opening.delete(request)
-    }
+    this.available()
+    return this.state.open(workspaceId, epoch => this.runner(async () => {
+      this.state.check(workspaceId, epoch)
+      const path = await this.directory(workspaceId)
+      this.authorize(userId, workspaceId, 'open')
+      this.available()
+      this.state.check(workspaceId, epoch)
+      return this.client.open(workspaceId, path)
+    }))
   }
 
   /**
    * Observe a sandbox for an authenticated backend initiator.
    * @param userId - Authenticated initiating user.
    * @param workspaceId - Native workspace id.
-   * @returns Fresh Runner state with internal container identity.
+   * @returns Local closing barrier, or fresh Runner state with internal container identity.
    */
-  statusForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerSandboxStatus> {
-    return this.perform(userId, workspaceId, 'status', () => this.client.status(workspaceId))
+  async statusForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerSandboxStatus> {
+    this.authorize(userId, workspaceId, 'status')
+    this.available()
+    if (this.state.closing(workspaceId)) return Promise.resolve({ state: 'closing' })
+    return this.runner(() => this.client.status(workspaceId))
+  }
+
+  /**
+   * Inspect local work before an authorized idle-reclamation decision; does not query Runner or close anything.
+   * @param userId - Authenticated initiating user.
+   * @param workspaceId - Native workspace id.
+   * @returns Outstanding input, openings, executions and closure; unavailable management throws rather than reporting idle.
+   */
+  activityForUser(userId: UserId, workspaceId: WorkspaceId): SandboxActivity {
+    this.authorize(userId, workspaceId, 'status')
+    this.available()
+    return this.state.activity(workspaceId)
   }
 
   /**
    * Ends all commands in this container without deleting workspace files or sessions.
    * @param userId - Authenticated initiating user.
    * @param workspaceId - Native workspace id.
+   * @param target - Optional original execution generation; stale cleanup cannot close a newer generation.
    * @returns Confirmed container absence.
    */
-  closeForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerClosedSandbox> {
-    return this.perform(userId, workspaceId, 'close', () => this.client.close(workspaceId))
+  async closeForUser(userId: UserId, workspaceId: WorkspaceId, target?: SandboxCloseTarget): Promise<RunnerClosedSandbox> {
+    this.authorize(userId, workspaceId, 'close')
+    this.available()
+    if (target !== undefined && this.state.capture(workspaceId).version !== target.version) {
+      throw new RemoteError('gateway/cancelled', 'Original sandbox generation was revoked', {})
+    }
+    return this.state.close(workspaceId, async () => {
+      this.available()
+      if (target !== undefined) {
+        const current = await this.runner(() => this.client.status(workspaceId))
+        if (current.state === 'closed') return current
+        if (current.state !== 'running' || current.containerId !== target.containerId) {
+          throw new RemoteError('sandbox/failed', 'Original sandbox generation is unavailable', {
+            reason: 'sandbox_workspace_conflict', outcomeUnknown: false,
+          })
+        }
+      }
+      return this.runner(() => this.client.close(workspaceId))
+    })
   }
 
   private parse(request: SandboxRequest): WorkspaceId {
@@ -209,9 +266,13 @@ export default class WorkspaceSandbox extends TypertRemoteService {
   private beforeDelete(workspaceId: WorkspaceId, next: () => Promise<boolean>): Promise<boolean> {
     if (this.ctx.multiuser.ownerOfWorkspace(workspaceId) === undefined) return next()
     const deletion = Promise.resolve().then(async () => {
-      if ([...this.opening].some(request => request.workspaceId === workspaceId)) this.activeSandbox(workspaceId, 'starting')
+      this.available()
+      const blocked = this.state.deletionBlock(workspaceId)
+      if (blocked !== undefined) this.activeSandbox(workspaceId, blocked)
       const result = await this.runner(() => this.client.status(workspaceId))
       if (result.state !== 'closed') this.activeSandbox(workspaceId, result.state)
+      const changed = this.state.deletionBlock(workspaceId)
+      if (changed !== undefined) this.activeSandbox(workspaceId, changed)
       return next()
     }).finally(() => { this.deleting.delete(workspaceId) })
     this.deleting.set(workspaceId, deletion)
@@ -222,9 +283,10 @@ export default class WorkspaceSandbox extends TypertRemoteService {
     throw new RemoteError('workspace/sandbox-active', 'Close the workspace sandbox before deleting the workspace', { workspaceId, state })
   }
 
-  private async perform<T>(userId: UserId, workspaceId: WorkspaceId, operation: string, invoke: () => Promise<T>): Promise<T> {
-    this.authorize(userId, workspaceId, operation)
-    return this.runner(invoke)
+  private available(): void {
+    if (!this.accepting || !this.state.current(this.owner)) {
+      throw new RemoteError('sandbox/failed', reasons.runner_unavailable, { reason: 'runner_unavailable', outcomeUnknown: false })
+    }
   }
 
   private async runner<T>(invoke: () => Promise<T>): Promise<T> {

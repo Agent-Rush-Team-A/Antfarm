@@ -1,0 +1,34 @@
+{
+  "initial": [
+    {
+      "name": "bash",
+      "description": "Execute a foreground bash command and return stdout, stderr and exit status. Each call starts a fresh shell; use workdir to choose a directory within /workspace. Output may be truncated. Provide description before command.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "Concise active-voice description of the command."
+          },
+          "command": {
+            "type": "string",
+            "description": "The bash command to execute."
+          },
+          "workdir": {
+            "type": "string",
+            "description": "Directory within /workspace. Omitted means /workspace."
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "description": "Command deadline in milliseconds, 1–60000. Default 30000; the process is stopped on expiry."
+          }
+        },
+        "required": [
+          "description",
+          "command"
+        ]
+      }
+    }
+  ],
+  "changes": []
+}

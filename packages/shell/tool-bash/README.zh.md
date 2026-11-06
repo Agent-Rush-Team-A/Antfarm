@@ -27,6 +27,8 @@ kind: "package-reference"
 
 新命令从 Session 的当前工作目录启动。相对 `workdir` 从该目录解析；单次调用的覆盖值与后台任务不会改变该目录。
 
+`@deepseek-ai/dsh-tool-bash/render` 还导出纯输出展示函数。`renderCommandOutput` 接收已知保留的 stdout/stderr 和截断事实，无需编造信号或进程字段。此入口不注册工具或 Shell 提供方。
+
 在 agent 需要运行 bash 命令的任何组合中加载本插件：一旦挂载执行器提供方与 `dsh-shell-env` 注册表，它就注册 `bash` 工具，并在 `tools`、`shell`、`systemPrompt` 与 `shellEnv` 服务就绪之前保持等待。
 
 ### 最小配置

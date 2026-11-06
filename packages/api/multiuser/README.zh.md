@@ -31,6 +31,8 @@ kind: "package-reference"
 
 服务注册 `user` Remote 访问策略。global role 只开放列表、follow、受控工作区创建和模型目录调用。每个自有工作区贡献一个 workspace grant，工作区名下每个 Session 贡献一个 session grant。访问不属于该账号的资源时，方法在派发前被拒绝；工作区和 Session 读取沿用现有控制器中的 `remoteAccess.allows()` 过滤；`workspace/follow` 同时允许读取自有工作区及其 Session 成员关系；`session/create` 允许复用自有工作区内的空 Session。
 
+工具执行默认拒绝，包括 preset 的贡献。可信隔离实现可在自己的 fiber 内调用 `registerIsolatedTool(definition, authorize)`。例外要求当前步骤 `toolSet` 中仍有效的确切定义、根调用及提供方的同步授权；仅有工具名不授予权限。卸载会删除例外，其他 Tools guard 仍可拒绝。[Runner Bash 实现](../../sandbox/harness-sandbox/README.zh.md#runner-bash)还会在工具体内检查原消息归属和取消状态。
+
 <a id="routes"></a>
 ## 路由
 
@@ -100,7 +102,7 @@ pnpm exec tsx scripts/multiuser-provision.ts --storage-root "$DSH_HOME/storages"
 
 - 普通用户仍不能访问旧版文件、附件、导出、终端、设置和精确 Fetch 路由。显式挂载的工作区上传服务实现自己的归属检查。
 - 普通用户不能修改全局设置或默认模型选择。
-- 进程级沙箱隔离仍属于独立的 Docker/runner 任务。本服务拒绝所有工具执行，包括会话预设加载的工具，直到该集成完成。
+- 账号认证不提供进程隔离。只有登记的隔离实现能获得工具执行例外；普通宿主工具仍被拒绝。
 - 自助注册、密码找回、OAuth/OIDC、共享和用户 API key 不在本任务范围。
 - 浏览器验收使用 `apps/web/tests/multiuser.e2e.ts` 中的真实 Web Loader 组合；后端测试覆盖登录生命周期、持久化归属和派发前拒绝。
 

@@ -51,6 +51,8 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
 export interface Config {
   /** Absolute execution-world fallback directory; omitted values use the launch directory. */
   defaultDirectory?: string
+  /** Fixed model-facing directory; backend paths and durable directory events remain unchanged. */
+  modelDirectory?: string
 }
 
 /** One owner for each Session's effective directory and its model-visible changes. */
@@ -59,6 +61,7 @@ export class WorkingDirectoryService extends Service {
 
   static Config: z<Config> = z.object({
     defaultDirectory: z.string(),
+    modelDirectory: z.string(),
   })
 
   /** Absolute deployment fallback for Sessions with no recorded original directory. */
@@ -69,10 +72,12 @@ export class WorkingDirectoryService extends Service {
 
   private workingDirectoryProjectionHandle!: ProjectionHandle<string | null>
 
-  constructor(ctx: Context, config: Config) {
+  constructor(ctx: Context, private readonly config: Config) {
     super(ctx, 'workingDirectory')
     const directory = config.defaultDirectory ?? process.cwd()
     if (!isAbsolute(directory)) throw new Error('working-directory: defaultDirectory must be absolute')
+    if (config.modelDirectory !== undefined && (!config.modelDirectory.trim() || !config.modelDirectory.isWellFormed()
+      || config.modelDirectory.includes('\0'))) throw new Error('working-directory: modelDirectory must be non-empty text')
     this.defaultDirectory = directory
   }
 
@@ -170,7 +175,7 @@ export class WorkingDirectoryService extends Service {
   }
 
   private contextText(session: Session): string {
-    return `Current working directory: ${JSON.stringify(this.get(session))}.`
+    return `Current working directory: ${JSON.stringify(this.config.modelDirectory ?? this.get(session))}.`
   }
 
   private async directory(path: string, cwd: string, signal: AbortSignal): Promise<string> {
@@ -189,6 +194,7 @@ export class WorkingDirectoryService extends Service {
     const previous = this.get(agent.session)
     if (previous === directory) return
     agent.session.append('working-directory/change', { cwd: directory })
+    if (this.config.modelDirectory !== undefined) return
     const notice = createUserMessage({
       content: [{
         type: 'text',

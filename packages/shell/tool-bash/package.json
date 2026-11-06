@@ -14,6 +14,10 @@
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "exports": {
+    "./render": {
+      "types": "./lib/types/render.d.ts",
+      "default": "./lib/render.js"
+    },
     ".": {
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
@@ -25,6 +29,7 @@
   "files": [
     "locale/*.json",
     "lib/index.js",
+    "lib/render.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",

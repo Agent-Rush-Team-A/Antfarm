@@ -525,6 +525,15 @@ Account and ownership service installed by the multiuser composition.
 
 ```ts cordis-catalog
 /**
+ * Register an isolated implementation's exception to the default execution denial.
+ * Only the exact live definition in an admitted step may use it; nested dispatch stays denied.
+ * @param definition - Tool whose provider owns isolation and validates the original initiator.
+ * @param authorize - Synchronous per-call permission check; false retains the default denial.
+ * @returns Caller-owned disposer removing this exception, also invoked on plugin unload.
+ */
+registerIsolatedTool(definition: ToolDefinition, authorize: (execution: Readonly<ToolExecution>) => boolean): () => void
+
+/**
  * Create one account through an explicit provisioning step. Existing names
  * are never overwritten and passwords are never reset implicitly.
  * @param username - display name users type at login.
@@ -636,7 +645,7 @@ async forgetWorkspace(workspaceId: WorkspaceId): Promise<void>
 ownerOfWorkspace(workspaceId: WorkspaceId): string | undefined
 ```
 
-Types: [SessionId](core.md) · [Workspace](workspace.md) · [WorkspaceId](workspace.md)
+Types: [SessionId](core.md) · [ToolDefinition](tools.md) · [ToolExecution](tools.md) · [Workspace](workspace.md) · [WorkspaceId](workspace.md)
 
 Source: [`packages/api/multiuser/src/service.ts`](../../packages/api/multiuser/src/service.ts)
 

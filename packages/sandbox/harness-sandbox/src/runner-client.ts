@@ -1,4 +1,4 @@
-/** Local HTTP client for the Runner lifecycle protocol; never connects to Docker. */
+/** Local HTTP client for Runner lifecycle and execution; never connects to Docker. */
 
 import { request, type ClientRequest, type IncomingMessage } from 'node:http'
 import { isAbsolute } from 'node:path'
@@ -6,6 +6,8 @@ import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import { z } from 'zod'
 import type { ResolvedConfig } from './config.ts'
+import { cancellationResult, executionFailure, executionFailureCode, executionIdentity, executionRequest, executionResult } from './execution.ts'
+import type { RunnerCancellationResult, RunnerExecutionFailure, RunnerExecutionFailureCode, RunnerExecutionIdentity, RunnerExecutionRequest, RunnerExecutionResult } from './execution.ts'
 
 /** Full container identity returned by the Runner, not a browser-supplied execution target. */
 export type SandboxContainerId = Branded<'SandboxContainerId'>
@@ -43,6 +45,19 @@ export class RunnerResponseError extends Error {
   }
 }
 
+/** A validated execution failure, retaining the original identity, reason and cleanup evidence. */
+export class RunnerExecutionError extends RunnerResponseError {
+  /**
+   * @param code - Original Runner execution failure code.
+   * @param statusCode - Validated HTTP status for this failure.
+   * @param execution - Confirmed response fields; absent Bash status remains unknown.
+   */
+  constructor(code: RunnerExecutionFailureCode, statusCode: number, readonly execution: RunnerExecutionFailure) {
+    super(code, statusCode, code === 'execution_outcome_unknown' || code === 'execution_container_recycled')
+    this.name = 'RunnerExecutionError'
+  }
+}
+
 /** Transport/protocol failure; unknown modifications must be queried rather than replayed. */
 export class RunnerRequestError extends Error {
   /**
@@ -60,7 +75,7 @@ async function readResponse(response: IncomingMessage, limit: number): Promise<u
   let size = 0
   for await (const chunk of response as AsyncIterable<Buffer>) {
     size += chunk.length
-    if (size > limit) throw new Error('Runner response exceeds maxResponseBytes')
+    if (size > limit) throw new Error('Runner response exceeds the configured byte limit')
     chunks.push(chunk)
   }
   if (!response.complete) throw new Error('Incomplete Runner response')
@@ -68,9 +83,20 @@ async function readResponse(response: IncomingMessage, limit: number): Promise<u
   return body
 }
 
+interface RunnerHttpRequest<T> {
+  readonly method: 'PUT' | 'GET' | 'DELETE' | 'POST'
+  readonly suffix: string
+  readonly body: string | undefined
+  readonly timeoutMs: number
+  readonly maxResponseBytes: number
+  readonly signal?: AbortSignal
+  readonly parse: (value: unknown, statusCode: number) => T
+}
+
 /** One deployment's transport, with no retries, state cache, or container ownership. */
 export class RunnerClient {
   private readonly lifetime = new AbortController()
+  private readonly pending = new Set<Promise<unknown>>()
 
   /** @param config - Validated deployment settings, captured independently of the caller's object. */
   constructor(private readonly config: ResolvedConfig) {
@@ -106,16 +132,99 @@ export class RunnerClient {
     return this.send('DELETE', workspaceId, undefined, closed)
   }
 
-  /** Cancel current waits and reject future calls; does not send a Runner close request. */
-  dispose(): void { this.lifetime.abort() }
+  /**
+   * Submit or retrieve exactly the caller's saved request; never retry or choose a new generation.
+   * @param workspaceId - Trusted workspace identity.
+   * @param input - Complete original request, including resolved workdir and command timeout.
+   * @param signal - Optional local wait cancellation; omission uses only service lifetime and deadline.
+   * @returns The validated result; disconnect or cancellation does not stop the remote command.
+   */
+  async execute(workspaceId: WorkspaceId, input: RunnerExecutionRequest, signal?: AbortSignal): Promise<RunnerExecutionResult> {
+    const saved = executionRequest.parse(input)
+    const body = JSON.stringify(saved)
+    if (Buffer.byteLength(body) > 64 * 1024) throw new TypeError('Runner exec request exceeds 64 KiB')
+    return this.exchange(workspaceId, {
+      method: 'POST', suffix: '/exec', body, ...signal === undefined ? {} : { signal },
+      timeoutMs: this.config.execTimeoutMs, maxResponseBytes: this.config.maxExecResponseBytes,
+      parse: (value, statusCode) => {
+        if (statusCode >= 400 && statusCode <= 599) {
+          const { error: code } = z.object({ error: z.string().min(1) }).parse(value)
+          if (executionFailureCode.safeParse(code).success) {
+            const { error, ...execution } = executionFailure.parse(value)
+            if (execution.executionId !== saved.executionId || execution.containerId !== saved.expectedContainerId) {
+              throw new Error('Runner execution failure identity mismatch')
+            }
+            const expectedStatus = error === 'execution_timeout' ? 504 : error === 'execution_cancelled' ? 409 : 503
+            if (statusCode !== expectedStatus) throw new Error('Unexpected Runner execution failure status')
+            throw new RunnerExecutionError(error, statusCode, execution)
+          }
+          throw new RunnerResponseError(failure.parse(value).error, statusCode, statusCode >= 500)
+        }
+        if (statusCode !== 200) throw new Error('Unexpected Runner exec success status')
+        const result = executionResult.parse(value)
+        if (result.executionId !== saved.executionId) throw new Error('Runner execution result identity mismatch')
+        return result
+      },
+    })
+  }
 
-  private async send<T>(method: 'PUT' | 'GET' | 'DELETE', workspaceId: WorkspaceId, input: object | undefined, schema: z.ZodType<T>): Promise<T> {
+  /**
+   * Request cancellation of an existing execution using an independent bounded connection.
+   * @param workspaceId - Trusted workspace identity.
+   * @param input - Original execution and full container identity; no command is sent.
+   * @returns Acceptance or prior settlement; neither confirms cleanup or changes the original result.
+   */
+  async cancel(workspaceId: WorkspaceId, input: RunnerExecutionIdentity): Promise<RunnerCancellationResult> {
+    const saved = executionIdentity.parse(input)
+    return this.exchange(workspaceId, {
+      method: 'POST', suffix: '/exec/cancel', body: JSON.stringify(saved),
+      timeoutMs: this.config.cancelTimeoutMs, maxResponseBytes: this.config.maxResponseBytes,
+      parse: (value, statusCode) => {
+        if (statusCode >= 400 && statusCode <= 599) throw new RunnerResponseError(failure.parse(value).error, statusCode, statusCode >= 500)
+        const result = cancellationResult.parse(value)
+        if (statusCode !== (result.cancellation === 'requested' ? 202 : 200)) throw new Error('Unexpected Runner cancellation status')
+        if (result.executionId !== saved.executionId || result.containerId !== saved.expectedContainerId) {
+          throw new Error('Runner cancellation identity mismatch')
+        }
+        return result
+      },
+    })
+  }
+
+  /**
+   * Abort local waits and reject future calls without cancelling commands or closing sandboxes.
+   * @returns Completion after admitted requests release their connections and deadline timers.
+   */
+  async dispose(): Promise<void> {
+    this.lifetime.abort()
+    await Promise.allSettled(this.pending)
+  }
+
+  private send<T>(method: 'PUT' | 'GET' | 'DELETE', workspaceId: WorkspaceId, input: object | undefined, schema: z.ZodType<T>): Promise<T> {
+    return this.exchange(workspaceId, {
+      method, suffix: '', body: input === undefined ? undefined : JSON.stringify(input),
+      timeoutMs: method === 'GET' ? this.config.queryTimeoutMs : this.config.mutationTimeoutMs,
+      maxResponseBytes: this.config.maxResponseBytes,
+      parse: (value, statusCode) => {
+        if (statusCode >= 400 && statusCode <= 599) throw new RunnerResponseError(failure.parse(value).error, statusCode, method !== 'GET' && statusCode >= 500)
+        if (statusCode !== 200) throw new Error('Unexpected Runner success status')
+        return schema.parse(value)
+      },
+    })
+  }
+
+  private exchange<T>(workspaceId: WorkspaceId, operation: RunnerHttpRequest<T>): Promise<T> {
+    const pending = this.request(workspaceId, operation)
+    this.pending.add(pending)
+    return pending.finally(() => { this.pending.delete(pending) })
+  }
+
+  private async request<T>(workspaceId: WorkspaceId, operation: RunnerHttpRequest<T>): Promise<T> {
     if (!/^[a-zA-Z0-9_-]{1,128}$/u.test(workspaceId)) throw new TypeError('Invalid Runner workspace ID')
-    const body = input === undefined ? undefined : JSON.stringify(input)
+    const { method, body } = operation
     const deadline = new AbortController()
-    const signal = AbortSignal.any([this.lifetime.signal, deadline.signal])
-    const timer = setTimeout(() => { deadline.abort(new Error('Runner request deadline exceeded')) },
-      method === 'GET' ? this.config.queryTimeoutMs : this.config.mutationTimeoutMs)
+    const signal = AbortSignal.any([this.lifetime.signal, deadline.signal, ...operation.signal ? [operation.signal] : []])
+    const timer = setTimeout(() => { deadline.abort(new Error('Runner request deadline exceeded')) }, operation.timeoutMs)
     timer.unref()
     let req: ClientRequest | undefined
     const connection = { established: false }
@@ -124,17 +233,11 @@ export class RunnerClient {
       signal.throwIfAborted()
       return await new Promise<T>((resolve, reject) => {
         req = request({
-          socketPath: this.config.socketPath, method, path: `/v1/workspaces/${workspaceId}/sandbox`, agent: false, signal,
+          socketPath: this.config.socketPath, method, path: `/v1/workspaces/${workspaceId}/sandbox${operation.suffix}`, agent: false, signal,
           ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } }),
         }, (response) => {
-          void readResponse(response, this.config.maxResponseBytes).then((value) => {
-            const statusCode = response.statusCode ?? 0
-            if (statusCode >= 400 && statusCode <= 599) {
-              throw new RunnerResponseError(failure.parse(value).error, statusCode, method !== 'GET' && statusCode >= 500)
-            }
-            if (statusCode !== 200) throw new Error('Unexpected Runner success status')
-            return schema.parse(value)
-          }).then(resolve, reject)
+          void readResponse(response, operation.maxResponseBytes)
+            .then(value => operation.parse(value, response.statusCode ?? 0)).then(resolve, reject)
         })
         req.once('socket', (socket) => {
           if (!socket.connecting) connection.established = true

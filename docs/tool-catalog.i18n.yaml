@@ -6,11 +6,17 @@
   en: 0be8ffbf23193557
   zh: ce2c69aa86875171
 /tool-schema-catalog:
-  en: 6cc2cd9ced70bb09
-  zh: 1c0e6cb4ba2ed637
+  en: 7a951d6f187a3208
+  zh: fd4740cb171d4a4c
 /tool-schema-catalog/tool-package-map:
-  en: 17d0b1d1a3c15c7f
-  zh: 1a9d90fc99e0e848
+  en: c1745453a807905f
+  zh: be525e0c31d91974
+/tool-schema-catalog/deepseek-ai-dsh-harness-sandbox-bash:
+  en: cd3d0fd90ec4012a
+  zh: cd3d0fd90ec4012a
+/tool-schema-catalog/deepseek-ai-dsh-harness-sandbox-bash/bash:
+  en: aed4bde4213897de
+  zh: 13aa564d5020fc16
 /tool-schema-catalog/deepseek-ai-dsh-plugin-manager:
   en: e0143916bb634762
   zh: e0143916bb634762

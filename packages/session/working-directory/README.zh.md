@@ -27,6 +27,8 @@ kind: "package-reference"
 
 与 `fs`、`sessionProjections` 和 `systemPrompt` 一起挂载。`defaultDirectory` 为没有原始目录的 Session 指定绝对回退目录；省略时使用启动目录。参见[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-working-directory)。
 
+`modelDirectory` 可将模型看到的目录固定为非空文本，例如容器命令工具的 `/workspace`。它在所属上下文渲染器内生效，包括最终组装更新。后端 `get`、校验及持久目录事件继续使用实际目录。显示固定时，目录变更和恢复不排队发送路径变更通知；下一次上下文仍显示配置值。文件系统隔离由执行提供方负责。
+
 ```yaml
 - name: '@deepseek-ai/dsh-working-directory'
 ```
@@ -63,7 +65,7 @@ Session 投影拥有当前目录，并通过 Session observation 暴露它，因
 
 #### 模型可见内容
 
-当前值为 `Current working directory: <JSON-quoted absolute path>.` 每次已提交变更（包括自动恢复）都会尝试通过普通 Agent 收件箱排入用户上下文通知。取消或销毁可能丢弃尚未进入请求的通知；持久化目录仍可供下一次请求使用。目录上下文不进入系统提示词，即使可选运行时上下文被禁用，也仍然保留。
+当前值为 `Current working directory: <JSON-quoted absolute path>.` 每次已提交变更（包括自动恢复）都会尝试通过普通 Agent 收件箱排入用户上下文通知。取消或销毁可能丢弃尚未进入请求的通知；持久化目录仍可供下一次请求使用。目录上下文不进入系统提示词，即使可选运行时上下文被禁用，也仍然保留。配置 `modelDirectory: /workspace` 后，上下文固定为 `Current working directory: "/workspace".`，宿主目录变更不产生模型通知。后端目录事件仍可由管理及回放读取方使用。
 
 #### Token 影响
 
@@ -71,7 +73,7 @@ Session 投影拥有当前目录，并通过 Session observation 暴露它，因
 
 #### KV Cache 影响
 
-目录变更追加上下文，不替换稳定的系统提示词前缀。目录变化或恢复在保留的历史之后生成新上下文。
+目录变更追加上下文，不替换稳定的系统提示词前缀。模型显示未固定时，目录变化或恢复在保留的历史之后生成新上下文。
 
 ## 已知限制与后续工作
 

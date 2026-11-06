@@ -826,6 +826,20 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'An independent deployment opens, queries, and closes Docker workspace containers through a local Unix socket.',
   },
   {
+    key: 'sandboxRunnerClient',
+    pkg: 'harness-sandbox',
+    title: 'Local Runner transport',
+    mode: 'service',
+    note: 'Bounded lifecycle, execution, and cancellation requests use a fixed local socket; callers own user authorization.',
+  },
+  {
+    key: 'sandboxConversation',
+    pkg: 'harness-sandbox',
+    title: 'Message-bound sandbox permission',
+    mode: 'service',
+    note: 'Authenticated prompt admission prepares the workspace and binds its original message and Agent turn; closing revokes earlier generations.',
+  },
+  {
     key: 'approval',
     pkg: 'user-approval',
     title: 'Approval seam',

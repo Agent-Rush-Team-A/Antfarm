@@ -177,6 +177,10 @@ Provider selection, probing, caching, and backend-specific enforcement reports b
 
 `ctx.workspaceSandbox` authorizes native multiuser ownership and validates the registered persistent directory before calling the independent Docker Runner. `SandboxRequest` contains only `workspaceId`; `SandboxValue` returns that id and one of `closed`, `starting`, `running`, `closing`, or `cleanup_required`. Browser results omit container identities and paths. `SandboxFailureReason` distinguishes capacity, cleanup, conflicts and unavailable or unconfirmed operations under `sandbox/failed`; a failed query never guesses a state. Explicit-user backend methods retain the full `RunnerRunningSandbox.containerId` for execution integration. See the [package reference](../../packages/sandbox/harness-sandbox/README.md) and [optional Web deployment](../user/guide/workspace-sandboxes.md).
 
+The internal `ctx.sandboxRunnerClient` transport accepts a complete `RunnerExecutionRequest` bound to its original `RunnerExecutionIdentity`; `RunnerExecutionResult` retains the confirmed exit and output tails. `RunnerCancellationResult` is only an acknowledgement, while `RunnerExecutionError.execution` preserves `RunnerExecutionFailure` cleanup and known Bash status. Local aborts and transport deadlines never confirm remote cleanup. The transport adds neither user authorization nor model tools; the [package reference](../../packages/sandbox/harness-sandbox/README.md#execution-transport) owns request limits, independent budgets and safe result retrieval.
+
+`SandboxActivity` contains `requests` (outstanding original input through turn settlement), `openings`, `executions` (including cancellation and cleanup), `closing`, and derived `busy`. The authorized `activityForUser` query observes these local owners without reserving a close decision; unavailable management throws. It does not replace Runner status or implement an idle timer.
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -208,6 +212,26 @@ abstract confine(argv: readonly string[], policy: SandboxPolicy, signal?: AbortS
 ```
 
 Source: [`packages/sandbox/sandbox/src/index.ts`](../../packages/sandbox/sandbox/src/index.ts)
+
+<a id="ctxsandboxconversation--sandboxconversation"></a>
+
+### `ctx.sandboxConversation` — `SandboxConversation`
+
+Prepares owned workspaces before accepting messages; contributes no model tools.
+
+```ts cordis-catalog
+/**
+ * Resolve permission for the actual owning turn, rechecking current native ownership.
+ * @param agent - Exact Agent executing the original turn.
+ * @param turn - Captured original turn; never a latest-message lookup.
+ * @returns Original message, generation and cancellation signal; no sandbox is opened here.
+ */
+forTurn(agent: Agent, turn: number): SandboxExecutionPermit
+```
+
+Types: [Agent](core.md)
+
+Source: [`packages/sandbox/harness-sandbox/src/conversation.ts`](../../packages/sandbox/harness-sandbox/src/conversation.ts)
 
 <a id="ctxsandboxpolicy--sandboxpolicyservice"></a>
 
@@ -288,6 +312,57 @@ Types: [WorkspaceId](workspace.md)
 
 Source: [`packages/sandbox/sandbox-runner/src/index.ts`](../../packages/sandbox/sandbox-runner/src/index.ts)
 
+<a id="ctxsandboxrunnerclient--sandboxrunnerclient"></a>
+
+### `ctx.sandboxRunnerClient` — `SandboxRunnerClient`
+
+Lifecycle-managed internal communication with one independent Runner.
+
+```ts cordis-catalog
+/**
+ * Send an authorized caller's open request; this transport does not authenticate users.
+ * @param workspaceId - Trusted Runner workspace identity.
+ * @param workspaceDir - Trusted persistent workspace directory.
+ * @returns Confirmed running generation, retaining its full container identity.
+ */
+open(workspaceId: WorkspaceId, workspaceDir: string): Promise<RunnerRunningSandbox>
+
+/**
+ * Query the Runner for an authorized caller's workspace.
+ * @param workspaceId - Trusted Runner workspace identity.
+ * @returns The current validated observation; failures never synthesize closed.
+ */
+status(workspaceId: WorkspaceId): Promise<RunnerSandboxStatus>
+
+/**
+ * Request closure after the caller has authorized this operation; never automatically replay it.
+ * @param workspaceId - Trusted Runner workspace identity.
+ * @returns Closed only after the Runner confirms container absence.
+ */
+close(workspaceId: WorkspaceId): Promise<RunnerClosedSandbox>
+
+/**
+ * Submit or retrieve the authorized caller's unchanged execution request without automatic retries.
+ * @param workspaceId - Trusted workspace identity.
+ * @param request - Saved request including original execution and container identities.
+ * @param signal - Optional local wait cancellation; omission uses only service lifetime and deadline.
+ * @returns Validated command result; stopping this wait does not cancel the remote execution.
+ */
+execute(workspaceId: WorkspaceId, request: RunnerExecutionRequest, signal?: AbortSignal): Promise<RunnerExecutionResult>
+
+/**
+ * Request cancellation with its own deadline, independent of an aborted execution wait.
+ * @param workspaceId - Trusted workspace identity.
+ * @param request - Original execution and full container identity.
+ * @returns Cancellation acknowledgement, not a cleanup guarantee; errors retain the Runner reason.
+ */
+cancel(workspaceId: WorkspaceId, request: RunnerExecutionIdentity): Promise<RunnerCancellationResult>
+```
+
+Types: [WorkspaceId](workspace.md)
+
+Source: [`packages/sandbox/harness-sandbox/src/transport.ts`](../../packages/sandbox/harness-sandbox/src/transport.ts)
+
 <a id="ctxworkspacesandbox--workspacesandbox"></a>
 
 ### `ctx.workspaceSandbox` — `WorkspaceSandbox`
@@ -328,17 +403,26 @@ async openForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerRunni
  * Observe a sandbox for an authenticated backend initiator.
  * @param userId - Authenticated initiating user.
  * @param workspaceId - Native workspace id.
- * @returns Fresh Runner state with internal container identity.
+ * @returns Local closing barrier, or fresh Runner state with internal container identity.
  */
-statusForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerSandboxStatus>
+async statusForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerSandboxStatus>
+
+/**
+ * Inspect local work before an authorized idle-reclamation decision; does not query Runner or close anything.
+ * @param userId - Authenticated initiating user.
+ * @param workspaceId - Native workspace id.
+ * @returns Outstanding input, openings, executions and closure; unavailable management throws rather than reporting idle.
+ */
+activityForUser(userId: UserId, workspaceId: WorkspaceId): SandboxActivity
 
 /**
  * Ends all commands in this container without deleting workspace files or sessions.
  * @param userId - Authenticated initiating user.
  * @param workspaceId - Native workspace id.
+ * @param target - Optional original execution generation; stale cleanup cannot close a newer generation.
  * @returns Confirmed container absence.
  */
-closeForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerClosedSandbox>
+async closeForUser(userId: UserId, workspaceId: WorkspaceId, target?: SandboxCloseTarget): Promise<RunnerClosedSandbox>
 ```
 
 Types: [UserId](typert.md) · [WorkspaceId](workspace.md)
