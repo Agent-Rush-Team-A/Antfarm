@@ -3804,6 +3804,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Tear down the helper\'s remote managed ranges before releasing the SSH master when reachable.',
         parameters: [],
       },
+      {
+        signature: 'async closeConfirmed(): Promise<void>',
+        description: 'Dispose the transport and require the helper\'s acknowledgement of managed cleanup. A lost connection still releases local resources, but rejects without claiming remote cleanup.',
+        parameters: [],
+        returns: 'Settlement only after acknowledged remote cleanup and local teardown.',
+      },
     ],
   },
   {

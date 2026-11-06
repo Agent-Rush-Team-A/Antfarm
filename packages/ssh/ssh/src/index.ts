@@ -51,6 +51,30 @@ export interface Config {
   leaseMs?: number
 }
 
+/**
+ * Validate deployment coordinates without opening SSH and resolve the schema-owned defaults.
+ * @param config - Deployment-supplied connection settings.
+ * @returns Validated coordinates with all connection budgets resolved.
+ */
+export function resolveSshConfig(config: Config): Required<Config> {
+  const parsed = z.object({
+    host: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.@-]*$/),
+    launch: z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('node-script'), node: z.string().startsWith('/'),
+        bootstrapPath: z.string().startsWith('/').optional(), bootstrapHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+      }).strict().refine(value => (value.bootstrapPath === undefined) === (value.bootstrapHash === undefined), 'bootstrapPath and bootstrapHash must be paired'),
+      z.object({ kind: z.literal('executable') }).strict(),
+    ]),
+    helper: z.string().startsWith('/'), helperHash: z.string().regex(/^[0-9a-f]{64}$/),
+    workspace: z.string().startsWith('/'), requestTimeoutMs: z.number().int().positive().max(2_147_483_647).optional(),
+    maxFrameBytes: z.number().int().positive().max(64 * 1024 * 1024).optional(),
+    maxPending: z.number().int().positive().max(128).optional(),
+    leaseMs: z.number().int().min(3000).max(600_000).optional(),
+  }).strict().parse(config)
+  // Zod's optional properties include undefined; the owning schema resolves omitted budgets.
+  return SshConnection.Config(parsed as Config) as Required<Config>
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context { ssh: SshConnection }
 }
@@ -70,6 +94,8 @@ export class SshConnection extends Service {
 
   /** Verified remote helper coordinates; callers must await this before launch. */
   readonly ready: Promise<Hello>
+  /** Aborted on transport loss or disposal; operations must retain this connection's lifetime. */
+  get signal(): AbortSignal { return this.lifetime.signal }
   private rpc: SshRpcPeer | undefined
   private child: ChildProcessWithoutNullStreams | undefined
   private childClosed: Promise<void> | undefined
@@ -79,6 +105,7 @@ export class SshConnection extends Service {
   private readonly lifetime = new AbortController()
   private readonly operations = new Set<Promise<unknown>>()
   private disposal: Promise<void> | undefined
+  private cleanupConfirmed = false
   private failure: Error | undefined
   private sockets = new Set<Socket>()
   private nextSocket = 0
@@ -88,19 +115,7 @@ export class SshConnection extends Service {
   constructor(ctx: Context, config: Config) {
     super(ctx, 'ssh')
     if (process.platform !== 'linux' && process.platform !== 'darwin') throw new Error('SSH runtime requires a POSIX client')
-    this.config = z.object({
-      host: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.@-]*$/),
-      launch: z.discriminatedUnion('kind', [
-        z.object({ kind: z.literal('node-script'), node: z.string().startsWith('/'),
-          bootstrapPath: z.string().startsWith('/').optional(), bootstrapHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
-        }).strict().refine(value => (value.bootstrapPath === undefined) === (value.bootstrapHash === undefined), 'bootstrapPath and bootstrapHash must be paired'),
-        z.object({ kind: z.literal('executable') }).strict(),
-      ]),
-      helper: z.string().startsWith('/'), helperHash: z.string().regex(/^[0-9a-f]{64}$/),
-      workspace: z.string().startsWith('/'), requestTimeoutMs: z.number().int().positive().max(2_147_483_647),
-      maxFrameBytes: z.number().int().positive().max(64 * 1024 * 1024), maxPending: z.number().int().positive().max(128),
-      leaseMs: z.number().int().min(3000).max(600_000),
-    }).strict().parse(config) as Required<Config>
+    this.config = resolveSshConfig(config)
     this.ready = this.start()
     // Startup uses Node I/O, local validation, and Error-valued RPC failures.
     void this.ready.catch((error: unknown) => { this.fail(error as Error) })
@@ -206,13 +221,26 @@ export class SshConnection extends Service {
     return this.disposal
   }
 
+  /**
+   * Dispose the transport and require the helper's acknowledgement of managed cleanup.
+   * A lost connection still releases local resources, but rejects without claiming remote cleanup.
+   * @returns Settlement only after acknowledged remote cleanup and local teardown.
+   */
+  async closeConfirmed(): Promise<void> {
+    await this.dispose()
+    if (!this.cleanupConfirmed) throw new Error('SSH remote cleanup could not be confirmed', { cause: this.failure })
+  }
+
   private async disposeOnce(): Promise<void> {
     this.closed = true
     this.lifetime.abort(new Error('SSH connection is closing'))
     if (this.heartbeat !== undefined) clearInterval(this.heartbeat)
     try {
       await this.ready.catch(() => {})
-      if (this.failure === undefined) await this.rpc?.request('close', {}, z.null(), AbortSignal.timeout(this.config.requestTimeoutMs))
+      if (this.failure === undefined && this.rpc !== undefined) {
+        await this.rpc.request('close', {}, z.null(), AbortSignal.timeout(this.config.requestTimeoutMs))
+        this.cleanupConfirmed = true
+      }
     } finally {
       this.rpc?.close()
       // TLS wrappers release their reads before their underlying sockets close.

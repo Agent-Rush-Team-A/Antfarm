@@ -28,6 +28,8 @@ headless 通过已挂载的文件系统提供方记录和检查 Session cwd。�
 
 替代方案与验证责任见[决策记录](../../.agents/notes/implemented/architecture/2026-09-11-posix-ssh-runtime.zh.md)。
 
+[Workspace SSH 后端](../../packages/sandbox/harness-sandbox/README.zh.md#workspace-ssh)在 Harness 上保留原生项目登记，并为每个工作区绑定独立的远程文件与进程代次。连接的取消信号撤销旧代访问；helper 确认关闭后才能替换代次，传输中断则保留清理结果不确定的状态。
+
 ## 连接 API
 
 ```ts type-equiv
@@ -77,6 +79,8 @@ declare class SshConnection extends Service {
   static Config: schema<Config>;
   /** Verified remote helper coordinates; callers must await this before launch. */
   readonly ready: Promise<Hello>;
+  /** Aborted on transport loss or disposal; operations must retain this connection's lifetime. */
+  get signal(): AbortSignal;
   constructor(ctx: Context, config: Config);
   /** Hold plugin readiness until the remote identity and helper digest are verified. */
   async [Service.init](): Promise<void>;
@@ -101,6 +105,12 @@ declare class SshConnection extends Service {
   async connectStream(endpoint: SshStreamEndpoint, signal?: AbortSignal): Promise<Socket>;
   /** Tear down the helper's remote managed ranges before releasing the SSH master when reachable. */
   dispose(): Promise<void>;
+  /**
+     * Dispose the transport and require the helper's acknowledgement of managed cleanup.
+     * A lost connection still releases local resources, but rejects without claiming remote cleanup.
+     * @returns Settlement only after acknowledged remote cleanup and local teardown.
+     */
+  async closeConfirmed(): Promise<void>;
 }
 ```
 
@@ -140,6 +150,13 @@ async connectStream(endpoint: SshStreamEndpoint, signal?: AbortSignal): Promise<
 
 /** Tear down the helper's remote managed ranges before releasing the SSH master when reachable. */
 dispose(): Promise<void>
+
+/**
+ * Dispose the transport and require the helper's acknowledgement of managed cleanup.
+ * A lost connection still releases local resources, but rejects without claiming remote cleanup.
+ * @returns Settlement only after acknowledged remote cleanup and local teardown.
+ */
+async closeConfirmed(): Promise<void>
 ```
 
 Source: [`packages/ssh/ssh/src/index.ts`](../../packages/ssh/ssh/src/index.ts)

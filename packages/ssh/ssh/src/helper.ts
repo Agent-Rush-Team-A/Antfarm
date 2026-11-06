@@ -67,6 +67,7 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
   let initialized = false
   let workspace = process.cwd()
   let cleanup: Promise<void> | undefined
+  const operations = new Set<Promise<unknown>>()
   const close = (): Promise<void> => {
     cleanup ??= (async () => {
       if (lease !== undefined) clearTimeout(lease)
@@ -76,6 +77,8 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
       iterators.clear()
       try { await processes.close() }
       finally {
+        // A cancelled filesystem request can still be committing; close acknowledges quiescence.
+        await Promise.allSettled(operations)
         try { await runtime.close() }
         finally { await rm(root, { recursive: true, force: true }) }
       }
@@ -98,7 +101,7 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
     }
   }
   const asTarget = (raw: unknown): FsTarget => targetSchema.parse(raw) as FsTarget
-  const peer = new SshRpcPeer(transport.input, transport.output, MAX_FRAME_BYTES, 128, async (method, raw, requestSignal) => {
+  const dispatch = async (method: string, raw: unknown, requestSignal: AbortSignal): Promise<unknown> => {
     const signal = AbortSignal.any([requestSignal, lifetime.signal])
     if (method === 'hello') {
       if (initialized) throw new Error('SSH helper handshake already completed')
@@ -119,7 +122,6 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
     }
     if (!initialized || cleanup !== undefined) throw new Error('SSH helper is not accepting operations')
     if (method === 'heartbeat') { object.parse(raw); touchLease(); return null }
-    if (method === 'close') { object.parse(raw); await close(); return null }
     if (method === 'process.prepare') return processes.prepare(raw)
     if (method === 'process.start') return processes.start(processIdRequest.parse(raw).id, signal)
     if (method === 'process.done') return processes.done(processIdRequest.parse(raw).id)
@@ -273,6 +275,14 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
       }, signal, await policy(input.policy, signal))
     }
     throw new Error(`Unknown SSH helper operation: ${method}`)
+  }
+  const peer = new SshRpcPeer(transport.input, transport.output, MAX_FRAME_BYTES, 128, async (method, raw, requestSignal) => {
+    if (!initialized && method !== 'hello' || cleanup !== undefined) throw new Error('SSH helper is not accepting operations')
+    if (method === 'close') { object.parse(raw); await close(); return null }
+    const operation = dispatch(method, raw, requestSignal)
+    operations.add(operation)
+    try { return await operation }
+    finally { operations.delete(operation) }
   })
   const closed = Promise.withResolvers<undefined>()
   peer.once('closed', () => {
