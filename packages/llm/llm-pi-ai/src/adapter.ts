@@ -62,7 +62,7 @@ import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { requestImageTarget, toPiContext } from './context.ts'
 import { conversationUpdates, createModels, getSupportedThinkingLevels } from './models.ts'
 import { toStreamChunks } from './stream.ts'
-import type { PiAiRequestHeaderContext } from './types.ts'
+import type { PiAiCredentialRequest, PiAiRequestHeaderContext } from './types.ts'
 
 /**
  * Initially active declaration added to an Anthropic request whose projected
@@ -88,14 +88,15 @@ export interface PiAiAdapterOptions {
   profiles: () => ReadonlyMap<string, ResolvedPiAiProviderProfile>
   /**
    * Resolve the credential for one already-resolved profile; called once per
-   * stream call and frozen for that call, and by `listModels`, which offers no
-   * models while it throws `MISSING_CREDENTIAL`. `undefined` defers to the route's own
+   * stream call and frozen for that call, and by `listModels` for global routes,
+   * which offers no models while it throws `MISSING_CREDENTIAL`. Personal routes
+   * advertise configured metadata without resolving a secret. `undefined` defers to the route's own
    * pi-ai auth, which for an installed catalog route is its provider-native
    * ambient discovery; the plugin allows that only for a profile naming no
    * credential at all, because a named reference that misses throws `LlmError`
    * `MISSING_CREDENTIAL` rather than falling back.
    */
-  resolveApiKey: (provider: string, profile: ResolvedPiAiProviderProfile) => Promise<string | undefined>
+  resolveApiKey: (provider: string, profile: ResolvedPiAiProviderProfile, request?: PiAiCredentialRequest) => Promise<string | undefined>
   /**
    * How every collection this adapter builds resolves auth the request-level
    * `apiKey` override does not cover. Required rather than optional: a
@@ -338,7 +339,7 @@ export class PiAiAdapter extends LlmAdapter {
     return Promise.resolve().then(async () => {
       const snapshot = this.current()
       const profile = this.profileOf(snapshot, provider)
-      try { await this.config.resolveApiKey(provider, profile) }
+      try { if (profile.credentialScope !== 'request') await this.config.resolveApiKey(provider, profile) }
       catch (error) {
         // A route whose named key does not resolve cannot serve a request, so it offers no models until the key is stored.
         if (error instanceof LlmError && error.code === 'MISSING_CREDENTIAL') return []
@@ -423,7 +424,15 @@ export class PiAiAdapter extends LlmAdapter {
       model,
       options.reasoningEffort ?? profile.reasoning,
     )
-    const apiKey = await this.config.resolveApiKey(options.provider, profile)
+    const apiKey = await this.config.resolveApiKey(options.provider, profile, {
+      provider: options.provider, model: options.model, baseURL: model.baseUrl,
+      ...options.sessionId === undefined ? {} : { sessionId: options.sessionId },
+      purpose: options.purpose,
+      ...options.signal === undefined ? {} : { signal: options.signal },
+    })
+    if (profile.credentialScope === 'request' && (apiKey === undefined || apiKey.length === 0)) {
+      throw new LlmError('The request credential consumer did not supply a credential. Contact the administrator.', 'MISSING_CREDENTIAL')
+    }
 
     const consumer = new AbortController()
     const upstream = options.signal === undefined
@@ -474,7 +483,13 @@ export class PiAiAdapter extends LlmAdapter {
             exhausted = true
             return
           }
-          yield result.value
+          const chunk = result.value
+          if (profile.credentialScope === 'request' && apiKey !== undefined && chunk.type === 'finish'
+            && (chunk.reason.kind === 'error' || chunk.reason.kind === 'aborted')) {
+            yield { ...chunk, reason: { ...chunk.reason, failure: { ...chunk.reason.failure,
+              message: chunk.reason.failure.message.replaceAll(apiKey, '[redacted]'),
+            } } }
+          } else yield chunk
         }
       } finally {
         if (!exhausted) {
@@ -486,6 +501,10 @@ export class PiAiAdapter extends LlmAdapter {
         }
       }
     } catch (error: unknown) {
+      if (profile.credentialScope === 'request' && apiKey !== undefined
+        && error instanceof Error && error.message.includes(apiKey)) {
+        throw new LlmError(error.message.replaceAll(apiKey, '[redacted]'), error instanceof LlmError ? error.code : 'PI_AI_ERROR')
+      }
       if (timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT') !== undefined) {
         throw new LlmError(`pi-ai stream idle timeout after ${streamIdleTimeoutMs}ms`, 'TIMEOUT', { cause: error })
       }

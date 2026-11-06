@@ -203,6 +203,11 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   ],
   // Owned Worker bundles import this public bootstrap before their business entry.
   '@deepseek-ai/dsh-app-boot': ['lib/worker/profile-resolution-bootstrap.js'],
+  // Runner deployments build the supervisor image from these package resources.
+  '@deepseek-ai/dsh-sandbox-runner': ['assets/supervisor.py', 'docs/', 'image/Dockerfile'],
+  // Conversation Bash publishes separate entry bundles sharing the same sandbox state.
+  '@deepseek-ai/dsh-harness-sandbox': ['lib/conversation.js', 'lib/bash.js', 'lib/shared-*.js'],
+  '@deepseek-ai/dsh-tool-bash': ['lib/render.js'],
   // Statically linked client libraries keep their stylesheets next to the emitted
   // JavaScript, which imports them by relative path: the compile shell runs
   // them through its own CSS pipeline, so the sheets are published artifacts.

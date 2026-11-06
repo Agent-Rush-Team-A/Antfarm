@@ -73,11 +73,11 @@ import { discoverModels } from './discovery.ts'
 import type { StoredModelDiscoveryProfile } from './discovery.ts'
 import { registerPiAiFlows } from './login.ts'
 import { providerDefaultsOf } from './provider-data.ts'
-import type { PiAiRequestHeaderContext } from './types.ts'
+import type { PiAiCredentialRequest, PiAiRequestHeaderContext } from './types.ts'
 
 export { PiAiAdapter } from './adapter.ts'
 export type { PiAiAdapterOptions } from './adapter.ts'
-export type { PiAiRequestHeaderContext } from './types.ts'
+export type { PiAiCredentialRequest, PiAiRequestHeaderContext } from './types.ts'
 export { Config } from './config.ts'
 export type {
   Options,
@@ -98,6 +98,17 @@ export const inject = ['llm']
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
+    /**
+     * Authorize one Host-only credential resolution. A route-specific consumer
+     * may replace the global resolver and must reject an unauthorized request
+     * without calling next(). Other consumers delegate with next(). Neither
+     * routing inputs nor the returned secret may be logged or sent to a model.
+     * @mode waterfall
+     * @param request - exact endpoint and initiating Session when generating.
+     * @param next - resolve through the deployment's global credential plane.
+     * @returns request-authorized secret, or undefined for ambient authentication.
+     */
+    'llm-pi-ai/resolve-api-key'(request: PiAiCredentialRequest, next: () => Promise<string | undefined>): Promise<string | undefined>
     /**
      * Prepare headers for one pi-ai inference call, excluding model discovery.
      * Listeners run synchronously and must call next(); they may edit only the
@@ -206,7 +217,7 @@ export function apply(ctx: Context, config: Config): void {
     return raw
   })
 
-  const resolveApiKey = async (
+  const resolveGlobalApiKey = async (
     provider: string,
     profile: ResolvedPiAiProviderProfile,
   ): Promise<string | undefined> => {
@@ -230,6 +241,23 @@ export function apply(ctx: Context, config: Config): void {
       'MISSING_CREDENTIAL',
     )
   }
+
+  const resolveApiKey = (
+    provider: string,
+    profile: ResolvedPiAiProviderProfile,
+    request?: PiAiCredentialRequest,
+  ): Promise<string | undefined> => ctx.waterfall('llm-pi-ai/resolve-api-key', {
+    provider,
+    ...profile.baseURL === undefined ? {} : { baseURL: profile.baseURL },
+    ...request,
+    credentialScope: profile.credentialScope,
+    ...profile.apiKeyEnv === undefined ? {} : { apiKeyEnv: profile.apiKeyEnv },
+  }, () => {
+    if (profile.credentialScope === 'request') {
+      return Promise.reject(new LlmError('The request credential consumer is unavailable. Contact the administrator.', 'MISSING_CREDENTIAL'))
+    }
+    return resolveGlobalApiKey(provider, profile)
+  })
 
   // One store and one ambient context for the whole plugin instance: both read
   // through `ctx` per call, so they stay correct across the collection rebuilds

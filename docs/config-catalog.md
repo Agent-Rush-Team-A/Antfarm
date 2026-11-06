@@ -337,6 +337,41 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-terminal-controller -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-api-user-credentials -->
+<a id="deepseek-aidsh-api-user-credentials"></a>
+
+## `@deepseek-ai/dsh-api-user-credentials`
+
+- `inject`: `storageDomain` · `multiuser`
+- `source`: [`packages/api/user-credentials/src/index.ts:23`](../packages/api/user-credentials/src/index.ts)
+
+```ts config-catalog
+/** Host deployment values; no secret is stored in plugin configuration. */
+export interface Config {
+  /** Absolute path of a provisioned private 32-byte file outside workspace mounts. */
+  encryptionKeyFile: string
+  /** Maximum UTF-8 secret bytes. @default 16384 */
+  maxCredentialBytes?: number
+  /** Maximum credentials per account. @default 64 */
+  maxRecordsPerUser?: number
+  /** Provider routes allowed to consume this account's named credentials. @default [] */
+  inferenceBindings?: InferenceBinding[]
+  /** Allow HTTP only for explicitly bound loopback test providers. @default false */
+  allowLoopbackHttp?: boolean
+}
+
+/** Explicit deployment binding; credential names remain scoped to each account. */
+export interface InferenceBinding {
+  /** Registered pi-ai route receiving the credential. */
+  readonly provider: string
+  /** Exact HTTPS base endpoint allowed to receive the secret. */
+  readonly baseURL: string
+  /** Display name looked up only within the initiating account. */
+  readonly credentialName: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-user-credentials -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-api-workspace-artifacts -->
 <a id="deepseek-aidsh-api-workspace-artifacts"></a>
 
@@ -2030,7 +2065,7 @@ export interface Config extends ProtocolConfig, ModelListingConfig {
 
 - `inject`: `llm`
 - `refs`: `Api` (`@earendil-works/pi-ai`) · `CacheRetention` (`@earendil-works/pi-ai`) · `Model` (`@earendil-works/pi-ai`) · `ModelThinkingLevel` (`@earendil-works/pi-ai`) · `OpenAICompletionsCompat` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets` (`@earendil-works/pi-ai`) · `Transport` (`@earendil-works/pi-ai`) · `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/llm/llm-pi-ai/src/config.ts:251`](../packages/llm/llm-pi-ai/src/config.ts)
+- `source`: [`packages/llm/llm-pi-ai/src/config.ts:255`](../packages/llm/llm-pi-ai/src/config.ts)
 
 ```ts config-catalog
 /** Plugin configuration: the provider routes this instance owns. */
@@ -2047,6 +2082,8 @@ export interface Config {
 export interface PiAiProviderProfile {
   /** Credential reference (environment-variable name) resolved per request through `ctx.credentials`. */
   apiKeyEnv?: string
+  /** Request requires an authorized consumer and never falls back to deployment credentials. @default global */
+  credentialScope?: 'global' | 'request'
   /** Name shown by configuration surfaces; defaults to the route key. */
   displayName?: string
   /**
@@ -5077,6 +5114,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-client-ui-skill` | — | [`packages/client/ui-skill/src/index.ts`](../packages/client/ui-skill/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-subagent` | — | [`packages/client/ui-subagent/src/index.ts`](../packages/client/ui-subagent/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-tool` | — | [`packages/client/ui-tool/src/index.ts`](../packages/client/ui-tool/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-user-credentials` | — | [`packages/client/ui-user-credentials/src/index.ts`](../packages/client/ui-user-credentials/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-user-questions` | — | [`packages/client/ui-user-questions/src/index.ts`](../packages/client/ui-user-questions/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-workflow-run` | — | [`packages/client/ui-workflow-run/src/index.ts`](../packages/client/ui-workflow-run/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-workspace` | — | [`packages/client/ui-workspace/src/index.ts`](../packages/client/ui-workspace/src/index.ts) |

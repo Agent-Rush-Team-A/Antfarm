@@ -383,6 +383,7 @@
     { "path": "./packages/api/settings-controller" },
     { "path": "./packages/api/remote-access/tsconfig.host.json" },
     { "path": "./packages/api/multiuser/tsconfig.host.json" },
+    { "path": "./packages/api/user-credentials" },
     { "path": "./packages/api/workspace-controller/tsconfig.host.json" },
     { "path": "./packages/typert/loader" },
     { "path": "./packages/session/session-persistence" },

@@ -1,0 +1,23 @@
+- dialog "My credentials":
+  - heading "My credentials" [level=2]
+  - button "Close"
+  - paragraph: Credentials belong to your account. Sharing a workspace does not share them.
+  - text: Name
+  - textbox "Name":
+    - /placeholder: "For example: Vultr API Key"
+  - paragraph: Use the credential name required by your service, such as Vultr API Key.
+  - text: Credential value
+  - textbox "Credential value":
+    - /placeholder: Paste the API key or access token from your provider
+  - paragraph: Enter only the secret itself, without Bearer, a curl command or JSON.
+  - button "Save credential"
+  - paragraph: Connected services use your own credentials. Select the matching provider and model in the conversation.
+  - paragraph: Storage checks do not validate access to an external service.
+  - button "Refresh"
+  - list:
+    - listitem:
+      - strong: Test key
+      - text: Saved
+      - button "Check storage"
+      - button "Replace value"
+      - button "Delete"

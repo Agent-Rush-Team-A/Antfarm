@@ -123,6 +123,7 @@ flowchart TD
     pkg_api_session_controller["api-session-controller"]
     pkg_api_settings_controller["api-settings-controller"]
     pkg_api_terminal_controller["api-terminal-controller"]
+    pkg_api_user_credentials["api-user-credentials"]
     pkg_api_workspace_artifacts["api-workspace-artifacts"]
     pkg_api_workspace_controller["api-workspace-controller"]
     pkg_api_workspace_files["api-workspace-files"]
@@ -218,6 +219,7 @@ flowchart TD
     pkg_client_ui_theme["client-ui-theme"]
     pkg_client_ui_tool["client-ui-tool"]
     pkg_client_ui_trajectory["client-ui-trajectory"]
+    pkg_client_ui_user_credentials["client-ui-user-credentials"]
     pkg_client_ui_user_questions["client-ui-user-questions"]
     pkg_client_ui_workflow_run["client-ui-workflow-run"]
     pkg_client_ui_workspace["client-ui-workspace"]
@@ -657,6 +659,9 @@ flowchart TD
   pkg_lsp_stdio --> pkg_lsp
   pkg_lsp_stdio --> pkg_subprocess
   pkg_lsp_stdio --> pkg_timeout
+  pkg_harness_sandbox --> pkg_api_multiuser
+  pkg_harness_sandbox --> pkg_api_remote_access
+  pkg_harness_sandbox --> pkg_typert_protocol
   pkg_harness_sandbox --> pkg_workspace
   pkg_sandbox_runner --> pkg_workspace
   pkg_bash_local --> pkg_shell
@@ -684,6 +689,11 @@ flowchart TD
   pkg_goal --> pkg_session
   pkg_goal --> pkg_session_projection
   pkg_goal --> pkg_typert_protocol
+  pkg_api_user_credentials --> pkg_agent
+  pkg_api_user_credentials --> pkg_api_multiuser
+  pkg_api_user_credentials --> pkg_llm
+  pkg_api_user_credentials --> pkg_storage_domain
+  pkg_api_user_credentials --> pkg_typert_protocol
   pkg_api_workspace_artifacts --> pkg_api_remote_access
   pkg_api_workspace_artifacts --> pkg_api_workspace_controller
   pkg_api_workspace_artifacts --> pkg_client_connection
@@ -1631,6 +1641,7 @@ flowchart TD
 | [`client-ui-theme`](../packages/client/ui-theme) | `client` | — |
 | [`client-ui-tool`](../packages/client/ui-tool) | `client` | — |
 | [`client-ui-trajectory`](../packages/client/ui-trajectory) | `client` | — |
+| [`client-ui-user-credentials`](../packages/client/ui-user-credentials) | `client` | — |
 | [`client-ui-user-questions`](../packages/client/ui-user-questions) | `client` | — |
 | [`client-ui-workflow-run`](../packages/client/ui-workflow-run) | `client` | — |
 | [`client-ui-workspace`](../packages/client/ui-workspace) | `client` | — |
@@ -1754,7 +1765,7 @@ flowchart TD
 | [`experimental-speech-to-text-sensevoice`](../packages/experimental/speech-to-text-sensevoice) | `experimental` | [`experimental-speech-to-text`](../packages/experimental/speech-to-text), [`subprocess`](../packages/subprocess/subprocess) |
 | [`hook-protocol`](../packages/experimental/hook-protocol) | `experimental` | [`session`](../packages/core/session), [`shell`](../packages/shell/shell) |
 | [`lsp-stdio`](../packages/lsp/lsp-stdio) | `lsp` | [`brand`](../packages/util/brand), [`fs`](../packages/fs/fs), [`llm`](../packages/llm/llm), [`lsp`](../packages/lsp/lsp), [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout) |
-| [`harness-sandbox`](../packages/sandbox/harness-sandbox) | `sandbox` | [`workspace`](../packages/workspace/workspace) |
+| [`harness-sandbox`](../packages/sandbox/harness-sandbox) | `sandbox` | [`api-multiuser`](../packages/api/multiuser), [`api-remote-access`](../packages/api/remote-access), [`typert-protocol`](../packages/typert/protocol), [`workspace`](../packages/workspace/workspace) |
 | [`sandbox-runner`](../packages/sandbox/sandbox-runner) | `sandbox` | [`workspace`](../packages/workspace/workspace) |
 | [`bash-local`](../packages/shell/bash-local) | `shell` | [`shell`](../packages/shell/shell), [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout) |
 | [`pwsh-local`](../packages/shell/pwsh-local) | `shell` | [`shell`](../packages/shell/shell), [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout) |
@@ -1762,6 +1773,7 @@ flowchart TD
 | [`llm-retry`](../packages/llm/llm-retry) | `llm` | [`agent`](../packages/core/agent), [`brand`](../packages/util/brand), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`timeout`](../packages/util/timeout) |
 | [`agent-default-model`](../packages/core/agent-default-model) | `core` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm) |
 | [`goal`](../packages/goal/goal) | `goal` | [`agent`](../packages/core/agent), [`brand`](../packages/util/brand), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`typert-protocol`](../packages/typert/protocol) |
+| [`api-user-credentials`](../packages/api/user-credentials) | `api` | [`agent`](../packages/core/agent), [`api-multiuser`](../packages/api/multiuser), [`llm`](../packages/llm/llm), [`storage-domain`](../packages/storage/storage-domain), [`typert-protocol`](../packages/typert/protocol) |
 | [`api-workspace-artifacts`](../packages/api/workspace-artifacts) | `api` | [`api-remote-access`](../packages/api/remote-access), [`api-workspace-controller`](../packages/api/workspace-controller), [`client-connection`](../packages/client/connection), [`workspace`](../packages/workspace/workspace) |
 | [`api-workspace-upload`](../packages/api/workspace-upload) | `api` | [`api-remote-access`](../packages/api/remote-access), [`api-workspace-controller`](../packages/api/workspace-controller), [`client-connection`](../packages/client/connection), [`workspace`](../packages/workspace/workspace) |
 | [`file-reference`](../packages/context/file-reference) | `context` | [`agent`](../packages/core/agent) |

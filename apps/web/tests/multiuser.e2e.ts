@@ -1,12 +1,16 @@
 /** Multiuser browser acceptance through the shipped Web Loader composition. */
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createServer } from 'node:http'
 import { chromium, type Page, type APIRequestContext } from 'playwright'
-import { expect, it } from 'vitest'
+import { expect, it, onTestFinished } from 'vitest'
+import type { Context, RegistryService } from '@deepseek-ai/cordis'
+import type { ClientModuleLoaderTarget } from '@deepseek-ai/dsh-client-modules/client'
 import type { LoginValue } from '@deepseek-ai/dsh-api-multiuser'
+import { z } from 'zod'
 import type { SessionListValue } from '@deepseek-ai/dsh-api-session-controller'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { launchWebScaffold, compareOrRefreshGolden, webSnapshotMode } from './scaffold.ts'
@@ -14,10 +18,43 @@ import { launchWebScaffold, compareOrRefreshGolden, webSnapshotMode } from './sc
 it('logs in separate accounts, creates private workspaces, revokes all tabs, and switches accounts', async () => {
   const root = await mkdtemp(join(tmpdir(), 'multiuser-browser-'))
   const overlay = join(root, 'multiuser.yml')
+  const credentialKey = join(root, 'credential-key')
+  const inferenceCalls: Array<{ authorization: string; body: unknown }> = []
+  const inference = createServer((request, response) => {
+    const chunks: Buffer[] = []
+    request.on('data', (chunk: Buffer) => { chunks.push(chunk) })
+    request.on('end', () => {
+      const body: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      inferenceCalls.push({ authorization: request.headers.authorization ?? '', body })
+      response.writeHead(200, { 'content-type': 'text/event-stream' })
+      for (const choice of [
+        { index: 0, delta: { role: 'assistant', content: 'PERSONAL-INFERENCE' }, finish_reason: null },
+        { index: 0, delta: {}, finish_reason: 'stop' },
+      ]) response.write('data: ' + JSON.stringify({ id: 'personal-test', object: 'chat.completion.chunk',
+        created: 1, model: 'personal-model', choices: [choice] }) + '\n\n')
+      response.end('data: [DONE]\n\n')
+    })
+  })
+  onTestFinished(async () => {
+    inference.closeAllConnections()
+    await new Promise<void>((resolve, reject) => { inference.close((error) => { if (error) reject(error); else resolve() }) })
+  })
+  await new Promise<void>((resolve) => { inference.listen(0, '127.0.0.1', resolve) })
+  const address = inference.address()
+  if (address === null || typeof address === 'string') throw new Error('Inference fixture must listen on TCP')
+  const inferenceBase = `http://127.0.0.1:${address.port}/v1`
+  await writeFile(credentialKey, randomBytes(32), { flag: 'wx', mode: 0o600 })
   await writeFile(overlay, `- id: connection\n  config:\n    multiuser: true\n- insert:\n    - id: multiuser\n      name: '@deepseek-ai/dsh-api-multiuser'\n      config:\n        workspaceRoot: ${JSON.stringify(join(root, 'workspaces'))}\n        sessionSweepIntervalMs: 1000\n`)
+  await writeFile(overlay, `- insert:\n    - id: user-credentials\n      name: '@deepseek-ai/dsh-api-user-credentials'\n      config:\n        encryptionKeyFile: ${JSON.stringify(credentialKey)}\n        allowLoopbackHttp: true\n        inferenceBindings:\n          - provider: personal-fixture\n            baseURL: ${JSON.stringify(inferenceBase)}\n            credentialName: Test key\n`, { flag: 'a' })
+  await writeFile(overlay, `- id: llm-pi-ai\n  config:\n    providers:\n      personal-fixture:\n        displayName: Personal fixture\n        credentialScope: request\n        apiKeyEnv: PERSONAL_FIXTURE_API_KEY\n        api: openai-completions\n        baseURL: ${JSON.stringify(inferenceBase)}\n        models:\n          - id: personal-model\n            name: Personal model\n`, { flag: 'a' })
+  await writeFile(overlay, '- id: ui-user-credentials\n  disabled: false\n', { flag: 'a' })
   const scaffold = await launchWebScaffold({ firstUse: true, accountAuthentication: true, extraOverlayPath: overlay,
     compareReplaySession: false,
     replayFixture: fileURLToPath(new URL('../../../snapshots/web/lifecycle-chrome/session.v4.jsonl', import.meta.url)) })
+  expect([...scaffold.ctx.loader.entries()].filter(entry => entry.options.name.includes('user-credentials'))
+    .map(entry => ({ name: entry.options.name, disabled: entry.disabled, state: entry.fiber?.state })))
+    .toEqual(expect.arrayContaining([expect.objectContaining({ name: '@deepseek-ai/dsh-client-ui-user-credentials', disabled: false })]))
+  expect(scaffold.ctx.clientModules.graph().entries.map(entry => entry.id)).toContain('@deepseek-ai/dsh-client-ui-user-credentials')
   const failures: unknown[] = []
   const browser = await chromium.launch({ args: ['--no-sandbox'] })
   try {
@@ -28,6 +65,24 @@ it('logs in separate accounts, creates private workspaces, revokes all tabs, and
     const bob = await browser.newContext({ locale: 'en-US' })
     const alicePage = await alice.newPage()
     const bobPage = await bob.newPage()
+    for (const page of [alicePage, bobPage]) await page.addInitScript(() => {
+      Object.defineProperty(globalThis, '__ModuleLoader__', { configurable: true, set(target: ClientModuleLoaderTarget) {
+        Object.defineProperty(globalThis, '__ModuleLoader__', { configurable: true, writable: true, value: target })
+        const create = target.create.bind(target)
+        target.create = function (options) {
+          const cordis = options.staticModules['@deepseek-ai/cordis'] as { RegistryService: typeof RegistryService }
+          const prototype = cordis.RegistryService.prototype
+          // eslint-disable-next-line @typescript-eslint/unbound-method -- apply preserves the real registry receiver.
+          const plugin = prototype.plugin
+          prototype.plugin = function (...args: Parameters<RegistryService['plugin']>) {
+            prototype.plugin = plugin
+            Reflect.set(globalThis, '__issue13Client', this.ctx.root)
+            return plugin.apply(this, args)
+          }
+          return create(options)
+        }
+      } })
+    })
     const base = new URL(scaffold.authenticatedUrl).origin
     async function protectedListStatus(cookie?: string) {
       const response = await fetch(`${base}/api/session/list`, {
@@ -54,6 +109,13 @@ it('logs in separate accounts, creates private workspaces, revokes all tabs, and
         throw new Error(JSON.stringify({ url: page.url(), errors, body: await page.locator('body').innerText() }))
       })
       await page.getByRole('button', { name: 'Choose workspace', exact: true }).waitFor()
+      await page.evaluate(async () => {
+        const ctx = Reflect.get(globalThis, '__issue13Client') as Context
+        const entry = [...ctx.loader.entries()].find(entry => entry.options.name === '@deepseek-ai/dsh-client-ui-user-credentials')
+        if (entry?.fiber === undefined) throw new Error('Personal credential Client entry is missing')
+        await entry.fiber.await()
+        if (!ctx.get('remote.userCredentials')) throw new Error('Personal credential Client namespace is missing')
+      })
     }
     await signIn(alicePage, 'alice')
     await signIn(bobPage, 'bob')
@@ -87,8 +149,90 @@ it('logs in separate accounts, creates private workspaces, revokes all tabs, and
       const envelope = await response.json() as { result: { ok: true; value: unknown } | { ok: false; error: { code: string } } }
       return envelope.result
     }
+    // Personal credentials remain separate even when both accounts choose the same name.
+    expect(await rpc(alice.request, 'userCredentials/list', {})).toEqual({ ok: true, value: [] })
+    const credentialSecrets = [randomUUID(), randomUUID()]
+    for (const [index, page] of [alicePage, bobPage].entries()) {
+      await page.getByRole('button', { name: 'My credentials', exact: true }).click()
+      const dialog = page.getByRole('dialog', { name: 'My credentials', exact: true })
+      await dialog.getByText('No credentials saved.', { exact: true }).waitFor()
+      await dialog.getByLabel('Name', { exact: true }).fill('Test key')
+      await dialog.getByLabel('Credential value', { exact: true }).fill(credentialSecrets[index]!)
+      await dialog.getByRole('button', { name: 'Save credential', exact: true }).click()
+      await dialog.getByText('Test key', { exact: true }).waitFor()
+      expect(await dialog.getByLabel('Credential value', { exact: true }).inputValue()).toBe('')
+      await dialog.getByRole('button', { name: 'Check storage', exact: true }).click()
+      await page.getByRole('alert').getByText('The saved credential can be read by the server.', { exact: true }).waitFor()
+      if (index === 0) await compareOrRefreshGolden(
+        fileURLToPath(new URL('./expected/multiuser/credentials.expected.md', import.meta.url)),
+        await dialog.ariaSnapshot(), webSnapshotMode())
+      if (index === 0) {
+        for (const colorScheme of ['light', 'dark'] as const) {
+          await page.emulateMedia({ colorScheme })
+          await page.screenshot({ path: join(tmpdir(), `issue13-credentials-${colorScheme}.png`) })
+        }
+        await page.setViewportSize({ width: 390, height: 844 })
+        await page.screenshot({ path: join(tmpdir(), 'issue13-credentials-mobile.png') })
+        for (const control of [dialog.getByLabel('Credential value', { exact: true }), dialog.getByRole('button', { name: 'Save credential', exact: true })]) {
+          const box = await control.boundingBox()
+          if (box === null) throw new Error('Credential controls must remain visible at 390px')
+          expect(box.x).toBeGreaterThanOrEqual(0)
+          expect(box.x + box.width).toBeLessThanOrEqual(390)
+        }
+        await page.setViewportSize({ width: 1280, height: 720 })
+      }
+      expect(await page.locator('body').innerText()).not.toContain(credentialSecrets[index]!)
+      await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+    }
+    const credentialLists = await Promise.all([
+      rpc(alice.request, 'userCredentials/list', {}),
+      rpc(bob.request, 'userCredentials/list', {}),
+    ])
+    const [aliceCredentials, bobCredentials] = credentialLists
+    if (!aliceCredentials.ok || !bobCredentials.ok) throw new Error('Credential lists must be readable')
+    const metadata = z.array(z.object({ id: z.uuid(), name: z.string(), configured: z.literal(true),
+      createdAt: z.iso.datetime(), updatedAt: z.iso.datetime() }).strict())
+    const aliceCredential = metadata.parse(aliceCredentials.value)[0]
+    const bobCredential = metadata.parse(bobCredentials.value)[0]
+    if (aliceCredential === undefined || bobCredential === undefined) throw new Error('Both accounts must have one credential')
+    expect(aliceCredential.id).not.toBe(bobCredential.id)
+    for (const method of ['check', 'delete', 'replace']) {
+      const request = { id: aliceCredential.id, ...(method === 'replace' ? { value: 'forbidden' } : {}) }
+      expect(await rpc(bob.request, `userCredentials/${method}`, { request })).toMatchObject({ ok: false, error: { code: 'user-credentials/not-found' } })
+    }
+    for (const secret of credentialSecrets) {
+      expect(JSON.stringify(credentialLists)).not.toContain(secret)
+      for (const session of scaffold.ctx.sessions.list()) expect(JSON.stringify(session.snapshotEvents())).not.toContain(secret)
+    }
     const aliceSession = scaffold.ctx.multiuser.ownedSessions(aliceUser.userId)[0]!
     const bobSession = scaffold.ctx.multiuser.ownedSessions(bobUser.userId)[0]!
+    for (const [index, [client, sessionId]] of ([[alice.request, aliceSession], [bob.request, bobSession]] as const).entries()) {
+      const selected = await rpc(client, 'session/selectModel', { request: {
+        sessionId, provider: 'personal-fixture', model: 'personal-model',
+      } })
+      expect(selected, JSON.stringify(selected)).toMatchObject({ ok: true })
+      const settled = scaffold.whenTurnSettled()
+      expect(await rpc(client, 'session/prompt', { request: {
+        sessionId, requestId: randomUUID(), mode: 'queue', content: [{ type: 'text', text: 'Test personal inference.' }],
+      } })).toMatchObject({ ok: true })
+      expect(await settled).toBe(sessionId)
+      expect(inferenceCalls[index]?.authorization).toBe('Bearer ' + credentialSecrets[index]!)
+    }
+    for (const secret of credentialSecrets) {
+      expect(JSON.stringify(inferenceCalls.map(call => call.body))).not.toContain(secret)
+      for (const session of scaffold.ctx.sessions.list()) expect(JSON.stringify(session.snapshotEvents())).not.toContain(secret)
+    }
+    // A selected model must not borrow the other account's key after deletion.
+    expect(await rpc(bob.request, 'userCredentials/delete', { request: { id: bobCredential.id } })).toMatchObject({ ok: true })
+    const deniedTurn = scaffold.whenTurnSettled()
+    expect(await rpc(bob.request, 'session/prompt', { request: {
+      sessionId: bobSession, requestId: randomUUID(), mode: 'queue', content: [{ type: 'text', text: 'Must not use Alice credentials.' }],
+    } })).toMatchObject({ ok: true })
+    expect(await deniedTurn).toBe(bobSession)
+    expect(inferenceCalls).toHaveLength(2)
+    expect(JSON.stringify(scaffold.ctx.sessions.get(bobSession)!.snapshotEvents())).toContain('MISSING_CREDENTIAL')
+    const fallback = scaffold.ctx.agentDefaultModel.currentSelection()
+    expect(await rpc(alice.request, 'session/selectModel', { request: { sessionId: aliceSession, ...fallback } })).toMatchObject({ ok: true })
     const before = scaffold.ctx.sessions.get(bobSession)!.snapshotEvents()
     const denied: Array<[string, unknown]> = [
       ['session/create', { workspaceId: bobWorkspaceId }],

@@ -206,6 +206,8 @@
     "@deepseek-ai/dsh-client-ui-context-menu": "workspace:*",
     "@deepseek-ai/dsh-client-ui-file-actions": "workspace:*",
     "@deepseek-ai/dsh-api-multiuser": "workspace:*",
+    "@deepseek-ai/dsh-api-user-credentials": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-user-credentials": "workspace:*",
     "@deepseek-ai/dsh-api-workspace-upload": "workspace:*",
     "@deepseek-ai/dsh-harness-sandbox": "workspace:*",
     "@deepseek-ai/dsh-api-workspace-artifacts": "workspace:*"

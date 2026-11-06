@@ -4445,6 +4445,43 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'userCredentials',
+    summary: 'Host service backing the personal-credential browser API.',
+    description: 'Host service backing the personal-credential browser API.',
+    methods: [
+      {
+        signature: '@Remote list(signal: AbortSignal): UserCredentialView[]',
+        description: 'Lists only the authenticated caller\'s credential metadata.',
+        parameters: [{ name: 'signal', description: 'Request lifetime.' }],
+        returns: 'Metadata without secret fragments.',
+      },
+      {
+        signature: '@Remote create(request: CreateCredentialRequest, signal: AbortSignal): Promise<UserCredentialView>',
+        description: 'Encrypts and durably stores a new credential for the authenticated caller.',
+        parameters: [{ name: 'request', description: 'Name and submitted secret.' }, { name: 'signal', description: 'Request lifetime.' }],
+        returns: 'Committed metadata without the secret.',
+      },
+      {
+        signature: '@Remote replace(request: ReplaceCredentialRequest, signal: AbortSignal): Promise<UserCredentialView>',
+        description: 'Replaces the secret of a credential owned by the authenticated caller.',
+        parameters: [{ name: 'request', description: 'Own record and replacement secret.' }, { name: 'signal', description: 'Request lifetime.' }],
+        returns: 'Committed metadata without the secret.',
+      },
+      {
+        signature: '@Remote delete(request: CredentialRequest, signal: AbortSignal): Promise<{ removed: true }>',
+        description: 'Durably removes a credential owned by the authenticated caller.',
+        parameters: [{ name: 'request', description: 'Own record to delete.' }, { name: 'signal', description: 'Request lifetime.' }],
+        returns: 'Confirmation after durable removal.',
+      },
+      {
+        signature: '@Remote check(request: CredentialRequest, signal: AbortSignal): { readable: true }',
+        description: 'Authenticates and decrypts the caller\'s stored credential only in Host memory.',
+        parameters: [{ name: 'request', description: 'Own record to check.' }, { name: 'signal', description: 'Request lifetime.' }],
+        returns: 'Storage readability, not external-service authorization.',
+      },
+    ],
+  },
+  {
     key: 'userQuestions',
     summary: '`ctx.userQuestions`: validation plus the scoped answerer waterfall.',
     description: '`ctx.userQuestions`: validation plus the scoped answerer waterfall.',
@@ -5348,6 +5385,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Prepare headers for one pi-ai inference call, excluding model discovery.',
     description: 'Prepare headers for one pi-ai inference call, excluding model discovery. Listeners run synchronously and must call next(); they may edit only the request-owned headers and must not retain them. Throws fail the call with REQUEST_HEADERS before inference I/O. Harness attribution wins afterward. Non-TypeError messages are user-visible and must exclude secrets. TypeError details and non-Error values are replaced with safe guidance.',
     parameters: [{ name: 'request', description: 'immutable routing metadata from the exact prepared call.' }, { name: 'headers', description: 'fresh profile headers, shared only within this dispatch.' }, { name: 'next', description: 'continue header preparation through the remaining listeners.' }],
+  },
+  {
+    name: 'llm-pi-ai/resolve-api-key',
+    mode: 'waterfall',
+    signature: '\'llm-pi-ai/resolve-api-key\'(request: PiAiCredentialRequest, next: () => Promise<string | undefined>): Promise<string | undefined>',
+    summary: 'Authorize one Host-only credential resolution.',
+    description: 'Authorize one Host-only credential resolution. A route-specific consumer may replace the global resolver and must reject an unauthorized request without calling next(). Other consumers delegate with next(). Neither routing inputs nor the returned secret may be logged or sent to a model.',
+    parameters: [{ name: 'request', description: 'exact endpoint and initiating Session when generating.' }, { name: 'next', description: 'resolve through the deployment\'s global credential plane.' }],
   },
   {
     name: 'llm/adapters-updated',
@@ -6410,6 +6455,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CreateAgentOptions {\n    readonly sessionId: SessionId;\n    readonly meta?: {\n        readonly cwd?: string;\n        readonly parentSession?: SessionId;\n        readonly isSeeded?: boolean;\n        readonly origin?: \'subagent\';\n        readonly delegationDepth?: number;\n        readonly agentPreset?: string;\n    };\n    readonly inheritedEventCount?: SessionLogOffset;\n    readonly seed?: readonly SessionEvent[];\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n}',
   },
   {
+    name: 'CreateCredentialRequest',
+    declaration: 'export interface CreateCredentialRequest {\n    readonly name: string;\n    readonly value: string;\n}',
+  },
+  {
     name: 'CreatedShare',
     declaration: 'export interface CreatedShare {\n    readonly link: string;\n    readonly shareId: string;\n    readonly sessionId: string;\n    readonly sessionMode: \'view\' | \'write\';\n    readonly access: ShareAccess;\n}',
   },
@@ -6468,6 +6517,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CredentialRef',
     declaration: 'export type CredentialRef = Branded<\'CredentialRef\'>;',
+  },
+  {
+    name: 'CredentialRequest',
+    declaration: 'export interface CredentialRequest {\n    readonly id: UserCredentialId;\n}',
   },
   {
     name: 'CronInput',
@@ -7834,6 +7887,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PermissionCatalog {\n    options: PresetOption[];\n    defaultOptions: PresetOption[];\n    defaultPreset: string;\n}',
   },
   {
+    name: 'PiAiCredentialRequest',
+    declaration: 'export interface PiAiCredentialRequest {\n    readonly provider: string;\n    readonly baseURL?: string;\n    readonly model?: string;\n    readonly apiKeyEnv?: string;\n    readonly credentialScope?: \'global\' | \'request\';\n    readonly sessionId?: GenerateOptions[\'sessionId\'];\n    readonly purpose?: GenerateOptions[\'purpose\'];\n    readonly signal?: AbortSignal;\n}',
+  },
+  {
     name: 'PiAiRequestHeaderContext',
     declaration: 'export interface PiAiRequestHeaderContext extends Readonly<Pick<GenerateOptions<string>, \'provider\' | \'model\' | \'sessionId\' | \'purpose\'>> {\n    readonly baseURL: string;\n}',
   },
@@ -8292,6 +8349,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RenderedDocumentBytes',
     declaration: 'export interface RenderedDocumentBytes extends WorkspaceFileBytes {\n    readonly missingFonts: string[];\n    readonly generation: OfficeToPdfGeneration;\n}',
+  },
+  {
+    name: 'ReplaceCredentialRequest',
+    declaration: 'export interface ReplaceCredentialRequest extends CredentialRequest {\n    readonly value: string;\n}',
   },
   {
     name: 'ReplayEnvelope',
@@ -10344,6 +10405,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'UpdateTeamTaskRequest',
     declaration: 'export interface UpdateTeamTaskRequest {\n    readonly taskId: TeamTaskId;\n    readonly expectedRevision: number;\n    readonly action: TeamTaskAction;\n    readonly subject?: string;\n    readonly description?: string;\n    readonly blockedBy?: readonly TeamTaskId[];\n    readonly writeScopes?: readonly string[];\n    readonly owner?: SessionId;\n}',
+  },
+  {
+    name: 'UserCredentialId',
+    declaration: 'export type UserCredentialId = Branded<\'UserCredentialId\'>;',
+  },
+  {
+    name: 'UserCredentialView',
+    declaration: 'export interface UserCredentialView {\n    readonly id: UserCredentialId;\n    readonly name: string;\n    readonly configured: true;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'UserId',

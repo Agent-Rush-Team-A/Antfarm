@@ -154,6 +154,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   typertGateway: 'typert.md',
   remoteAccess: 'typert.md',
   multiuser: 'typert.md',
+  userCredentials: 'credentials.md',
   userQuestions: 'user-questions.md',
   web: 'web.md',
   workflowEngine: 'workflow.md',
@@ -904,6 +905,11 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   AuthorizationSession: 'credentials.md',
   AuthorizationSettlement: 'credentials.md',
   AuthorizationStatus: 'credentials.md',
+  UserCredentialId: 'credentials.md',
+  UserCredentialView: 'credentials.md',
+  CreateCredentialRequest: 'credentials.md',
+  CredentialRequest: 'credentials.md',
+  ReplaceCredentialRequest: 'credentials.md',
   CredentialRef: 'credentials.md',
   CredentialKey: 'credentials.md',
   CredentialInfo: 'credentials.md',
@@ -1023,6 +1029,7 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
 
 /** Project types deliberately documented outside the subsystems catalog. */
 export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
+  PiAiCredentialRequest: 'Host credential authorization inputs are owned by packages/llm/llm-pi-ai/README.md',
   ActionCardDecision: 'packages/experimental/action-cards/README.md',
   ActionCardKind: 'packages/experimental/action-cards/README.md',
   ActionCardResult: 'packages/experimental/action-cards/README.md',

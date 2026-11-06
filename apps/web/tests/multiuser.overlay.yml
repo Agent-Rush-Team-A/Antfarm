@@ -33,3 +33,12 @@
 # The shared UI still needs the directory-picker namespace to mount. Its
 # methods remain denied to users; allocated workspace creation never calls it.
 # The service's execution guard also denies tools contributed by any preset.
+
+- insert:
+    - id: user-credentials
+      name: '@deepseek-ai/dsh-api-user-credentials'
+      config:
+        encryptionKeyFile: !!js process.env.DSH_USER_CREDENTIALS_KEY_FILE
+
+- id: ui-user-credentials
+  disabled: false

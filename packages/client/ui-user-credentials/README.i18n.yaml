@@ -1,0 +1,37 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/client/ui-user-credentials/README.md
+/:
+  en: 45e24fe250c76a87
+  zh: 5c44e66761dd309c
+/deepseek-ai-dsh-client-ui-user-credentials:
+  en: 2efe0c91e69f60ae
+  zh: a4fe39d54b0fb4ae
+/deepseek-ai-dsh-client-ui-user-credentials/summary:
+  en: 3635d84ea6e2ebe0
+  zh: 8a11bc3d2c4225b9
+/deepseek-ai-dsh-client-ui-user-credentials/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 7177e3097c880aa1
+/deepseek-ai-dsh-client-ui-user-credentials/use-this-package:
+  en: 7750ecf649e22ac8
+  zh: 831710a1d50b6d3e
+/deepseek-ai-dsh-client-ui-user-credentials/understand-the-implementation:
+  en: 1ee7e7dc73885e8e
+  zh: 313847db5c7e0695
+/deepseek-ai-dsh-client-ui-user-credentials/further-exploration:
+  en: 3d2b11e02c3223c2
+  zh: f5e71a1183cd3f6d
+/deepseek-ai-dsh-client-ui-user-credentials/model-experience:
+  en: 151e43486de54294
+  zh: 67793aef1194f667
+/deepseek-ai-dsh-client-ui-user-credentials/model-experience/kv-cache-effect:
+  en: 35912ef9180b22ea
+  zh: 790f74787e3a212b
+/deepseek-ai-dsh-client-ui-user-credentials/known-limitations-and-deferred-work:
+  en: bef30c4ef73d6596
+  zh: 0a2b9c41d9c07080
+/deepseek-ai-dsh-client-ui-user-credentials/known-limitations-and-deferred-work/dev-note:
+  en: b7fbf1f393752f9b
+  zh: dca4b6998086b974

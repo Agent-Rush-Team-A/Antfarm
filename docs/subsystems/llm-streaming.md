@@ -1281,4 +1281,26 @@ Prepare headers for one pi-ai inference call, excluding model discovery. Listene
 ```
 
 Source: [`packages/llm/llm-pi-ai/src/index.ts`](../../packages/llm/llm-pi-ai/src/index.ts)
+
+<a id="llm-pi-airesolve-api-key--waterfall"></a>
+
+#### `llm-pi-ai/resolve-api-key` — waterfall
+
+Authorize one Host-only credential resolution. A route-specific consumer may replace the global resolver and must reject an unauthorized request without calling next(). Other consumers delegate with next(). Neither routing inputs nor the returned secret may be logged or sent to a model.
+
+```ts cordis-catalog
+/**
+ * Authorize one Host-only credential resolution. A route-specific consumer
+ * may replace the global resolver and must reject an unauthorized request
+ * without calling next(). Other consumers delegate with next(). Neither
+ * routing inputs nor the returned secret may be logged or sent to a model.
+ * @mode waterfall
+ * @param request - exact endpoint and initiating Session when generating.
+ * @param next - resolve through the deployment's global credential plane.
+ * @returns request-authorized secret, or undefined for ambient authentication.
+ */
+'llm-pi-ai/resolve-api-key'(request: PiAiCredentialRequest, next: () => Promise<string | undefined>): Promise<string | undefined>
+```
+
+Source: [`packages/llm/llm-pi-ai/src/index.ts`](../../packages/llm/llm-pi-ai/src/index.ts)
 <!-- END GENERATED cordis-surface -->

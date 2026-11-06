@@ -22,10 +22,10 @@
     "./package.json": "./package.json"
   },
   "files": [
+    "lib/index.js",
     "assets/supervisor.py",
     "docs/",
     "image/Dockerfile",
-    "lib/index.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
