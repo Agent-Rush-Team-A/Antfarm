@@ -4611,6 +4611,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'workspaceArtifacts',
+    summary: 'Optional Linux file provider; teardown cancels and awaits open requests and bodies.',
+    description: 'Optional Linux file provider; teardown cancels and awaits open requests and bodies.',
+    methods: [
+      {
+        signature: '@Remote async list(request: WorkspaceArtifactScope, path: string, signal: AbortSignal): Promise<WorkspaceArtifactListing>',
+        description: 'List one authorized directory without revealing Host paths or starting a sandbox.',
+        parameters: [{ name: 'request', description: 'registered workspace identity.' }, { name: 'path', description: 'slash-separated relative directory; empty names the root.' }, { name: 'signal', description: 'caller lifetime, combined with provider withdrawal.' }],
+        returns: 'bounded file metadata and the configured download cap.',
+      },
+    ],
+  },
+  {
     key: 'workspaceChanges',
     summary: 'Serves the summaries and file comparisons the recorder keeps for live Sessions.',
     description: 'Serves the summaries and file comparisons the recorder keeps for live Sessions.',
@@ -10449,6 +10462,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceArchiveValue',
     declaration: 'export interface WorkspaceArchiveValue {\n    readonly archivedSessionIds: readonly SessionId[];\n}',
+  },
+  {
+    name: 'WorkspaceArtifactEntry',
+    declaration: 'export interface WorkspaceArtifactEntry {\n    readonly name: string;\n    readonly kind: \'file\' | \'directory\';\n    readonly bytes?: number;\n}',
+  },
+  {
+    name: 'WorkspaceArtifactListing',
+    declaration: 'export interface WorkspaceArtifactListing {\n    readonly path: string;\n    readonly entries: readonly WorkspaceArtifactEntry[];\n    readonly truncated: boolean;\n    readonly maxDownloadBytes: number;\n}',
+  },
+  {
+    name: 'WorkspaceArtifactScope',
+    declaration: 'export interface WorkspaceArtifactScope {\n    readonly workspaceId: WorkspaceId;\n}',
   },
   {
     name: 'WorkspaceBaseline',

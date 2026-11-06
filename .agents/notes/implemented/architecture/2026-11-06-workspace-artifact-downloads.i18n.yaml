@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-11-06-workspace-artifact-downloads.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-11-06-workspace-artifact-downloads.md
+/agent-note-descriptor-pinned-workspace-downloads:
+  en: f93d6206566d3f86
+  zh: 7c3a044cbde310bd
+/agent-note-descriptor-pinned-workspace-downloads/problem:
+  en: 09628fc1cc0551e6
+  zh: 4198e8a3e514369f
+/agent-note-descriptor-pinned-workspace-downloads/decision:
+  en: 91846b32710050d0
+  zh: 56f211b651e7e7cd
+/agent-note-descriptor-pinned-workspace-downloads/alternatives-considered:
+  en: eadada2c4a619eac
+  zh: da9d7c2d91456606
+/agent-note-descriptor-pinned-workspace-downloads/consequences:
+  en: 3e78dabd5c554710
+  zh: 5cca497e54aa10a8

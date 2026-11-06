@@ -123,6 +123,9 @@
     },
     {
       "path": "../workspace-upload/tsconfig.client.json"
+    },
+    {
+      "path": "../workspace-artifacts/tsconfig.client.json"
     }
   ]
 }

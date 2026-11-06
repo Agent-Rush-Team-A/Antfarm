@@ -318,6 +318,25 @@ Types: [Agent](core.md) · [RemoteStream](typert.md) · [SessionId](core.md)
 
 Source: [`packages/api/terminal-controller/src/index.ts`](../../packages/api/terminal-controller/src/index.ts)
 
+<a id="ctxworkspaceartifacts--workspaceartifacts"></a>
+
+### `ctx.workspaceArtifacts` — `WorkspaceArtifacts`
+
+Optional Linux file provider; teardown cancels and awaits open requests and bodies.
+
+```ts cordis-catalog
+/**
+ * List one authorized directory without revealing Host paths or starting a sandbox.
+ * @param request - registered workspace identity.
+ * @param path - slash-separated relative directory; empty names the root.
+ * @param signal - caller lifetime, combined with provider withdrawal.
+ * @returns bounded file metadata and the configured download cap.
+ */
+@Remote async list(request: WorkspaceArtifactScope, path: string, signal: AbortSignal): Promise<WorkspaceArtifactListing>
+```
+
+Source: [`packages/api/workspace-artifacts/src/index.ts`](../../packages/api/workspace-artifacts/src/index.ts)
+
 <a id="ctxworkspacecontroller--workspacecontroller"></a>
 
 ### `ctx.workspaceController` — `WorkspaceController`

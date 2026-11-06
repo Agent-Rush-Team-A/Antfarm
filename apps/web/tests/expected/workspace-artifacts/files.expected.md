@@ -1,0 +1,17 @@
+- dialog "Workspace files":
+  - heading "Workspace files" [level=2]
+  - button "Close"
+  - text: Workspace root
+  - button "Refresh"
+  - list "Workspace files":
+    - listitem:
+      - button "Open folder “outputs”": outputs
+    - listitem:
+      - text: empty 0 bytes
+      - button "Download “empty”": Download
+    - listitem:
+      - text: large 65 bytes
+      - button "Download “large”": Download
+    - listitem:
+      - text: new-output 3 bytes
+      - button "Download “new-output”": Download

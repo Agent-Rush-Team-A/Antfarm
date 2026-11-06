@@ -1,3 +1,5 @@
+import { WorkspaceFilesButton, type WorkspaceFilesInjected } from './WorkspaceFilesButton.tsx'
+import type {} from '@deepseek-ai/dsh-api-workspace-artifacts/client'
 import { IconEditOutlineRegular, IconTrashOutlineRegular, IconPinFillRegular, IconPinOutlineRegular, IconUnarchiveOutlineRegular, IconArchiveOutlineRegular, IconBranchOutlineRegular, IconCopyOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { SessionMenu } from './session-actions/SessionMenu.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-context-menu/client'
@@ -124,6 +126,20 @@ export function apply(ctx: Context): void {
   const rowToast = createSnapshotStore<RowToastState | null>(null)
   let toastSeq = 0
   const notify = (toast: RowToast): void => { rowToast.set({ ...toast, seq: ++toastSeq }) }
+  ctx.inject(['workspaceArtifactFiles'], (ctx) => {
+    ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
+      name: 'conversation.input.left', id: 'workspace.files', order: 210, locale: NS,
+      inject: (): WorkspaceFilesInjected => ({
+        listFiles: (workspaceId, path, signal) => ctx.workspaceArtifactFiles.listFiles(workspaceId, path, signal),
+        downloadFile: async (workspaceId, path, maxBytes, signal) => {
+          const result = await ctx.workspaceArtifactFiles.downloadFile(workspaceId, path, maxBytes, signal)
+          if (signal.aborted) return
+          notify(result.ok ? { kind: 'downloaded', name: path.slice(path.lastIndexOf('/') + 1) }
+            : { kind: 'downloadFailed', ...result.error })
+        },
+      }),
+    }, WorkspaceFilesButton))
+  })
   ctx.inject(['workspaceUploads'], (ctx) => {
     ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
       name: 'conversation.input.left', id: 'workspace.upload', order: 200, locale: NS,

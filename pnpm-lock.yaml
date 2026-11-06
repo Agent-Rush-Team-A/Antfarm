@@ -1559,6 +1559,9 @@ importers:
       '@deepseek-ai/dsh-api-terminal-controller':
         specifier: workspace:*
         version: link:../terminal-controller
+      '@deepseek-ai/dsh-api-workspace-artifacts':
+        specifier: workspace:*
+        version: link:../workspace-artifacts
       '@deepseek-ai/dsh-api-workspace-controller':
         specifier: workspace:*
         version: link:../workspace-controller
@@ -1931,6 +1934,40 @@ importers:
       '@deepseek-ai/dsh-working-directory':
         specifier: workspace:*
         version: link:../../session/working-directory
+
+  packages/api/workspace-artifacts:
+    dependencies:
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:*
+        version: link:../../util/brand
+      '@deepseek-ai/dsh-typert-protocol':
+        specifier: workspace:*
+        version: link:../../typert/protocol
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-api-gateway':
+        specifier: workspace:*
+        version: link:../gateway
+      '@deepseek-ai/dsh-api-remote-access':
+        specifier: workspace:*
+        version: link:../remote-access
+      '@deepseek-ai/dsh-api-workspace-controller':
+        specifier: workspace:*
+        version: link:../workspace-controller
+      '@deepseek-ai/dsh-client-connection':
+        specifier: workspace:*
+        version: link:../../client/connection
+      '@deepseek-ai/dsh-workspace':
+        specifier: workspace:*
+        version: link:../../workspace/workspace
 
   packages/api/workspace-controller:
     dependencies:
@@ -3067,6 +3104,9 @@ importers:
       '@deepseek-ai/dsh-api-terminal-controller':
         specifier: workspace:*
         version: link:../../api/terminal-controller
+      '@deepseek-ai/dsh-api-workspace-artifacts':
+        specifier: workspace:*
+        version: link:../../api/workspace-artifacts
       '@deepseek-ai/dsh-api-workspace-controller':
         specifier: workspace:*
         version: link:../../api/workspace-controller
@@ -7231,6 +7271,9 @@ importers:
       '@deepseek-ai/dsh-api-session-controller':
         specifier: workspace:*
         version: link:../../api/session-controller
+      '@deepseek-ai/dsh-api-workspace-artifacts':
+        specifier: workspace:*
+        version: link:../../api/workspace-artifacts
       '@deepseek-ai/dsh-api-workspace-controller':
         specifier: workspace:*
         version: link:../../api/workspace-controller
