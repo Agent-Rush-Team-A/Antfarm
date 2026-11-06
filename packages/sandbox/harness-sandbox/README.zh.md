@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-核验已登录原生用户的工作区归属和持久目录记录后，开启、查询和关闭工作区沙箱。可信后端接入方还可提交命令并请求取消。独立 Runner 负责容器状态和容量。HTTP 请求有有限等待和结果校验；结果无法确认的修改不会自动重发或执行补偿操作。
+核验已登录原生用户的工作区归属和持久目录记录后，开启、查询和关闭工作区沙箱。可信后端接入方还可提交命令并请求取消。所选后端负责执行状态，本地 Runner 还负责容器容量。本地 HTTP 请求有有限等待和结果校验；结果无法确认的修改不会自动重发或执行补偿操作。
 
 ## 目录
 
@@ -58,6 +58,10 @@ kind: "package-reference"
 
 Runner 失败使用 `sandbox/failed`，详情为 `{ reason, outcomeUnknown }`。稳定原因区分 `sandbox_capacity`、`sandbox_not_ready`、`sandbox_closing`、`sandbox_cleanup_required`、`sandbox_workspace_conflict`、`sandbox_name_conflict`、`sandbox_outcome_unknown`、`invalid_workspace_directory`、`docker_unavailable`、`runner_unavailable` 和 `runner_outcome_unknown`。关闭失败时保留阻止标记，可重试关闭。PUT 或 DELETE 结果不明时，后续 DELETE 也不会解除 `closing`：现有协议无法证明响应丢失的旧修改已收束。查询和插件重载都不清除这种不确定性。消息不含 Runner 原始诊断、路径或堆栈。
 
+### 执行后端
+
+管理服务默认使用本地 Runner。设置 `backend: provided` 可使用单独加载的 `@deepseek-ai/dsh-harness-sandbox/backend` 实现；管理服务的 Loader 条目必须注入 `sandboxRunnerClient`，此时不需要 Runner socket。后端接收已授权的 WorkspaceId 和登记的项目路径。调用方保留用户与 turn 授权及原始执行代次。
+
 <a id="conversation-admission"></a>
 ### 对话接纳
 
@@ -93,7 +97,7 @@ Agent 步骤信号在异步工具策略前标识原 turn，工具在发送时重
 
 新增文件、搜索或浏览器工具，必须先实现各自的隔离执行、确切定义授权、原 turn 许可和取消处理，再由 overlay 展示。文件操作须在沙箱内按登记工作区解析路径，并将真实结果保留到日志、回放和展示。Bash 的例外不授权其他定义或同名宿主实现。
 
-内部显式用户方法只接收可信后端代码取得的身份，不会在缺失调用上下文时推断 owner。子服务 `sandboxRunnerClient` 仅负责通信，不能作为用户管理 API 暴露。服务卸载会中止本机等待，等待请求连接与期限计时器释放，并移除方法，不发送 DELETE 或 cancel；断线和超时都不代表远端已清理。
+内部显式用户方法只接收可信后端代码取得的身份，不会在缺失调用上下文时推断 owner。子服务 `sandboxRunnerClient` 仅负责通信，不能作为用户管理 API 暴露。本地 Runner 客户端卸载会中止本机等待，等待请求连接与期限计时器释放，并移除方法，不发送 DELETE 或 cancel；断线和超时都不代表远端已清理。
 
 <a id="execution-transport"></a>
 ### 执行通信

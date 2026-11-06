@@ -38,9 +38,10 @@ export class RunnerResponseError extends Error {
    * @param code - Runner error identifier, for classification rather than direct user display.
    * @param statusCode - HTTP failure status.
    * @param outcomeUnknown - Whether a modification may have taken effect before this server failure.
+   * @param options - Original provider cause, retained for diagnostics rather than user display.
    */
-  constructor(readonly code: string, readonly statusCode: number, readonly outcomeUnknown: boolean) {
-    super(`Runner returned HTTP ${String(statusCode)} (${code})`)
+  constructor(readonly code: string, readonly statusCode: number, readonly outcomeUnknown: boolean, options?: ErrorOptions) {
+    super(`Runner returned HTTP ${String(statusCode)} (${code})`, options)
     this.name = 'RunnerResponseError'
   }
 }
@@ -51,9 +52,10 @@ export class RunnerExecutionError extends RunnerResponseError {
    * @param code - Original Runner execution failure code.
    * @param statusCode - Validated HTTP status for this failure.
    * @param execution - Confirmed response fields; absent Bash status remains unknown.
+   * @param options - Original provider cause, when the failure originated before a validated response.
    */
-  constructor(code: RunnerExecutionFailureCode, statusCode: number, readonly execution: RunnerExecutionFailure) {
-    super(code, statusCode, code === 'execution_outcome_unknown' || code === 'execution_container_recycled')
+  constructor(code: RunnerExecutionFailureCode, statusCode: number, readonly execution: RunnerExecutionFailure, options?: ErrorOptions) {
+    super(code, statusCode, code === 'execution_outcome_unknown' || code === 'execution_container_recycled', options)
     this.name = 'RunnerExecutionError'
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-harness-sandbox",
-  "description": "Authorized workspace sandbox lifecycle management over a local Runner",
+  "description": "Authorized workspace execution through a deployment-selected backend",
   "version": "0.2.2-alpha.3",
   "publishConfig": {
     "access": "public"
@@ -40,6 +40,10 @@
     "./remote": {
       "types": "./lib/typert.remote-client.d.ts",
       "default": "./lib/typert.remote-client.js"
+    },
+    "./backend": {
+      "types": "./lib/types/backend.d.ts",
+      "default": "./lib/backend.js"
     }
   },
   "files": [
@@ -53,7 +57,8 @@
     "lib/typert.host.js",
     "lib/typert.host.d.ts",
     "lib/typert.remote-client.js",
-    "lib/typert.remote-client.d.ts"
+    "lib/typert.remote-client.d.ts",
+    "lib/backend.js"
   ],
   "license": "MIT",
   "peerDependencies": {
@@ -66,7 +71,8 @@
     "@deepseek-ai/dsh-workspace": "workspace:*",
     "@deepseek-ai/dsh-api-multiuser": "workspace:*",
     "@deepseek-ai/dsh-api-remote-access": "workspace:*",
-    "@deepseek-ai/dsh-typert-protocol": "workspace:*"
+    "@deepseek-ai/dsh-typert-protocol": "workspace:*",
+    "@deepseek-ai/dsh-fs": "workspace:*"
   },
   "dependencies": {
     "@deepseek-ai/dsh-tool-bash": "workspace:*",
@@ -98,6 +104,7 @@
     "@deepseek-ai/dsh-typert-registry": "workspace:*",
     "@deepseek-ai/dsh-api-gateway": "workspace:*",
     "@deepseek-ai/dsh-host-webserver": "workspace:*",
-    "@deepseek-ai/dsh-client-connection": "workspace:*"
+    "@deepseek-ai/dsh-client-connection": "workspace:*",
+    "@deepseek-ai/dsh-fs": "workspace:*"
   }
 }

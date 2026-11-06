@@ -1,5 +1,5 @@
 ---
-description: "Authorize native workspace sandbox operations and call an independent local Runner."
+description: "Authorize native workspace operations through a deployment-selected execution backend."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Open, query, and close workspace sandboxes after checking the authenticated native user's ownership and persistent directory record. Trusted backend integrations can also submit commands and request cancellation. The independent Runner owns container state and capacity. HTTP requests have bounded waits and validated results; unconfirmed modifications are never replayed or compensated automatically.
+Open, query, and close workspace sandboxes after checking the authenticated native user's ownership and persistent directory record. Trusted backend integrations can also submit commands and request cancellation. The selected backend owns execution state; the local Runner also owns container capacity. Local HTTP requests have bounded waits and validated results; unconfirmed modifications are never replayed or compensated automatically.
 
 ## Table of Contents
 
@@ -58,6 +58,10 @@ Removing a native workspace registration requires a fresh Runner observation of 
 
 Runner failures use `sandbox/failed` with `{ reason, outcomeUnknown }`. Stable reasons distinguish `sandbox_capacity`, `sandbox_not_ready`, `sandbox_closing`, `sandbox_cleanup_required`, `sandbox_workspace_conflict`, `sandbox_name_conflict`, `sandbox_outcome_unknown`, `invalid_workspace_directory`, `docker_unavailable`, `runner_unavailable` and `runner_outcome_unknown`. Failed close retains its barrier and may be retried. An uncertain PUT or DELETE retains `closing` even after another DELETE: this protocol cannot prove a lost mutation has settled. Queries and plugin reloads do not clear this uncertainty. Messages omit raw Runner diagnostics, paths and stacks.
 
+### Execution backend
+
+Management uses the local Runner by default. Set `backend: provided` to use a separately loaded `@deepseek-ai/dsh-harness-sandbox/backend` implementation; the management Loader row must inject `sandboxRunnerClient`, and no Runner socket is required. The backend receives the authorized WorkspaceId and registered project path. Callers retain user and turn authorization and the original execution generation.
+
 <a id="conversation-admission"></a>
 ### Conversation admission
 
@@ -93,7 +97,7 @@ Verified process cleanup preserves the container and other commands. Unconfirmed
 
 Each additional file, search or browser tool needs its own isolated implementation, exact-definition authorization, original-turn permission and cancellation handling before the overlay advertises it. File operations must resolve against the registered workspace inside the sandbox and preserve their actual results through logs, replay and presentation. The Bash exception does not authorize another definition or a host implementation with the same name.
 
-Internal explicit-user methods accept only identities recovered by trusted backend code. They do not infer an owner from a missing invocation. The child `sandboxRunnerClient` service is transport only and must not be exposed as a user management API. Service disposal aborts local waits, waits for request connections and deadline timers to be released, and unregisters methods without sending DELETE or cancel; neither disconnect nor timeout confirms remote cleanup.
+Internal explicit-user methods accept only identities recovered by trusted backend code. They do not infer an owner from a missing invocation. The child `sandboxRunnerClient` service is transport only and must not be exposed as a user management API. Local Runner client disposal aborts local waits, waits for request connections and deadline timers to be released, and unregisters methods without sending DELETE or cancel; neither disconnect nor timeout confirms remote cleanup.
 
 <a id="execution-transport"></a>
 ### Execution transport

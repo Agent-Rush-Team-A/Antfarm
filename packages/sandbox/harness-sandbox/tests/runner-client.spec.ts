@@ -13,6 +13,7 @@ import SandboxRunnerClient, { Config, RunnerExecutionError, RunnerRequestError, 
 import { RunnerClient } from '../src/runner-client.ts'
 import type { RunnerExecutionRequest, RunnerExecutionId } from '../src/execution.ts'
 import type { SandboxContainerId } from '../src/runner-client.ts'
+import type { SandboxExecutionBackend } from '../src/backend.ts'
 
 const workspace = brandString<WorkspaceId>('A_b-9')
 const running = { state: 'running', containerId: 'a'.repeat(64) }
@@ -53,7 +54,7 @@ async function fixture(t: TestContext, overrides: Partial<Config> = {}) {
   return { root, socketPath, server, client, control, calls, received: received.promise, disconnected: disconnected.promise }
 }
 
-function invoke(client: RunnerClient | SandboxRunnerClient, operation: 'open' | 'status' | 'close') {
+function invoke(client: RunnerClient | SandboxExecutionBackend, operation: 'open' | 'status' | 'close') {
   return operation === 'open' ? client.open(workspace, '/srv/workspaces/A_b-9')
     : operation === 'close' ? client.close(workspace) : client.status(workspace)
 }

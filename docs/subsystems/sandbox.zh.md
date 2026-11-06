@@ -175,11 +175,26 @@ interface ConfinedArgv {
 <a id="workspace-sandbox-management"></a>
 ## 工作区沙箱管理
 
-`ctx.workspaceSandbox` 在调用独立 Docker Runner 前核验原生多用户归属及登记的持久目录。`SandboxRequest` 仅含 `workspaceId`；`SandboxValue` 返回该编号和 `closed`、`starting`、`running`、`closing`、`cleanup_required` 中一种状态。浏览器结果不含容器编号或路径。`SandboxFailureReason` 在 `sandbox/failed` 下区分容量、清理、冲突，以及不可用或结果不明的操作；查询失败不会猜测状态。显式用户后端方法保留完整的 `RunnerRunningSandbox.containerId`，供执行接入。见[包参考](../../packages/sandbox/harness-sandbox/README.zh.md)和[可选 Web 部署](../user/guide/workspace-sandboxes.zh.md)。
+`ctx.workspaceSandbox` 在调用配置的执行后端前核验原生多用户归属及登记的持久目录。`SandboxRequest` 仅含 `workspaceId`；`SandboxValue` 返回该编号和 `closed`、`starting`、`running`、`closing`、`cleanup_required` 中一种状态。浏览器结果不含容器编号或路径。`SandboxFailureReason` 在 `sandbox/failed` 下区分容量、清理、冲突，以及不可用或结果不明的操作；查询失败不会猜测状态。显式用户后端方法保留完整的 `RunnerRunningSandbox.containerId`，供执行接入。见[包参考](../../packages/sandbox/harness-sandbox/README.zh.md)和[可选 Web 部署](../user/guide/workspace-sandboxes.zh.md)。
 
 内部通信服务 `ctx.sandboxRunnerClient` 接收绑定原始 `RunnerExecutionIdentity` 的完整 `RunnerExecutionRequest`；`RunnerExecutionResult` 保留已确认的退出码与输出尾部。`RunnerCancellationResult` 仅表示接纳，`RunnerExecutionError.execution` 则保留 `RunnerExecutionFailure` 的清理状态和已知 Bash 状态。本机中止与通信期限到达都不确认远端清理。通信层不增加用户授权或模型工具；请求上限、独立预算与安全重取由[包参考](../../packages/sandbox/harness-sandbox/README.zh.md#execution-transport)说明。
 
 `SandboxActivity` 包含 `requests`（直到 turn 结算的未结束原始输入）、`openings`、`executions`（含取消与清理）、`closing` 及派生的 `busy`。经授权的 `activityForUser` 查询观察这些本地拥有者，不预留关闭决定；管理不可用时抛错。它不代替 Runner 状态，也不实现空闲计时器。
+
+## Workspace 远程文件
+
+执行后端可以提供绑定原始执行代次的文件接口。可信调用方保留用户与 turn 许可，复核 `assertCurrent()`，并传入捕获的取消信号。本地 Runner 拒绝此能力，不会改用 Harness 文件。
+
+```ts type-equiv
+/** Files and directory of one original execution generation, never the Harness project directory. */
+interface WorkspaceRuntimeFiles {
+  readonly fs: FileSystem
+  readonly root: string
+  readonly signal: AbortSignal
+  /** Reject access after closure, disconnect or generation replacement. */
+  assertCurrent(): void
+}
+```
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -312,56 +327,65 @@ Types: [WorkspaceId](workspace.zh.md)
 
 Source: [`packages/sandbox/sandbox-runner/src/index.ts`](../../packages/sandbox/sandbox-runner/src/index.ts)
 
-<a id="ctxsandboxrunnerclient--sandboxrunnerclient"></a>
+<a id="ctxsandboxrunnerclient--sandboxexecutionbackend-abstract-seam"></a>
 
-### `ctx.sandboxRunnerClient` — `SandboxRunnerClient`
+### `ctx.sandboxRunnerClient` — `SandboxExecutionBackend` (abstract seam)
 
-Lifecycle-managed internal communication with one independent Runner.
+Providers share lifecycle and original-request semantics without choosing user permissions.
 
 ```ts cordis-catalog
 /**
- * Send an authorized caller's open request; this transport does not authenticate users.
- * @param workspaceId - Trusted Runner workspace identity.
- * @param workspaceDir - Trusted persistent workspace directory.
- * @returns Confirmed running generation, retaining its full container identity.
+ * Open or reuse the authorized Workspace's execution generation.
+ * @param workspaceId - Authorized identity.
+ * @param workspaceDir - Registered project path, separate from execution coordinates.
+ * @returns Confirmed execution generation.
  */
-open(workspaceId: WorkspaceId, workspaceDir: string): Promise<RunnerRunningSandbox>
+abstract open(workspaceId: WorkspaceId, workspaceDir: string): Promise<RunnerRunningSandbox>
 
 /**
- * Query the Runner for an authorized caller's workspace.
- * @param workspaceId - Trusted Runner workspace identity.
- * @returns The current validated observation; failures never synthesize closed.
+ * Observe this Workspace without inferring a result from an earlier request.
+ * @param workspaceId - Authorized identity.
+ * @returns Fresh provider observation.
  */
-status(workspaceId: WorkspaceId): Promise<RunnerSandboxStatus>
+abstract status(workspaceId: WorkspaceId): Promise<RunnerSandboxStatus>
 
 /**
- * Request closure after the caller has authorized this operation; never automatically replay it.
- * @param workspaceId - Trusted Runner workspace identity.
- * @returns Closed only after the Runner confirms container absence.
+ * Close the execution generation after confirming managed cleanup.
+ * @param workspaceId - Authorized identity.
+ * @returns Closure after managed work is quiescent; lost acknowledgement rejects.
  */
-close(workspaceId: WorkspaceId): Promise<RunnerClosedSandbox>
+abstract close(workspaceId: WorkspaceId): Promise<RunnerClosedSandbox>
 
 /**
- * Submit or retrieve the authorized caller's unchanged execution request without automatic retries.
- * @param workspaceId - Trusted workspace identity.
- * @param request - Saved request including original execution and container identities.
- * @param signal - Optional local wait cancellation; omission uses only service lifetime and deadline.
- * @returns Validated command result; stopping this wait does not cancel the remote execution.
+ * Execute once or retrieve the unchanged original request's result.
+ * @param workspaceId - Authorized identity.
+ * @param request - Unchanged original request.
+ * @param signal - Wait cancellation, without remote cancellation.
+ * @returns Original command result; conflicting requests and unknown outcomes reject.
  */
-execute(workspaceId: WorkspaceId, request: RunnerExecutionRequest, signal?: AbortSignal): Promise<RunnerExecutionResult>
+abstract execute(workspaceId: WorkspaceId, request: RunnerExecutionRequest, signal?: AbortSignal): Promise<RunnerExecutionResult>
 
 /**
- * Request cancellation with its own deadline, independent of an aborted execution wait.
- * @param workspaceId - Trusted workspace identity.
- * @param request - Original execution and full container identity.
- * @returns Cancellation acknowledgement, not a cleanup guarantee; errors retain the Runner reason.
+ * Request cancellation in the original execution generation.
+ * @param workspaceId - Authorized identity.
+ * @param request - Original execution and generation.
+ * @returns Cancellation receipt, not cleanup confirmation.
  */
-cancel(workspaceId: WorkspaceId, request: RunnerExecutionIdentity): Promise<RunnerCancellationResult>
+abstract cancel(workspaceId: WorkspaceId, request: RunnerExecutionIdentity): Promise<RunnerCancellationResult>
+
+/**
+ * Access files only in the captured execution generation; unsupported backends refuse rather than using host files.
+ * @param _workspaceId - Authorized identity.
+ * @param _target - Captured execution generation.
+ * @param _signal - Caller lifetime.
+ * @returns Generation-bound remote files; the caller retains user and turn authorization.
+ */
+files(_workspaceId: WorkspaceId, _target: SandboxContainerId, _signal?: AbortSignal): Promise<WorkspaceRuntimeFiles>
 ```
 
 Types: [WorkspaceId](workspace.zh.md)
 
-Source: [`packages/sandbox/harness-sandbox/src/transport.ts`](../../packages/sandbox/harness-sandbox/src/transport.ts)
+Source: [`packages/sandbox/harness-sandbox/src/backend.ts`](../../packages/sandbox/harness-sandbox/src/backend.ts)
 
 <a id="ctxworkspacesandbox--workspacesandbox"></a>
 
