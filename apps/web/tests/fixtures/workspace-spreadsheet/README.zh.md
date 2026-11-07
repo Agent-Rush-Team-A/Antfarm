@@ -32,4 +32,4 @@ pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/workspace-spre
 
 每次运行将截图、页面无障碍快照、原始浏览器录像、下载产物、步骤、最终结果和 Session 日志写入已忽略的 `.playwright-mcp/issue12-*` 目录，并输出其准确位置。只有测试进程以零状态退出、`result.json` 中 `success: true` 且云资源清理已确认，才表示验收完整完成。失败运行仅用于诊断，不能拼接成成功录像。
 
-没有浏览器控制连接器时，使用隔离的无头 Playwright 上下文。在模型请求之前，通过已鉴权的正式 API 配置个人推理凭据。模型和云端传输均为真实服务。原始录像保存为 WebM；编码 GIF 还需要仓库录制 skill 指定的媒体工具。
+没有浏览器控制连接器时，使用隔离的无头 Playwright 上下文。共用启动器通过普通 Node 启动构建后的 Web profile。在模型请求之前，通过已鉴权的正式 API 配置个人推理凭据。模型和云端传输均为真实服务。原始录像保存为 WebM；编码 GIF 还需要仓库录制 skill 指定的媒体工具。

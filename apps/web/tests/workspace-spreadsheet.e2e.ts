@@ -11,6 +11,7 @@ import { chromium, type Browser, type BrowserContext, type Page } from 'playwrig
 import Papa from 'papaparse'
 import { expect, test } from 'vitest'
 import { z } from 'zod'
+import { resolveExampleLaunch } from '@deepseek-ai/dsh-loader-smoke'
 import { REPO_ROOT, requireDist, writeComposerDraft } from './support.ts'
 
 const configPath = process.env.DSH_VULTR_TEST_CONFIG
@@ -87,7 +88,7 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
     await writeFile(join(runDir, 'run.json'), JSON.stringify({ deploymentId, root, runDir,
       commit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim(),
       dirty: execFileSync('git', ['status', '--porcelain'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim() !== '',
-      provider: 'vultr', model: 'deepseek-v4.1-flash-1017', maxInstances: 2, idleTimeoutMs,
+      provider: 'vultr', model: 'deepseek-v4.1-flash-1017', launchMode: 'lib', maxInstances: 2, idleTimeoutMs,
       sweepIntervalMs: 1000, realModel: true, realCloud: true, browser: 'isolated headless Playwright',
       cloud: { region: initial.region, plan: initial.plan, osId: initial.osId,
         requestTimeoutMs: initial.requestTimeoutMs, operationTimeoutMs: initial.operationTimeoutMs,
@@ -135,12 +136,15 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
     }
     async function startServer(idleTimeoutMs: number): Promise<string> {
       await writeFile(overlay, `- id: sandbox-idle\n  config:\n    idleTimeoutMs: ${idleTimeoutMs}\n    sweepIntervalMs: 1000\n`)
-      const child = spawn(process.execPath, ['--import', nodeImport, join(REPO_ROOT, 'apps/cli/src/bin.ts'),
-        'web', '--patch', join(REPO_ROOT, 'apps/cli/config/antfarm-web.patch.yml'),
-        '--patch', join(REPO_ROOT, 'apps/cli/config/examples/harness-vultr.patch.yml'),
-        '--patch', join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml'), '--patch', overlay,
-        '--no-open', '--port', '0'],
-      { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] })
+      const launch = resolveExampleLaunch({
+        srcBin: join(REPO_ROOT, 'apps/cli/src/bin.ts'), mode: 'lib',
+        configArgs: ['web', '--patch', join(REPO_ROOT, 'apps/cli/config/antfarm-web.patch.yml'),
+          '--patch', join(REPO_ROOT, 'apps/cli/config/examples/harness-vultr.patch.yml'),
+          '--patch', join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml'), '--patch', overlay,
+          '--no-open', '--port', '0'],
+        env: { ...env, TSX_TSCONFIG_PATH: undefined },
+      })
+      const child = spawn(launch.command, launch.args, { cwd: root, env: launch.env, stdio: ['ignore', 'pipe', 'pipe'] })
       const done = completion(child)
       void done.catch(() => {}) // The owning startup or teardown awaits and reports this failure.
       let output = ''
