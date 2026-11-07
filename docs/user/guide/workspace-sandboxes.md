@@ -24,14 +24,25 @@ pnpm run start:web --patch apps/cli/config/examples/harness-sandbox.patch.yml --
 
 Antfarm's default Web entry provides account login and workspace file services; the overlay adds sandbox management and automatic preparation when an authenticated user sends a message to an owned workspace Session. Preparation failure refuses the message. Its standard preset exposes only foreground Runner Bash; host file tools and terminal handoffs remain denied. The Docker-privileged Runner stays outside Web. Missing required configuration fails startup. When using `pnpm dsh web` directly, load `apps/cli/config/antfarm-web.patch.yml` before this overlay.
 
+<a id="docker-task-modes"></a>
+## Docker task modes
+
+Use the [Docker mode overlay](../../../apps/cli/config/examples/harness-docker-modes.patch.yml) instead of the ordinary sandbox overlay when each Workspace should select single-session or multi-session Docker. Set `DSH_DOCKER_MODES_CONFIG_JSON` to an object containing `socketPath`, `workspaceRoot`, private absolute `stateRoot`, `maxFiles` and `maxBytes`. `workspaceRoot` must equal `DSH_MULTIUSER_WORKSPACE_ROOT`; the copy budgets bound complete mode transitions. Keep the journal directory outside Workspace files and owned only by the Web service account.
+
+New Workspaces start in `multi-docker`. Before creating the first Session, select `single-docker` with `workspace/setMode`; creation permanently locks the choice. Single-session tasks open automatically after attachment validation and destroy their container after queued input, commands and file writes settle. Continued conversation starts a new container with the retained files. Single-session manual open/close requests fail; multi-session manual and idle controls remain available. This overlay supports Docker modes; retained VM modes prevent runtime loading.
+
+Inspect the resulting composition before launching it:
+
+```sh
+pnpm dsh web --patch apps/cli/config/antfarm-web.patch.yml --patch apps/cli/config/examples/harness-docker-modes.patch.yml --dump-config
+```
+
 <a id="use-the-web-controls"></a>
 ## Use the Web controls
 
 With the overlay enabled, choose **Workspace sandbox** from the workspace actions menu, or use the shield button in a conversation's input bar. Both entries open the same panel for that workspace; opening the panel only queries status.
 
-Workspace configuration is available from each workspace row and menu. Choose its mode before starting the first Session; this permanently locks that workspace. Single-session modes show status with automatic-management guidance and hide manual sandbox controls. Multi-session modes retain manual controls while configuration is ready.
-
-In multi-session modes, click **Open sandbox** to start it. The panel shows **Starting…**, then **Running** after confirmation. Click **Close sandbox**, then **Confirm close** to stop it; the panel shows **Closing…**, then **Closed** after removal. Cancelling the confirmation or dismissing the panel keeps the sandbox running. Closing retains files and conversations, but stops active and queued tasks.
+Click **Open sandbox** to start it. The panel shows **Starting…**, then **Running** after confirmation. Click **Close sandbox**, then **Confirm close** to stop it; the panel shows **Closing…**, then **Closed** after removal. Cancelling the confirmation or dismissing the panel keeps the sandbox running. Closing retains files and conversations, but stops active and queued tasks.
 
 When both slots are occupied, the panel says **Sandbox capacity is full. Close one or try again later.** Close a running sandbox before retrying the failed opening. Status refresh does not retry opening or closing. A failed query labels the last observed status and disables mutations until a successful query; an unknown operation result blocks opening and requires administrator assistance. Loss of connection or workspace permission dismisses the panel; reopen it after access returns.
 
