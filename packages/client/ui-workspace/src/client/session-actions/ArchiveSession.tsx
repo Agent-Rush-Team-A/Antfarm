@@ -1,3 +1,4 @@
+import { multipleSessions, sessionWorkspace } from '../mode-policy.ts'
 /** Archive hover button and confirmation for stopping the Session’s running work. */
 import { useState } from 'react'
 import type { SessionActivity } from '@deepseek-ai/dsh-api-workspace-controller/client'
@@ -23,11 +24,16 @@ import browserCss from '../rows/WorkspaceBrowser.module.css'
  * @returns the button, or nothing when the caller may not toggle this Session's archival.
  */
 export function ArchiveSessionRowButton({
-  sessionId, useArchived, useSessionAccess, archiveSession, unarchiveSession, t,
+  sessionId, useArchived, useSessionAccess, useWorkspaces, useSessions, archiveSession, unarchiveSession, t,
 }: SessionRowActionProps<ArchiveSessionInjected>) {
   const archived = useArchived(set => set.has(sessionId))
   const allowed = useSessionAccess(sessionId, archived ? 'workspace/unarchiveSession' : 'workspace/archiveSession')
-  if (!allowed) return null
+  const catalog = useSessions(snapshot => snapshot.byId)
+  const modeAllows = useWorkspaces((snapshot) => {
+    const row = sessionWorkspace(snapshot.items, sessionId, catalog)
+    return row === undefined || multipleSessions(row)
+  })
+  if (!allowed || !modeAllows) return null
   return (
     <Tooltip label={t(archived ? 'actions.unarchive' : 'actions.archive')} side="bottom" align="end" delayMs={500} portal>
       <button

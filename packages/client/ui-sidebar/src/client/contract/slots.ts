@@ -9,15 +9,22 @@
  */
 import type { RefCallback } from 'react'
 import type {
-  InjectFace, PropsLocale, PropsRenderFactories, PropsRenderSlots, PropsRuntime, SlotHookFactory,
+  InjectFace, SnapshotSelectorHook, PropsLocale, PropsRenderFactories, PropsRenderSlots, PropsRuntime, SlotHookFactory,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
-import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { WorkspaceId, WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ProductEventMap } from '@deepseek-ai/dsh-client-product-analytics/client'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface GlobalStandardProps {
+    /** Authoritative Workspace data supplied by the Workspace owner. */
+    useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>
+    /** Pure mode policy supplied by the Workspace owner; evaluated over framework-hook data. */
+    sessionCreationAllowed?: (workspaces: WorkspaceSnapshot, sessions: SessionListState) => boolean
+  }
   interface SlotFactoryMap {
     /** Reuse a registered panel icon in navigation rows and menus. */
     'sidebar.panel.icon': {

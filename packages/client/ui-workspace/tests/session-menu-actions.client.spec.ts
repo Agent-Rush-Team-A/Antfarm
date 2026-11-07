@@ -3,7 +3,7 @@ import { expect, it, onTestFinished, vi } from 'vitest'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { MenuRegistry } from '@deepseek-ai/dsh-client-ui-context-menu/src/client/registry.ts'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { WorkspaceId, WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { registerSessionMenus } from '../src/client/session-actions/context-menus.tsx'
 import { en, zh } from '../src/client/locales.ts'
@@ -94,4 +94,21 @@ it('reacts to permission and locale updates, prevents withdrawn actions, and dis
   expect(b.actions.copySessionId).not.toHaveBeenCalled()
   expect(menu.source.getSnapshot()).toEqual([])
   menu.dispose()
+})
+
+
+it.each(['single-vm', 'single-docker'] as const)('removes fork and archive from a live %s menu after membership is filtered', async (mode) => {
+  const b = bench(); await b.fiber.await()
+  const menu = b.open()
+  expect(menu.source.getSnapshot().some(item => item.id === 'session.fork/fork')).toBe(true)
+  const id = 'single' as WorkspaceId
+  b.list.set({ ...b.list.getSnapshot(), items: [{ workspaceId: id, title: 'Single', path: '/single', sessionIds: [],
+    createdAt: '2026-11-07T00:00:00Z', updatedAt: '2026-11-07T00:00:00Z',
+    modeConfig: { workspaceId: id, mode, revision: 2, operationState: 'ready', modeLocked: true,
+      lockReason: 'first-session-created', firstSessionId: b.target.value.sessionId } }] })
+  expect(menu.source.getSnapshot().map(item => item.id)).toEqual(['session.pin/pin', 'session.rename/rename', 'session.id/copy'])
+  menu.select('session.fork/fork'); menu.select('session.archive/archive')
+  expect(b.actions.forkSession).not.toHaveBeenCalled(); expect(b.actions.archiveSession).not.toHaveBeenCalled()
+  b.list.set({ ...b.list.getSnapshot(), archivedSessionIds: [b.target.value.sessionId] })
+  expect(menu.source.getSnapshot().some(item => item.id === 'session.archive/archive')).toBe(false)
 })

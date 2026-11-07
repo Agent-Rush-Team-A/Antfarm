@@ -236,7 +236,7 @@ Workspace 与 Session 悬浮卡片会复制对应行被截断的值：激活 Wor
 - [Workspace Controller](../../api/workspace-controller/README.zh.md)——负责 Workspace、成员关系与 Workspace 分组顺序的 Host 变更和框架无关 Client 投影。
 
 -----
-
+ 单会话模式在永久首个 Session 创建后隐藏新建入口，并从行按钮、菜单和快捷键移除分叉与归档。后代通过父会话目录继承工作区，成员被过滤不会重新开放创建额度。全局新建按钮使用相同的当前或最近工作区数据源。
 每个工作区菜单都提供配置入口，无须加载执行环境 Provider。表单读取 `modeConfig`，通过 `IWorkspaces.setMode` 和已观察的 revision 保存，显示首个会话的永久锁定及操作恢复状态。并发编辑需要明确刷新；修改失败时保留已提交模式，并提供本地化恢复提示。
 
 <a id="model-experience"></a>

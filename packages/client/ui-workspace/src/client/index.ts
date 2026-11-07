@@ -1,3 +1,5 @@
+import { newSessionAvailable } from './mode-policy.ts'
+import { modeFailureKey } from './mode-ui.ts'
 import { registerModeUi } from './mode-ui.ts'
 import { WorkspaceFilesButton, type WorkspaceFilesInjected } from './WorkspaceFilesButton.tsx'
 import type {} from '@deepseek-ai/dsh-api-workspace-artifacts/client'
@@ -158,6 +160,7 @@ export function apply(ctx: Context): void {
   )
   ctx.slots.provideRoot({
     hooks: { workspaces: workspaces.list },
+    props: { sessionCreationAllowed: newSessionAvailable },
     keyedHooks: {
       workspaceAccess: (workspaceId, action) => action === undefined
         ? undefined
@@ -165,7 +168,6 @@ export function apply(ctx: Context): void {
     },
   })
   ctx.effect(() => ctx.locale.register(NS, { zh, en, ja, es, fr, de, ru, pt }), 'ui-workspace: dictionaries')
-  registerModeUi(ctx, workspaces)
   const shortcutControls = createWorkspaceShortcutControls()
 
   const searchSessions: WorkspaceBrowserInjected['searchSessions'] = async (query, signal) => {
@@ -201,6 +203,7 @@ export function apply(ctx: Context): void {
   const requestSessionRename = shortcutControls.rename
   const unarchiveSession = (sessionId: SessionId): void => {
     uiWorkspace.unarchiveSession(sessionId).catch((reason: unknown) => {
+      ctx.contextMenus.notify(ctx.locale.bind(NS)(modeFailureKey(reason)), false)
       console.warn('session unarchive rejected:', reason)
     })
   }
@@ -235,6 +238,7 @@ export function apply(ctx: Context): void {
       }).catch((reason: unknown) => {
         const activity = activeSessionRefusal(reason)
         if (activity === undefined) {
+          ctx.contextMenus.notify(ctx.locale.bind(NS)(modeFailureKey(reason)), false)
           console.warn('session archive rejected:', reason)
           return
         }
@@ -262,6 +266,8 @@ export function apply(ctx: Context): void {
         if (error instanceof Error && error.name === 'SessionForkError'
           && (error as SessionForkError).rpcError.code === 'session/migration-required') {
           notify({ kind: 'forkRequiresOpen', sessionId })
+        } else {
+          ctx.contextMenus.notify(ctx.locale.bind(NS)(modeFailureKey(error)), false)
         }
       })
     },

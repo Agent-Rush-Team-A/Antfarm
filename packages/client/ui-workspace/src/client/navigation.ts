@@ -1,4 +1,4 @@
-import { multipleSessions } from './mode-policy.ts'
+import { multipleSessions, recentWorkspace } from './mode-policy.ts'
 /** Workspace archive and directory UI capability. */
 
 import { Service, type Context } from '@deepseek-ai/cordis'
@@ -50,7 +50,8 @@ export interface UiWorkspace {
    * @param beforeOpen - optional synchronous preparation for the selected Session,
    * skipped after supersession; a throw aborts the open and releases the retained reference.
    * @param options - choices for the Session the connection creates or reuses.
-   * @returns completion; a superseded request may create a Session but does not open it.
+   * @returns completion, or acceptance of the configuration dialog for a fresh Workspace.
+   * Its first Session is created only after explicit confirmation; later navigation can supersede opening.
    * @throws on failure; a refused creation is also shown through the Workspace
    * notice unless a later navigation or disposal superseded the request.
    */
@@ -82,8 +83,8 @@ export interface UiWorkspace {
    */
   connectWorkspace(workspaceId: WorkspaceId, options?: Pick<StartSessionOptions, 'agentPreset'>): Promise<SessionId>
   /**
-   * Open the Workspace blank `connectWorkspace` resolves, so New Session returns to that blank's
-   * unsent draft. A creation the Host refuses is shown through the Workspace notice and leaves the
+   * Open the Workspace blank or its permanent single-mode Session. Fresh Workspaces first show
+   * configuration and wait for explicit confirmation. A creation the Host refuses is shown through the Workspace notice and leaves the
    * selection as it was.
    * @param workspaceId - explicit target; absent inherits the current or most recent Workspace.
    * @param options - initial content, the blank's preset, and `whenDraftExists`, which decides
@@ -596,28 +597,6 @@ function creationFailureMessage(error: unknown): string {
   const refused = sessionCreateErrorOf(error)
   if (refused !== undefined) return `${refused.rpcError.code}: ${refused.rpcError.message}`
   return error instanceof Error ? error.message : String(error)
-}
-
-/** Stable tie-breaking follows Host Workspace order. */
-function recentWorkspace(
-  workspaces: readonly WorkspaceView[],
-  sessions: SessionListState['byId'],
-): WorkspaceId | undefined {
-  let selected: WorkspaceId | undefined
-  let selectedTime = Number.NEGATIVE_INFINITY
-  for (const workspace of workspaces) {
-    let latest = Number.NEGATIVE_INFINITY
-    for (const sessionId of workspace.sessionIds) {
-      const session = sessions[sessionId]
-      if (session !== undefined) latest = Math.max(latest, session.updatedAt)
-    }
-    if (latest === Number.NEGATIVE_INFINITY) latest = Date.parse(workspace.createdAt)
-    if (selected === undefined || latest > selectedTime) {
-      selected = workspace.workspaceId
-      selectedTime = latest
-    }
-  }
-  return selected
 }
 
 export { UiWorkspaceService }

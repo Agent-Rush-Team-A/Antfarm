@@ -1,3 +1,4 @@
+import { canCreateSession, multipleSessions, recentWorkspace, sessionWorkspace } from './mode-policy.ts'
 /** Workspace command registration and browser-owned opening requests. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionForkError } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -79,7 +80,16 @@ export function installWorkspaceShortcuts(
     }), `ui-workspace: ${id}`)
   }
   register('session.new', () => t('session.new'), ['new session', 'new chat'], 'KeyN', ['primary'], ['primary', 'alt'],
-    () => ({ status: 'handled', run: () => { navigation.startSession() } }))
+    () => {
+      const rows = ctx.get('workspaces')?.list.getSnapshot().items ?? []
+      const target = current()
+      const id = (target === undefined ? undefined : sessionWorkspace(rows, target.id, ctx.sessions.list.getSnapshot().byId)?.workspaceId)
+        ?? recentWorkspace(rows, ctx.sessions.list.getSnapshot().byId)
+      const row = rows.find(value => value.workspaceId === id)
+      return row !== undefined && !canCreateSession(row)
+        ? { status: 'blocked', reason: t(row.modeConfig.operationState === 'ready' ? 'mode.singleLimit' : `mode.${row.modeConfig.operationState}`) }
+        : { status: 'handled', run: () => { navigation.startSession(id) } }
+    })
   register('session.search', () => t('search.sessions.aria'), ['search sessions'], 'KeyK', ['primary'], ['primary', 'alt'],
     () => ({ status: 'handled', run: controls.search }))
   register('workspace.add', () => t('workspace.add'), ['add workspace', 'open folder'], 'KeyO', ['primary'], ['primary', 'alt'],
@@ -96,6 +106,8 @@ export function installWorkspaceShortcuts(
   register('session.fork', () => t('menu.fork'), ['fork session'], 'KeyF', ['primary', 'alt'], ['primary', 'shift'], () => {
     const target = current()
     if (target === undefined) return { status: 'blocked', reason: t('shortcut.noSession') }
+    const workspace = sessionWorkspace(ctx.get('workspaces')?.list.getSnapshot().items ?? [], target.id, ctx.sessions.list.getSnapshot().byId)
+    if (workspace !== undefined && !multipleSessions(workspace)) return { status: 'blocked', reason: t('mode.forbidden') }
     if (target.blank) return { status: 'blocked', reason: t('shortcut.noCompletedTurn') }
     return { status: 'handled', run: () => {
       // The main view owns history opening for this target.
@@ -110,6 +122,9 @@ export function installWorkspaceShortcuts(
   })
   register('session.archive', () => t('menu.archiveSession'), ['archive session'], 'KeyA', ['primary', 'shift'], ['primary', 'alt'], () => {
     const target = current()
+    const workspace = target === undefined ? undefined
+      : sessionWorkspace(ctx.get('workspaces')?.list.getSnapshot().items ?? [], target.id, ctx.sessions.list.getSnapshot().byId)
+    if (workspace !== undefined && !multipleSessions(workspace)) return { status: 'blocked', reason: t('mode.forbidden') }
     return target === undefined ? { status: 'blocked', reason: t('shortcut.noSession') }
       : { status: 'handled', run: () => {
         archiveSession(target.id)

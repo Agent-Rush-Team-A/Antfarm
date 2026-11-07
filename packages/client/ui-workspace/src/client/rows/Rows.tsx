@@ -1,3 +1,4 @@
+import { canCreateSession } from '../mode-policy.ts'
 /**
  * Workspace browser tree row components (figma Cell set 14:3080): pure presentational —
  * all data and callbacks arrive via props. Hover swaps (folder->chevron,
@@ -231,7 +232,7 @@ type ProjectRowItemProps = {
   /** Host account home; POSIX home-rooted hover paths display as `~`. */
   home?: string | undefined
   t: RowTranslate
-} & Pick<WorkspaceBrowserProps, 'useRemoteAccess' | 'useWorkspaceAccess' | 'openWorkspaceMenu' | 'useContextMenuTarget' | 'useContextMenu'>
+} & Pick<WorkspaceBrowserProps, 'useRemoteAccess' | 'useWorkspaceAccess' | 'useWorkspaces' | 'openWorkspaceMenu' | 'useContextMenuTarget' | 'useContextMenu'>
 
 /** Which of one header row's actions the caller's access snapshot allows. */
 interface ProjectRowAccess {
@@ -272,8 +273,13 @@ function UngroupedProjectRow(props: ProjectRowItemProps) {
 /** A real Workspace's header: every action asks that Workspace's resource. */
 function WorkspaceProjectRow({ workspaceId, ...props }: ProjectRowItemProps & { workspaceId: WorkspaceId }) {
   const { useWorkspaceAccess } = props
+  const modeAllowsCreation = props.useWorkspaces((snapshot) => {
+    const row = snapshot.items.find(item => item.workspaceId === workspaceId)
+    return row !== undefined && canCreateSession(row)
+  })
   const access: ProjectRowAccess = {
-    create: useWorkspaceAccess(workspaceId, 'session/create'),
+    create: useWorkspaceAccess(workspaceId, 'session/create')
+      && modeAllowsCreation,
     configure: useWorkspaceAccess(workspaceId, 'workspace/getMode'),
     reorder: useWorkspaceAccess(workspaceId, 'workspace/insertBefore'),
   }

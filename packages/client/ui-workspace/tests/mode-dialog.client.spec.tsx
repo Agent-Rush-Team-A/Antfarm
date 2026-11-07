@@ -98,3 +98,13 @@ it.each(['single-vm', 'single-docker', 'multi-vm', 'multi-docker'] as const)('de
   expect(canCreateSession(value)).toBe(mode.startsWith('multi-'))
   expect(multipleSessions(value)).toBe(mode.startsWith('multi-'))
 })
+
+
+it('inherits a descendant Workspace from permanent first Session identity and terminates cyclic parent chains', () => {
+  const locked = { ...row, modeConfig: { ...row.modeConfig, firstSessionId: first } }
+  const child = 'child' as SessionId
+  const summary = { id: child, parentId: first, blank: false, running: false, displayTitle: 'Child',
+    updatedAt: 0, retainedBy: {} }
+  expect(sessionWorkspace([locked], child, { [child]: summary })).toBe(locked)
+  expect(sessionWorkspace([], child, { [child]: { ...summary, parentId: child } })).toBeUndefined()
+})

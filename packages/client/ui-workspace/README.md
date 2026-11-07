@@ -236,7 +236,7 @@ These pages cover the sidebar host, the hero surface, and the picking backends.
 
 -----
 
-Workspace configuration is available from each Workspace menu without an execution provider. The form reads `modeConfig`, saves through `IWorkspaces.setMode` with the observed revision, and displays permanent first-Session locking and operational recovery states. Concurrent edits require an explicit refresh; a failed change retains the committed mode and reports localized recovery guidance.
+Workspace configuration is available from each Workspace menu without an execution provider. The form reads `modeConfig`, saves through `IWorkspaces.setMode` with the observed revision, and displays permanent first-Session locking and operational recovery states. Concurrent edits require an explicit refresh; a failed change retains the committed mode and reports localized recovery guidance. Single-session modes hide New Session after the permanent first Session, and hide fork and archive from rows, menus, and shortcuts. Descendants inherit the Workspace through their parent catalog; filtered membership does not reopen admission. Global New Session controls follow the same current-or-recent Workspace source.
 
 <a id="model-experience"></a>
 ## Model Experience

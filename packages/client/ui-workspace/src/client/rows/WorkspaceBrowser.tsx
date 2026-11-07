@@ -254,7 +254,7 @@ type SessionTreeProps = Pick<
   WorkspaceBrowserProps,
   'useSessionStatus' | 'startSession' | 'configureWorkspace' | 'open' | 'openSessionMenu' | 'openWorkspaceMenu' | 'useContextMenuTarget' | 'useContextMenu'
   | 'insertWorkspaceBefore' | 't' | 'usePanelInfo'
-  | 'useRemoteAccess' | 'useSessionAccess' | 'useWorkspaceAccess'
+  | 'useRemoteAccess' | 'useSessionAccess' | 'useWorkspaceAccess' | 'useWorkspaces'
 > & PropsRenderSlots<
   | 'sidebar.workspaces.session.row.action'
   | 'sidebar.session.row.trailing'
@@ -314,7 +314,7 @@ function EmptySessions({ rowState, onLeaveArchivedOnly, t }: Pick<SessionTreePro
 function SessionTree({
   list, useSessionStatus, startSession, configureWorkspace, open, workspaces, ungroupedSessionIds,
   rowState, onLeaveArchivedOnly,
-  workspaceReady, animationResetKey, usePanelInfo, useRemoteAccess, useSessionAccess, useWorkspaceAccess,
+  workspaceReady, animationResetKey, usePanelInfo, useRemoteAccess, useSessionAccess, useWorkspaceAccess, useWorkspaces,
   onSessionRenameRequest,
   renderSlot, openSessionMenu, openWorkspaceMenu, useContextMenuTarget, useContextMenu,
   insertWorkspaceBefore,
@@ -558,6 +558,7 @@ function SessionTree({
           openWorkspaceMenu={openWorkspaceMenu} useContextMenu={useContextMenu} useContextMenuTarget={useContextMenuTarget}
           useRemoteAccess={useRemoteAccess}
           useWorkspaceAccess={useWorkspaceAccess}
+          useWorkspaces={useWorkspaces}
           containsCurrentDescendant={currentAncestors.has(group.key)}
           home={home}
           t={t}
@@ -1416,6 +1417,7 @@ export function WorkspaceBrowser({
                 openSessionMenu={openSessionMenu} useContextMenu={useContextMenu}
                 openWorkspaceMenu={openWorkspaceMenu}
                 useContextMenuTarget={useContextMenuTarget}
+                useWorkspaces={useWorkspaces}
                 workspaces={orderedWorkspaces}
                 ungroupedSessionIds={orderedUngroupedSessionIds}
                 workspaceReady={workspaceReady}
