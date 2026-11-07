@@ -10,7 +10,7 @@ import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageJson from '@deepseek-ai/dsh-storage-json'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
-import WorkspaceRegistry, { WorkspaceId } from '@deepseek-ai/dsh-workspace'
+import WorkspaceRegistry, { WorkspaceId, type WorkspaceMode } from '@deepseek-ai/dsh-workspace'
 import WorkspaceController from '@deepseek-ai/dsh-api-workspace-controller'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import Gateway from '@deepseek-ai/dsh-api-gateway'
@@ -26,7 +26,10 @@ export const running = { state: 'running', containerId: 'a'.repeat(64) }
 export interface Call { method: string | undefined; path: string | undefined; body: unknown }
 export interface RpcResult { ok: boolean; value?: unknown; error?: { code: string; message: string; details: unknown } }
 
-export async function fixture(mutationTimeoutMs = 1000, persistentSessions = false, execTimeoutMs = 1000, queryTimeoutMs = 1000) {
+export async function fixture(
+  mutationTimeoutMs = 1000, persistentSessions = false, execTimeoutMs = 1000, queryTimeoutMs = 1000,
+  defaultMode: WorkspaceMode = 'multi-vm',
+) {
   const home = await mkdtemp(join(await realpath(tmpdir()), 'dsh-management-'))
   const workspaceRoot = join(home, 'workspaces')
   const socketPath = process.platform === 'win32' ? `\\\\.\\pipe\\dsh-management-${randomUUID()}` : join(home, 'runner.sock')
@@ -64,7 +67,7 @@ export async function fixture(mutationTimeoutMs = 1000, persistentSessions = fal
   else ctx.provide('sessionPersistence', { list: async () => [], open: () => { throw new Error('unused') }, stat: () => { throw new Error('unused') } } as never)
   let credentialRecord: unknown
   ctx.provide('credentials', { readRecord: async () => credentialRecord, modifyRecord: async (_key: unknown, mutate: (current: unknown) => Promise<unknown>) => { credentialRecord = await mutate(credentialRecord); return credentialRecord } } as never)
-  await ctx.plugin(WorkspaceRegistry)
+  await ctx.plugin(WorkspaceRegistry, { defaultMode })
   await ctx.plugin(TypertRegistry)
   await ctx.plugin(RemoteAccess)
   await ctx.plugin(Gateway)

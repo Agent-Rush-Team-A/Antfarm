@@ -72,6 +72,10 @@
     "./mode-resources": {
       "types": "./lib/types/mode-directory-resources.d.ts",
       "default": "./lib/types/mode-directory-resources.js"
+    },
+    "./docker-modes": {
+      "types": "./lib/types/docker-modes.d.ts",
+      "default": "./lib/docker-modes.js"
     }
   },
   "files": [
@@ -92,7 +96,8 @@
     "lib/files.js",
     "lib/vultr.js",
     "lib/docker.js",
-    "lib/mode-backend.js"
+    "lib/mode-backend.js",
+    "lib/docker-modes.js"
   ],
   "license": "MIT",
   "peerDependencies": {

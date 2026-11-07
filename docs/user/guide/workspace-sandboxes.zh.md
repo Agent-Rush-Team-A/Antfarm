@@ -24,14 +24,25 @@ pnpm run start:web --patch apps/cli/config/examples/harness-sandbox.patch.yml --
 
 Antfarm 默认 Web 入口提供账号登录和工作区文件服务，overlay 增加沙箱管理，以及已认证用户向所属工作区会话发送消息时的自动准备。准备失败会拒绝消息。其 standard preset 只暴露前台 Runner Bash；宿主文件工具与终端交接仍被拒绝。有 Docker 权限的 Runner 仍独立于 Web。缺少必需配置时启动失败。直接使用 `pnpm dsh web` 时，需在此 overlay 之前加载 `apps/cli/config/antfarm-web.patch.yml`。
 
+<a id="docker-task-modes"></a>
+## Docker 任务模式
+
+需要每个 Workspace 选择单会话或多会话 Docker 时，使用 [Docker 模式叠加层](../../../apps/cli/config/examples/harness-docker-modes.patch.yml)替代普通沙箱叠加层。将 `DSH_DOCKER_MODES_CONFIG_JSON` 设为包含 `socketPath`、`workspaceRoot`、私有绝对目录 `stateRoot`、`maxFiles` 和 `maxBytes` 的对象。`workspaceRoot` 必须等于 `DSH_MULTIUSER_WORKSPACE_ROOT`；复制预算限制完整模式切换。恢复日志目录必须位于 Workspace 文件之外，且仅由 Web 服务账号持有。
+
+新 Workspace 从 `multi-docker` 开始。首个会话创建前，通过 `workspace/setMode` 选择 `single-docker`；创建会话后选择永久锁定。单会话任务在附件验证后自动开启容器，等待排队输入、命令和文件写入收尾后销毁容器。继续对话时使用保留的文件启动新容器。单会话的手动开启和关闭请求被拒绝；多会话保留手动及空闲控制。此叠加层支持 Docker 模式；已有 VM 模式会阻止运行时加载。
+
+启动前检查最终组合：
+
+```sh
+pnpm dsh web --patch apps/cli/config/antfarm-web.patch.yml --patch apps/cli/config/examples/harness-docker-modes.patch.yml --dump-config
+```
+
 <a id="use-the-web-controls"></a>
 ## 使用网页操作
 
 启用 overlay 后，从工作区操作菜单选择 **工作区沙箱**，或点击对话输入栏的盾牌按钮。两个入口打开该工作区的同一面板；打开面板只查询状态。
 
-各工作区行和菜单均提供工作区配置入口。请在创建首个 Session 前选择模式，创建后该工作区永久锁定。单会话模式显示状态和自动管理说明，隐藏手动沙箱按钮；多会话模式在配置就绪时保留手动按钮。
-
-在多会话模式下，点击 **开启沙箱** 启动沙箱，面板先显示 **正在开启…**，确认成功后显示 **运行中**。点击 **关闭沙箱**，再点击 **确认关闭** 停止沙箱；面板先显示 **正在关闭…**，确认移除后显示 **已关闭**。取消确认或关闭面板会保持沙箱运行。关闭沙箱保留文件和对话，但会终止正在处理和等待的任务。
+点击 **开启沙箱** 启动沙箱，面板先显示 **正在开启…**，确认成功后显示 **运行中**。点击 **关闭沙箱**，再点击 **确认关闭** 停止沙箱；面板先显示 **正在关闭…**，确认移除后显示 **已关闭**。取消确认或关闭面板会保持沙箱运行。关闭沙箱保留文件和对话，但会终止正在处理和等待的任务。
 
 两个名额都占用时，面板提示 **沙箱已满，请关闭一个或稍后重试**。关闭一个运行中的沙箱，再重试失败的开启操作。刷新状态不会重试开启或关闭。查询失败时标明最近观察到的状态，并禁用修改操作，直到查询成功；操作结果未知时禁止开启，需要管理员处理。连接或工作区权限丢失时关闭面板；恢复访问后重新打开。
 

@@ -11,12 +11,6 @@ import type {} from '@deepseek-ai/dsh-sandbox-runner'
 import type { SessionCreateValue } from '@deepseek-ai/dsh-api-session-controller'
 import type { WorkspaceModeValue } from '@deepseek-ai/dsh-workspace/types'
 import { WorkspaceModeError } from '@deepseek-ai/dsh-workspace'
-import DockerWorkspaceBackend from '../../src/docker.ts'
-import { WorkspaceModeDirectoryFiles } from '../../src/mode-directory-files.ts'
-import { WorkspaceModeDirectoryResources } from '../../src/mode-directory-resources.ts'
-import { WorkspaceModeRuntimeAdapter } from '../../src/mode-runtime.ts'
-import type { WorkspaceModeTarget } from '../../src/mode-routing.ts'
-import type { WorkspaceMode, WorkspaceModeRuntime } from '@deepseek-ai/dsh-workspace/types'
 import { WorkspaceFixtureModel } from './ssh-loader.ts'
 
 interface Account { readonly user: MultiuserUser; readonly workspace: Workspace; readonly password: string }
@@ -26,8 +20,6 @@ declare module '@deepseek-ai/cordis' { interface Context { workspaceModeFixture:
 export default class WorkspaceModeFixture extends Service {
   static inject = ['multiuser', 'workspaceRegistry', 'sandboxRunner']
   readonly accounts: Account[] = []
-  readonly targets = new Map<WorkspaceMode, WorkspaceModeTarget>()
-  runtime!: WorkspaceModeRuntime
   constructor(ctx: Context) { super(ctx, 'workspaceModeFixture') }
   async [Service.init](): Promise<void> {
     const home = process.env.DSH_MODE_TEST_HOME
@@ -39,34 +31,6 @@ export default class WorkspaceModeFixture extends Service {
       await chown(workspace.path, 1000, 1000)
       this.accounts.push({ user, workspace, password })
     }
-    const isolated = this.ctx.isolate('sandboxRunnerClient')
-    await isolated.plugin(DockerWorkspaceBackend, {
-      workspaceRoot: join(home, 'workspaces'), socketPath: join(home, 'runner.sock'),
-      mutationTimeoutMs: 10_000, queryTimeoutMs: 3000, execTimeoutMs: 70_000, cancelTimeoutMs: 5000,
-    })
-    const execution = isolated.get('sandboxRunnerClient')
-    if (execution === undefined) throw new Error('Docker mode fixture backend did not load')
-    const files = new WorkspaceModeDirectoryFiles(async (scope) => {
-      scope.admit()
-      const workspace = this.ctx.workspaceRegistry.get(scope.workspaceId)
-      if (workspace?.path !== scope.project) throw new Error('Workspace registration changed')
-      return { root: scope.project, assertCurrent: () => { scope.admit() } }
-    })
-    for (const mode of ['single-docker', 'multi-docker'] as const) this.targets.set(mode, { execution, files })
-    this.runtime = new WorkspaceModeRuntimeAdapter(new Map([...this.targets.keys()].map(mode => [mode,
-      new WorkspaceModeDirectoryResources({
-        stateRoot: join(home, 'mode-state'), mode, backend: execution, maxFiles: 1000, maxBytes: 10_000_000,
-        directory: async (change, signal) => {
-          signal.throwIfAborted()
-          const workspace = this.ctx.workspaceRegistry.get(change.workspaceId)
-          if (workspace?.path !== change.project) throw new Error('Mode transition registration changed')
-          return { root: workspace.path, assertCurrent: () => {
-            signal.throwIfAborted()
-            if (this.ctx.workspaceRegistry.get(change.workspaceId) !== workspace) throw new Error('Mode transition registration changed')
-          } }
-        },
-      }),
-    ])))
   }
 }
 

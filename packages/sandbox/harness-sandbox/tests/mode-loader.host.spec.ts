@@ -60,7 +60,11 @@ describe.skipIf(process.env.DSH_WORKSPACE_MODES_DOCKER_TEST !== '1' || process.p
         row('runner', '@deepseek-ai/dsh-sandbox-runner', { dockerSocket: '/var/run/docker.sock', runnerSocket: join(home, 'runner.sock'),
           deploymentId: deployment, workspaceRoot: join(home, 'workspaces'), image: `${tag}@${image}`, uid: 1000, gid: 1000, cleanupTimeoutMs: 5000 }),
         row('mode-fixture', pathToFileURL(join(import.meta.dirname, 'fixtures/mode-loader.ts')).href),
-        "    - id: mode-backend\n      name: '@deepseek-ai/dsh-harness-sandbox/modes'\n      inject: [workspaceModeFixture]\n      config:\n        modes: !!js ctx.workspaceRegistry.modes\n        targets: !!js ctx.workspaceModeFixture.targets\n        runtime: !!js ctx.workspaceModeFixture.runtime\n",
+        row('mode-backend', '@deepseek-ai/dsh-harness-sandbox/docker-modes', {
+          workspaceRoot: join(home, 'workspaces'), stateRoot: join(home, 'mode-state'), socketPath: join(home, 'runner.sock'),
+          maxFiles: 1000, maxBytes: 10_000_000, mutationTimeoutMs: 10_000, queryTimeoutMs: 3000,
+          execTimeoutMs: 70_000, cancelTimeoutMs: 5000,
+        }),
         "    - id: workspace-sandbox\n      name: '@deepseek-ai/dsh-harness-sandbox'\n      inject: [sandboxRunnerClient]\n",
         `      config: ${JSON.stringify({ backend: 'provided', workspaceRoot: join(home, 'workspaces') })}\n`,
         row('llm', '@deepseek-ai/dsh-llm'), row('session', '@deepseek-ai/dsh-session'), row('session-projection', '@deepseek-ai/dsh-session-projection'),

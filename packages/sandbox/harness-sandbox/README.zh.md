@@ -207,6 +207,8 @@ Agent 步骤信号在异步工具策略前标识原 turn，工具在发送时重
 
 可选 `./modes` 入口接收可信的工作区模式协调器、显式的执行/文件提供方映射以及切换运行时。先在隔离的 service realm 中加载各后端，再以 `backend: provided` 加载管理入口。模式入口还提供 `workspaceFileAccess`；HTTP 上传与产物入口使用 `storage: provided`。[Loader 测试](tests/mode-loader.host.spec.ts)使用真实登记协调器和 Docker 验证显式目标组合。该入口不提供默认模式或后端。
 
+[Docker 模式叠加层](../../../apps/cli/config/examples/harness-docker-modes.patch.yml) 加载 `./docker-modes`，提供两种 Docker 目标和持久化目录切换。将 `DSH_DOCKER_MODES_CONFIG_JSON` 设为 Runner 通信配置，加上 `workspaceRoot`、私有绝对目录 `stateRoot`、`maxFiles` 和 `maxBytes`；`DSH_MULTIUSER_WORKSPACE_ROOT` 使用同一根目录。复制限制作用于完整切换。叠加层将新工作区默认模式设为 `multi-docker`；首个会话前可通过工作区模式 API 选择 `single-docker`。运行时加载时拒绝已有 VM 模式。分配器、Runner 和容器身份必须共享目录访问权限。
+
 Docker 提供方使用 `./docker`，配置为 Runner 通信参数加 `workspaceRoot`，不会再创建嵌套容器。它为经过验证的绑定目录提供原生文本访问，显示路径为 `/workspace`。Harness 分配器、Runner 和容器的 uid/gid 必须预先匹配。持久化二进制文件通过经过验证的目录提供方访问，不依赖容器存活。
 
 模式入口在等待协调器或准备工作前为输入保留名额，在附件验证后启动环境，并将选中的后端保留到收件箱和对话轮次收尾。Bash、原生文本工具及二进制流在同一选择下分别保留清理工作。单会话的最后一个名额释放后销毁其原始环境；删除前到达的输入保留该代次，删除期间到达的输入等待新代次。后端拒绝单会话模式的手动生命周期控制。多会话模式保留手动与空闲控制。
