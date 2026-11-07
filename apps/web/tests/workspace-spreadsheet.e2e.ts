@@ -13,6 +13,7 @@ import { expect, test } from 'vitest'
 import { z } from 'zod'
 import { resolveExampleLaunch } from '@deepseek-ai/dsh-loader-smoke'
 import { REPO_ROOT, requireDist, writeComposerDraft } from './support.ts'
+import { cleanupCloudResources, TIMEOUT_PROBE_COMMAND, verifyTimeoutInvocation, verifyTimeoutProcesses } from './workspace-spreadsheet-support.ts'
 
 const configPath = process.env.DSH_VULTR_TEST_CONFIG
 const inferenceKeyPath = process.env.DSH_VULTR_INFERENCE_KEY_FILE
@@ -175,6 +176,14 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
       await writeFile(join(runDir, name + '.aria.txt'), await page.locator('body').ariaSnapshot())
     }
     async function stateOf(id: string) { return cloudRecord.parse(JSON.parse(await readFile(join(state, id, 'state.json'), 'utf8'))) }
+    async function sessionLogs(): Promise<string[]> {
+      const logs: string[] = []
+      for await (const path of glob(['**/*.jsonl', '**/*.jsonl.zstd'], { cwd: root })) {
+        const bytes = await readFile(join(root, path))
+        logs.push((path.endsWith('.zstd') ? zstdDecompressSync(bytes) : bytes).toString('utf8'))
+      }
+      return logs
+    }
 
     try {
       const provision = spawn(process.execPath, ['--import', nodeImport, join(REPO_ROOT, 'scripts/multiuser-provision.ts'),
@@ -280,15 +289,18 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
       expect(JSON.parse((await download('年度汇总.json')).toString())).toEqual({ orders: 9, quantity: 16, amount: '1719.50' })
       expect((await stateOf(a.workspaceId)).instanceId).toBe(original.instanceId)
       await record('second-session-shares-files-and-vm')
-      await prompt('请测试 bash 超时：执行 echo $$ > timeout.pid; sleep 20，timeoutMs 必须设为 1000。收到超时错误后，再用 bash 检查 timeout.pid 中的进程已经退出，并创建 timeout-confirmed.txt，内容为 TIMEOUT_PROCESS_GONE。不要重复 sleep 命令。检查成功后只回复：超时清理已确认', '超时清理已确认')
+      await prompt(`请测试 bash 超时，timeoutMs 必须设为 1000，command 原样使用下面代码块：\n\n\`\`\`bash\n${TIMEOUT_PROBE_COMMAND}\n\`\`\`\n\n收到超时错误后不要再执行命令或检查进程，只回复：超时错误已返回`, '超时错误已返回')
+      const processCheck = await verifyTimeoutProcesses('ssh', ['-F', join(state, a.workspaceId, 'ssh-config'),
+        'antfarm-admin', 'python3', '-', '/workspace/timeout.pids', '5'])
+      await writeFile(join(runDir, 'timeout-process-check.json'), JSON.stringify(processCheck, null, 2) + '\n')
+      verifyTimeoutInvocation(await sessionLogs())
       await currentPage.getByRole('button', { name: /^Completed in /u }).last().click()
       await currentPage.getByRole('button', { name: 'Ran commands', exact: true }).last().click()
       const timeout = currentPage.getByRole('button', { name: /^Failed Bash Error: Command timed out after 1000ms\./u }).first()
       await timeout.waitFor()
       await timeout.scrollIntoViewIfNeeded()
       await screenshot('timeout-tool-error')
-      expect((await download('timeout-confirmed.txt')).toString().trim()).toBe('TIMEOUT_PROCESS_GONE')
-      await record('timeout-and-process-cleanup')
+      await record('timeout-and-process-cleanup', processCheck)
       const b = await workspace('Isolated B')
       await record('workspace-b', b)
       await prompt('请使用 bash 检查当前工作区的销售明细.csv、月度汇总.csv 和年度汇总.json 均不存在。检查通过后创建 isolation.txt，内容为 WORKSPACE_ISOLATED。完成后只回复：工作区隔离已确认', '工作区隔离已确认')
@@ -343,12 +355,9 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
       await currentPage.keyboard.press('Escape')
       expect((await download('isolation.txt')).toString().trim()).toBe('WORKSPACE_ISOLATED')
       await record('idle-reclaimed-and-download-preserved', { workspaceId: b.workspaceId, idleTimeoutMs })
-      const logs: string[] = []
-      for await (const path of glob(['**/*.jsonl', '**/*.jsonl.zstd'], { cwd: root })) {
-        const bytes = await readFile(join(root, path))
-        logs.push((path.endsWith('.zstd') ? zstdDecompressSync(bytes) : bytes).toString('utf8'))
-      }
+      const logs = await sessionLogs()
       await writeFile(join(runDir, 'sessions.jsonl'), logs.join('\n'))
+      verifyTimeoutInvocation(logs)
       expect(logs.join('\n')).toContain('SANDBOX_EXECUTION_TIMEOUT')
       success = true
     } catch (error) {
@@ -358,13 +367,15 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
       try { await context?.close() } catch (error) { failures.push(error) }
       try { await browser?.close() } catch (error) { failures.push(error) }
       try { await stopServer() } catch (error) { failures.push(error) }
-      try {
-        for (const item of await inventory('instances')) await cloud('/instances/' + item.id, 'DELETE')
-        for (const item of await inventory('snapshots')) await cloud('/snapshots/' + item.id, 'DELETE')
-        await expect.poll(() => inventory('instances'), { timeout: 180_000, interval: 1000 }).toEqual([])
-        await expect.poll(() => inventory('snapshots'), { timeout: 180_000, interval: 1000 }).toEqual([])
-        await record('owned-cloud-resources-removed')
-      } catch (error) { failures.push(error) }
+      const cleanupFailures = await cleanupCloudResources({
+        inventory,
+        remove: async (kind, id) => { await cloud('/' + kind + '/' + id, 'DELETE') },
+        verifyEmpty: async (kind) => {
+          await expect.poll(() => inventory(kind), { timeout: 180_000, interval: 1000 }).toEqual([])
+        },
+      })
+      failures.push(...cleanupFailures)
+      if (cleanupFailures.length === 0) await record('owned-cloud-resources-removed')
       await writeFile(join(runDir, 'result.json'), JSON.stringify({ success: success && failures.length === 0,
         completed: events.map(event => event.step), errors: failures.map(error => error instanceof Error ? error.message : String(error)) }, null, 2) + '\n')
       console.log('spreadsheet acceptance evidence:', runDir)
