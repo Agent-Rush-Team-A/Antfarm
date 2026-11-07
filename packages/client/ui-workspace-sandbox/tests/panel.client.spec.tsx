@@ -18,7 +18,8 @@ const closed: SandboxView = { workspaceId: id, state: 'closed', pending: undefin
 function fixture(view: SandboxView = closed, dictionary = en) {
   const resource: ResourceSnapshot<SandboxView> = { status: 'live', value: view, failure: undefined }
   const props: PanelProps = {
-    workspaceId: id, displayTitle: 'Project A', t: makeTranslate(dictionary),
+    workspaceId: id, modeConfig: { workspaceId: id, mode: 'multi-vm', revision: 0, operationState: 'ready',
+      modeLocked: false, lockReason: null, firstSessionId: null }, displayTitle: 'Project A', t: makeTranslate(dictionary),
     // This fixture serves only the panel's protocol; the framework hook is generic for all consumers.
     useResource: vi.fn(() => resource) as PanelProps['useResource'],
     useWorkspaceAccess: vi.fn<PanelProps['useWorkspaceAccess']>().mockReturnValue(true),
@@ -125,3 +126,35 @@ test.each([{ state: 'cleanup_required', copy: en.cleanup }, { state: 'closing', 
     expect(f.props.change).toHaveBeenCalledWith(id, 'close')
   },
 )
+
+
+test.each(['single-vm', 'single-docker'] as const)('shows automatic status and hides manual controls in %s', (mode) => {
+  const f = fixture({ ...closed, state: 'running' })
+  f.rerender(<SandboxPanel {...f.props} modeConfig={{ ...f.props.modeConfig, mode }} />)
+  expect(screen.getByRole('status').textContent).toBe(en.running)
+  expect(screen.getByText(en.automatic)).toBeTruthy()
+  for (const name of [en.open, en.close, en.cleanup, en.retryClose, en.confirmClose]) {
+    expect(screen.queryByRole('button', { name })).toBeNull()
+  }
+  fireEvent.click(screen.getByRole('button', { name: en.refresh }))
+  expect(f.props.refresh).toHaveBeenCalledWith(id)
+  expect(f.props.change).not.toHaveBeenCalled()
+})
+
+test.each(['switching', 'creating-session', 'recovery-required'] as const)(
+  'blocks manual mutations while mode admission is %s', (operationState) => {
+    const f = fixture()
+    f.rerender(<SandboxPanel {...f.props} modeConfig={{ ...f.props.modeConfig, operationState }} />)
+    fireEvent.click(screen.getByRole('button', { name: en.open }))
+    expect(f.props.change).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert').textContent).toBe(operationState === 'recovery-required' ? en.modeRecovery : en.modeBusy)
+  },
+)
+
+test('withdraws an already open close confirmation when the authoritative mode becomes single', () => {
+  const f = fixture({ ...closed, state: 'running' })
+  fireEvent.click(screen.getByRole('button', { name: en.close }))
+  f.rerender(<SandboxPanel {...f.props} modeConfig={{ ...f.props.modeConfig, mode: 'single-docker' }} />)
+  expect(screen.queryByRole('button', { name: en.confirmClose })).toBeNull()
+  expect(f.props.change).not.toHaveBeenCalled()
+})

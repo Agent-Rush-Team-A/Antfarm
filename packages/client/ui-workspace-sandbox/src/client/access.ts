@@ -1,7 +1,7 @@
 /** Permission reads use the Workspace owner's synchronous access effects. */
 import type { UiWorkspace } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
-import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
+import type { WorkspaceId, WorkspaceModeConfig } from '@deepseek-ai/dsh-workspace/types'
 
 /**
  * Read current workspace permission through the owner’s access effect.
@@ -37,4 +37,15 @@ export function sandboxPermission(workspace: Pick<UiWorkspace, 'whenAccess'>, id
       return () => { active = false; leave() }
     },
   }
+}
+
+
+/**
+ * @param config - Latest authoritative mode; missing rows cannot accept mutations.
+ * @param operation - Status remains available while execution is managed automatically.
+ * @returns Whether mode admission allows this manual environment operation.
+ */
+export function sandboxModeAllows(config: WorkspaceModeConfig | undefined, operation: 'open' | 'status' | 'close'): boolean {
+  return operation === 'status' || (config !== undefined && config.operationState === 'ready'
+    && (config.mode === 'multi-vm' || config.mode === 'multi-docker'))
 }

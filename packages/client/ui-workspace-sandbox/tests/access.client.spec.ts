@@ -5,7 +5,7 @@ import { whenAllowed } from '@deepseek-ai/dsh-api-remote-access/src/client/when-
 import type { UiWorkspace } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import { expect, it, vi } from 'vitest'
-import { sandboxAllowed, sandboxPermission } from '../src/client/access.ts'
+import { sandboxAllowed, sandboxPermission, sandboxModeAllows } from '../src/client/access.ts'
 import { parseSandboxAddress, sandboxAddress } from '../src/client/address.ts'
 
 const id = 'sandbox-test' as WorkspaceId
@@ -49,5 +49,17 @@ it('accepts only canonical native workspace resource addresses', () => {
     'dsh-resource://workspacesandbox/a?path=/tmp', 'dsh-resource://workspacesandbox/%2f',
     'dsh-resource://other/sandbox-test', 'dsh-resource://workspacesandbox/' + 'a'.repeat(129)]) {
     expect(parseSandboxAddress(address)).toBeUndefined()
+  }
+})
+
+
+it.each(['single-vm', 'single-docker', 'multi-vm', 'multi-docker'] as const)('admits manual operations only in ready multi modes: %s', (mode) => {
+  const config = { workspaceId: id, mode, revision: 0, operationState: 'ready', modeLocked: false,
+    lockReason: null, firstSessionId: null } as const
+  expect(sandboxModeAllows(config, 'status')).toBe(true)
+  for (const operation of ['open', 'close'] as const) {
+    expect(sandboxModeAllows(config, operation)).toBe(mode.startsWith('multi'))
+    expect(sandboxModeAllows({ ...config, operationState: 'switching' }, operation)).toBe(false)
+    expect(sandboxModeAllows(undefined, operation)).toBe(false)
   }
 })

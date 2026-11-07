@@ -1,5 +1,9 @@
 /** Typed, locale-owned sandbox controls and recovery guidance. */
 export const en = {
+  automatic: 'The environment starts and stops automatically with the session.',
+  modeBusy: 'Workspace configuration is changing. Wait before starting or stopping the environment.',
+  modeRecovery: 'Workspace recovery is required. Contact the administrator.',
+
   cloudOpenFailed: 'The cloud workspace could not start. Refresh status before trying again.',
   cloudSaveFailed: 'The cloud workspace could not close safely. Refresh status and contact the administrator before reopening.',
   title: 'Workspace sandbox',
@@ -40,6 +44,10 @@ export const en = {
 
 /** Chinese sandbox controls and recovery guidance. */
 export const zh: Record<keyof typeof en, string> = {
+  automatic: '环境会随会话自动开启和回收',
+  modeBusy: '工作区配置正在变更，请等待完成后再开启或关闭环境',
+  modeRecovery: '工作区需要恢复，请联系管理员',
+
   cloudOpenFailed: '云工作区启动失败，请刷新状态后重试',
   cloudSaveFailed: '云工作区未能安全关闭，请刷新状态并联系管理员，确认后再重新开启',
   title: '工作区沙箱',
@@ -80,6 +88,10 @@ export const zh: Record<keyof typeof en, string> = {
 
 /** Japanese sandbox controls and recovery guidance. */
 export const ja: Record<keyof typeof en, string> = {
+  automatic: '環境はセッションに合わせて自動的に起動・停止します。',
+  modeBusy: '設定を変更中です。環境を操作する前に完了を待ってください。',
+  modeRecovery: 'ワークスペースの復旧が必要です。管理者に連絡してください。',
+
   cloudOpenFailed: 'クラウドワークスペースを起動できませんでした。状態を更新してから再試行してください。',
   cloudSaveFailed: 'クラウドワークスペースを安全に停止できませんでした。状態を更新し、再起動する前に管理者に連絡してください。',
   title: 'ワークスペースのサンドボックス',
@@ -120,6 +132,10 @@ export const ja: Record<keyof typeof en, string> = {
 
 /** German sandbox controls and recovery guidance. */
 export const de: Record<keyof typeof en, string> = {
+  automatic: 'Die Umgebung startet und stoppt automatisch mit der Sitzung.',
+  modeBusy: 'Die Konfiguration wird geändert. Vor dem Starten oder Stoppen bitte warten.',
+  modeRecovery: 'Der Arbeitsbereich muss wiederhergestellt werden. Wenden Sie sich an die Administration.',
+
   cloudOpenFailed: 'Der Cloud-Workspace konnte nicht starten. Aktualisieren Sie den Status vor einem erneuten Versuch.',
   cloudSaveFailed: 'Der Cloud-Workspace konnte nicht sicher geschlossen werden. Aktualisieren Sie den Status und kontaktieren Sie vor dem erneuten Öffnen die Administration.',
   title: 'Workspace-Sandbox',
@@ -160,6 +176,10 @@ export const de: Record<keyof typeof en, string> = {
 
 /** French sandbox controls and recovery guidance. */
 export const fr: Record<keyof typeof en, string> = {
+  automatic: 'L’environnement démarre et s’arrête automatiquement avec la session.',
+  modeBusy: 'La configuration change. Attendez avant de gérer l’environnement.',
+  modeRecovery: 'L’espace de travail doit être restauré. Contactez l’administrateur.',
+
   cloudOpenFailed: 'L’espace de travail cloud n’a pas pu démarrer. Actualisez l’état avant de réessayer.',
   cloudSaveFailed: 'L’espace de travail cloud n’a pas pu être fermé en toute sécurité. Actualisez l’état et contactez l’administration avant de le rouvrir.',
   title: 'Bac à sable de l’espace de travail',
@@ -200,6 +220,10 @@ export const fr: Record<keyof typeof en, string> = {
 
 /** Spanish sandbox controls and recovery guidance. */
 export const es: Record<keyof typeof en, string> = {
+  automatic: 'El entorno se inicia y se detiene automáticamente con la sesión.',
+  modeBusy: 'La configuración está cambiando. Espera antes de gestionar el entorno.',
+  modeRecovery: 'El espacio de trabajo requiere recuperación. Contacta con el administrador.',
+
   cloudOpenFailed: 'El espacio de trabajo en la nube no pudo iniciarse. Actualiza el estado antes de volver a intentarlo.',
   cloudSaveFailed: 'El espacio de trabajo en la nube no pudo cerrarse de forma segura. Actualiza el estado y contacta con la administración antes de volver a abrirlo.',
   title: 'Entorno aislado del espacio de trabajo',
@@ -240,6 +264,10 @@ export const es: Record<keyof typeof en, string> = {
 
 /** Portuguese sandbox controls and recovery guidance. */
 export const pt: Record<keyof typeof en, string> = {
+  automatic: 'O ambiente inicia e para automaticamente com a sessão.',
+  modeBusy: 'A configuração está mudando. Aguarde antes de gerenciar o ambiente.',
+  modeRecovery: 'O espaço de trabalho precisa de recuperação. Contate o administrador.',
+
   cloudOpenFailed: 'O espaço de trabalho na nuvem não pôde iniciar. Atualize o estado antes de tentar novamente.',
   cloudSaveFailed: 'O espaço de trabalho na nuvem não pôde ser fechado com segurança. Atualize o estado e contate a administração antes de reabri-lo.',
   title: 'Sandbox do espaço de trabalho',
@@ -280,6 +308,10 @@ export const pt: Record<keyof typeof en, string> = {
 
 /** Russian sandbox controls and recovery guidance. */
 export const ru: Record<keyof typeof en, string> = {
+  automatic: 'Среда запускается и останавливается автоматически вместе с сессией.',
+  modeBusy: 'Настройки меняются. Подождите, прежде чем управлять средой.',
+  modeRecovery: 'Рабочую область нужно восстановить. Обратитесь к администратору.',
+
   cloudOpenFailed: 'Не удалось запустить облачное рабочее пространство. Обновите состояние перед повторной попыткой.',
   cloudSaveFailed: 'Не удалось безопасно закрыть облачное рабочее пространство. Обновите состояние и обратитесь к администратору перед повторным открытием.',
   title: 'Песочница рабочего пространства',

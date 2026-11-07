@@ -20,6 +20,8 @@ const keys = {
   runner_outcome_unknown: 'unknown',
   request_failed: 'failed',
   busy: 'failed',
+  mode_forbidden: 'automatic',
+  mode_recovery: 'modeRecovery',
 } satisfies Record<SandboxFailure['reason'], SandboxCopyKey>
 
 /**

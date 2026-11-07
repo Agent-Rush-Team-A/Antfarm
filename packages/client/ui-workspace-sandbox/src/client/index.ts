@@ -10,7 +10,7 @@ import type { Config } from '../config.ts'
 import { SandboxModel } from './model.ts'
 import { parseSandboxAddress } from './address.ts'
 import { mountUi } from './mount-ui.ts'
-import { sandboxAllowed } from './access.ts'
+import { sandboxAllowed, sandboxModeAllows } from './access.ts'
 import type { UiWorkspace } from '@deepseek-ai/dsh-client-ui-workspace/client'
 export { Config } from '../config.ts'
 
@@ -30,7 +30,8 @@ export async function apply(ctx: Context, config: Config): Promise<() => Promise
       status: (workspaceId, signal) => { signal.throwIfAborted(); return remote.status({ workspaceId }) },
       close: (workspaceId, signal) => { signal.throwIfAborted(); return remote.close({ workspaceId }) },
     }, (scope.get('connection') as ConnectionHandle).generation, config.pollIntervalMs,
-    (id, operation) => sandboxAllowed(workspace, id, operation))
+    (id, operation) => sandboxAllowed(workspace, id, operation)
+      && sandboxModeAllows(scope.workspaces.list.getSnapshot().items.find(row => row.workspaceId === id)?.modeConfig, operation))
     scope.effect(() => () => model.dispose(), 'workspace sandbox: observations')
     scope.effect(() => scope.resources.register({ protocol: 'workspacesandbox',
       async *open(address, { signal }) {

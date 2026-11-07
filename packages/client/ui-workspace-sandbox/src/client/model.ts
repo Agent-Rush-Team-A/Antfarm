@@ -16,7 +16,7 @@ export type SandboxApi = Record<'open' | 'status' | 'close',
   (workspaceId: WorkspaceId, signal: AbortSignal) => Promise<RemoteResult<SandboxValue>>>
 /** A localized report selects copy by reason, never by an exception's message. */
 export interface SandboxFailure {
-  readonly reason: SandboxFailureReason | 'disconnected' | 'request_failed' | 'denied' | 'busy'
+  readonly reason: SandboxFailureReason | 'disconnected' | 'request_failed' | 'denied' | 'busy' | 'mode_forbidden' | 'mode_recovery'
   readonly operation: 'open' | 'status' | 'close'
   readonly outcomeUnknown: boolean
 }
@@ -43,6 +43,8 @@ interface RecordState {
 function failure(error: unknown, operation: SandboxFailure['operation']): SandboxFailure {
   const remote = remoteErrorOf(error)
   if (remote?.code === 'sandbox/failed') return { reason: remote.details.reason, operation, outcomeUnknown: remote.details.outcomeUnknown }
+  if (remote?.code === 'workspace/session-operation-forbidden') return { reason: 'mode_forbidden', operation, outcomeUnknown: false }
+  if (remote?.code === 'workspace/mode-recovery-required') return { reason: 'mode_recovery', operation, outcomeUnknown: false }
   if (remote?.code === 'remote-access/denied') return { reason: 'denied', operation, outcomeUnknown: false }
   return { reason: 'request_failed', operation,
     outcomeUnknown: operation !== 'status' }
