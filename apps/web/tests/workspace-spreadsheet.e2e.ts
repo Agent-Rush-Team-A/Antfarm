@@ -289,7 +289,7 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
       expect(JSON.parse((await download('年度汇总.json')).toString())).toEqual({ orders: 9, quantity: 16, amount: '1719.50' })
       expect((await stateOf(a.workspaceId)).instanceId).toBe(original.instanceId)
       await record('second-session-shares-files-and-vm')
-      await prompt(`请测试 bash 超时，timeoutMs 必须设为 1000，command 原样使用下面代码块：\n\n\`\`\`bash\n${TIMEOUT_PROBE_COMMAND}\n\`\`\`\n\n收到超时错误后不要再执行命令或检查进程，只回复：超时错误已返回`, '超时错误已返回')
+      await prompt(`请测试 bash 超时，timeoutMs 必须设为 1000，command 原样使用此命令：${TIMEOUT_PROBE_COMMAND}。收到超时错误后不要再执行命令或检查进程，只回复：超时错误已返回`, '超时错误已返回')
       const processCheck = await verifyTimeoutProcesses('ssh', ['-F', join(state, a.workspaceId, 'ssh-config'),
         'antfarm-admin', 'python3', '-', '/workspace/timeout.pids', '5'])
       await writeFile(join(runDir, 'timeout-process-check.json'), JSON.stringify(processCheck, null, 2) + '\n')
