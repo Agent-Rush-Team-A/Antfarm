@@ -75,3 +75,7 @@
   disabled: true
 - id: open-in-app
   disabled: true
+
+- id: workspace
+  config:
+    defaultMode: multi-docker

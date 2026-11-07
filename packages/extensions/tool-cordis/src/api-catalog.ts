@@ -10707,7 +10707,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'Workspace',
-    declaration: 'export interface Workspace {\n    readonly id: WorkspaceId;\n    readonly path: string;\n    readonly title: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly sessionIds: readonly SessionId[];\n    setTitle(title: string): Promise<void>;\n    attachSession(sessionId: SessionId): Promise<void>;\n    insertSessionBefore(sessionId: SessionId, beforeSessionId?: SessionId): Promise<void>;\n    detachSession(sessionId: SessionId): Promise<void>;\n    status(): Promise<\'ok\' | \'missing-dir\'>;\n}',
+    declaration: 'export interface Workspace {\n    readonly modeConfig: WorkspaceModeConfig;\n    readonly id: WorkspaceId;\n    readonly path: string;\n    readonly title: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly sessionIds: readonly SessionId[];\n    setTitle(title: string): Promise<void>;\n    attachSession(sessionId: SessionId): Promise<void>;\n    insertSessionBefore(sessionId: SessionId, beforeSessionId?: SessionId): Promise<void>;\n    detachSession(sessionId: SessionId): Promise<void>;\n    status(): Promise<\'ok\' | \'missing-dir\'>;\n}',
   },
   {
     name: 'WorkspaceArchiveSessionRequest',
@@ -10836,6 +10836,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceInsertSessionBeforeRequest',
     declaration: 'export interface WorkspaceInsertSessionBeforeRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly sessionId: SessionId;\n    readonly beforeSessionId?: SessionId;\n}',
+  },
+  {
+    name: 'WorkspaceMode',
+    declaration: 'export type WorkspaceMode = \'single-vm\' | \'multi-vm\' | \'single-docker\' | \'multi-docker\';',
+  },
+  {
+    name: 'WorkspaceModeConfig',
+    declaration: 'export interface WorkspaceModeConfig {\n    readonly workspaceId: WorkspaceId;\n    readonly mode: WorkspaceMode;\n    readonly revision: number;\n    readonly operationState: WorkspaceModeOperationState;\n    readonly modeLocked: boolean;\n    readonly lockReason: WorkspaceModeLockReason | null;\n    readonly firstSessionId: SessionId | null;\n}',
+  },
+  {
+    name: 'WorkspaceModeLockReason',
+    declaration: 'export type WorkspaceModeLockReason = \'first-session-created\';',
+  },
+  {
+    name: 'WorkspaceModeOperationState',
+    declaration: 'export type WorkspaceModeOperationState = \'ready\' | \'switching\' | \'creating-session\' | \'recovery-required\';',
   },
   {
     name: 'WorkspaceOrderValue',

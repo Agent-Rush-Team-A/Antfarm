@@ -23,7 +23,7 @@ import type { WorkspaceDomainState, WorkspaceRecord } from '../src/index.ts'
 import { defaultWorkspaceTitle, fullyQualifiedWorkspacePath } from '../src/paths.ts'
 import * as workspacePaths from '../src/paths.ts'
 
-const DOMAIN_VERSION = 2
+const DOMAIN_VERSION = 3
 
 const header = (id: string, cwd?: string, createdAt = 0): SessionHeader => ({
   version: SESSION_FORMAT_VERSION,
@@ -140,6 +140,10 @@ function selectiveFailureBackend(
 
 function record(path: string, sessionIds: string[], createdAt = '2026-07-24T00:00:00.000Z'): WorkspaceRecord {
   return {
+    mode: 'multi-vm',
+    modeRevision: 0,
+    firstSessionId: sessionIds.at(-1) === undefined ? null : SessionId(sessionIds.at(-1)!),
+    modeOperationState: 'ready',
     path,
     title: basename(path),
     sessionIds: sessionIds.map(SessionId),

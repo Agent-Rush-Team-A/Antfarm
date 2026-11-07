@@ -9,6 +9,7 @@ import { z } from 'zod'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
+import type { WorkspaceModeChangeId } from './mode-types.ts'
 import type { WorkspaceId } from './types.ts'
 
 /** Workspace id schema at the durable boundary; branding has no runtime representation. */
@@ -16,12 +17,38 @@ const workspaceId = z.string().transform(value => value as WorkspaceId)
 
 const sessionId = z.string().transform(value => brandString<SessionId>(value))
 
+/** Four deployment-independent workspace modes. */
+export const workspaceMode = z.enum(['single-vm', 'multi-vm', 'single-docker', 'multi-docker'])
+
+/** Durable mode change or reserved ordinary Session; retained until settlement. */
+export const workspaceModeIntent = z.discriminatedUnion('operation', [
+  z.object({
+    operation: z.literal('switch-mode'),
+    changeId: z.string().transform(value => brandString<WorkspaceModeChangeId>(value)),
+    workspaceId,
+    project: z.string(),
+    from: workspaceMode,
+    to: workspaceMode,
+    previousRevision: z.number().int().nonnegative(),
+    phase: z.enum(['preparing', 'commit', 'rollback']),
+  }),
+  z.object({ operation: z.literal('create-session'), sessionId, mode: workspaceMode }),
+])
+
+/** One validated durable operation intent. */
+export type WorkspaceModeIntent = z.infer<typeof workspaceModeIntent>
+
 /**
  * Durable shape of one workspace record. `path` is the `fs.realpath` canon
  * stamped at create; `sessionIds` is the ordered ownership account (array
  * order is display order); timestamps are ISO-8601 strings.
  */
 export const workspaceRecord = z.object({
+  mode: workspaceMode,
+  modeRevision: z.number().int().nonnegative(),
+  firstSessionId: sessionId.nullable(),
+  modeOperationState: z.enum(['ready', 'switching', 'creating-session', 'recovery-required']),
+  modeIntent: workspaceModeIntent.optional(),
   path: z.string(),
   title: z.string(),
   sessionIds: z.array(sessionId),
@@ -75,7 +102,7 @@ export type WorkspaceDomainState = z.infer<typeof workspaceDomainState>
  */
 export const workspaceDomainSpec = defineDomain({
   name: 'workspace',
-  version: 2,
+  version: 3,
   global: {
     schema: workspaceDomainState,
     initial: { initialized: false, workspaceIds: [], archivedSessionIds: [], pinnedSessionIds: [] },

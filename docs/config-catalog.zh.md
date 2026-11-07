@@ -5065,6 +5065,26 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-working-directory -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-workspace -->
+<a id="deepseek-aidsh-workspace"></a>
+
+## `@deepseek-ai/dsh-workspace`
+
+- `inject`: `storageDomain` · `sessionPersistence`
+- `source`: [`packages/workspace/workspace/src/index.ts:165`](../packages/workspace/workspace/src/index.ts)
+
+```ts config-catalog
+/** Workspace registration deployment policy. */
+export interface Config {
+  /** Initial mode of newly created records; existing records retain their mode. */
+  defaultMode: WorkspaceMode
+}
+
+/** The four workspace modes shared by issues #41, #42, #43, and #45. */
+export type WorkspaceMode = 'single-vm' | 'multi-vm' | 'single-docker' | 'multi-docker'
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-workspace -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-workspace-changes -->
 <a id="deepseek-aidsh-workspace-changes"></a>
 
@@ -5218,7 +5238,6 @@ export interface Config {
 | `@deepseek-ai/dsh-tools` | `systemPrompt` | [`packages/core/tools/src/index.ts`](../packages/core/tools/src/index.ts) |
 | `@deepseek-ai/dsh-user-questions` | — | [`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts) |
 | `@deepseek-ai/dsh-webhook` | `agents` · `agentDefaultModel` · `agentPresets` · `permissionPresets` · `sessionTitle` · `workspaceRegistry` | [`packages/experimental/webhook/src/index.ts`](../packages/experimental/webhook/src/index.ts) |
-| `@deepseek-ai/dsh-workspace` | `storageDomain` · `sessionPersistence` | [`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts) |
 <!-- END GENERATED config-catalog:no-config -->
 
 ## Seam 包（不可直接加载）

@@ -12,6 +12,7 @@ import { stat } from 'node:fs/promises'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { WorkspaceRecord } from './spec.ts'
+import type { WorkspaceModeConfig } from './mode-types.ts'
 import type { Workspace, WorkspaceId } from './types.ts'
 import { realpathNormalize } from './paths.ts'
 
@@ -81,6 +82,18 @@ export class WorkspaceEntity implements Workspace {
     record: WorkspaceRecord,
   ) {
     this.record = record
+  }
+
+  get modeConfig(): WorkspaceModeConfig {
+    return Object.freeze({
+      workspaceId: this.id,
+      mode: this.record.mode,
+      revision: this.record.modeRevision,
+      operationState: this.record.modeOperationState,
+      modeLocked: this.record.firstSessionId !== null,
+      lockReason: this.record.firstSessionId === null ? null : 'first-session-created',
+      firstSessionId: this.record.firstSessionId,
+    })
   }
 
   get path(): string {

@@ -7,6 +7,11 @@
 
 import { randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
+import z from '@deepseek-ai/schemastery'
+import type { WorkspaceMode } from './mode-types.ts'
+export type * from './mode-types.ts'
+export { WorkspaceModeError } from './mode-errors.ts'
+
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
@@ -156,6 +161,12 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+/** Workspace registration deployment policy. */
+export interface Config {
+  /** Initial mode of newly created records; existing records retain their mode. */
+  defaultMode: WorkspaceMode
+}
+
 interface BootstrapGroup {
   readonly path: string
   readonly headers: SessionHeader[]
@@ -176,6 +187,11 @@ const compareHeaders = (left: SessionHeader, right: SessionHeader): number =>
  * history and commit the initialized marker.
  */
 export class WorkspaceRegistry extends Service {
+  /** Deployment default, applied only to new registrations. */
+  static Config: z<Config> = z.object({
+    defaultMode: z.union(['single-vm', 'multi-vm', 'single-docker', 'multi-docker']).default('multi-vm'),
+  })
+
   static inject = ['storageDomain', 'sessionPersistence']
 
   private table?: KvTable<WorkspaceId, WorkspaceRecord>
@@ -201,7 +217,7 @@ export class WorkspaceRegistry extends Service {
     },
   }
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, readonly config: Config = { defaultMode: 'multi-vm' }) {
     super(ctx, 'workspaceRegistry')
     this.deletionOwner = ctx
   }
@@ -548,6 +564,10 @@ export class WorkspaceRegistry extends Service {
     const id = WorkspaceId(randomUUID())
     const now = new Date().toISOString()
     const record: WorkspaceRecord = {
+      mode: this.config.defaultMode,
+      modeRevision: 0,
+      firstSessionId: null,
+      modeOperationState: 'ready',
       path: canonical,
       title: workspaceName,
       sessionIds: [],
@@ -712,6 +732,10 @@ export class WorkspaceRegistry extends Service {
         id = WorkspaceId(randomUUID())
         const createdAt = new Date(group.newestAt).toISOString()
         const record: WorkspaceRecord = {
+          mode: this.config.defaultMode,
+          modeRevision: 0,
+          firstSessionId: sessionIds.at(-1) ?? null,
+          modeOperationState: 'ready',
           path: group.path,
           title: defaultWorkspaceTitle(group.path),
           sessionIds,
