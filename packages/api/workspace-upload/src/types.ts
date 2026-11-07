@@ -24,16 +24,16 @@ export interface WorkspaceUploadValue {
 /** Stable failure categories; browser copy never exposes host paths or causes. */
 export type WorkspaceUploadFailureReason =
   | 'invalid-request' | 'invalid-name' | 'too-large' | 'exists'
-  | 'denied' | 'unavailable' | 'cancelled' | 'io' | 'cleanup'
+  | 'denied' | 'unavailable' | 'cancelled' | 'io' | 'cleanup' | 'unknown'
 
-/** One settled upload; a failed confirmation states whether publication occurred. */
+/** One settled upload; failed or lost confirmations retain the known publication fact. */
 export type WorkspaceUploadResult =
   | { readonly ok: true; readonly value: WorkspaceUploadValue }
   | {
     readonly ok: false
     readonly error: {
       readonly reason: WorkspaceUploadFailureReason
-      /** True only after the new directory entry was atomically published. */
+      /** True only after confirmed publication; false with unknown does not establish absence. */
       readonly stored: boolean
     }
   }

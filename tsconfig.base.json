@@ -29,6 +29,8 @@
     // under its own tsconfig boundary.
     "paths": {
       "@deepseek-ai/dsh-fs/workspace-access": ["./packages/fs/fs/src/workspace-access.ts"],
+      "@deepseek-ai/dsh-fs-local/workspace-artifacts": ["./packages/fs/fs-local/src/workspace-artifacts.ts"],
+      "@deepseek-ai/dsh-fs-local/workspace-upload": ["./packages/fs/fs-local/src/workspace-upload.ts"],
       "@deepseek-ai/dsh-harness-sandbox/backend": ["./packages/sandbox/harness-sandbox/src/backend.ts"],
       "@deepseek-ai/dsh-harness-sandbox/files": ["./packages/sandbox/harness-sandbox/src/files.ts"],
       "@deepseek-ai/dsh-harness-sandbox/ssh": ["./packages/sandbox/harness-sandbox/src/ssh.ts"],
