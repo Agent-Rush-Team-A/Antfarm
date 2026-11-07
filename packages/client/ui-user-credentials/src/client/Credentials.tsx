@@ -99,7 +99,10 @@ export function CredentialsPanel(props: CredentialActions & { t: TranslateNS<'us
     let result: CredentialModelCatalogResult
     try { result = await refreshModels(id, force, signal) }
     catch (_error) { result = { status: 'failed', modelCount: 0 } }
-    if (!signal.aborted) setCatalogs(current => ({ ...current, [id]: result }))
+    const controller = lifetime.current
+    if (controller !== null && isActive(controller) && controller.signal === signal) {
+      setCatalogs(current => ({ ...current, [id]: result }))
+    }
   }
 
   useEffect(() => {

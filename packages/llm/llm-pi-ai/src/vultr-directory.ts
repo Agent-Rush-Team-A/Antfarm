@@ -21,7 +21,10 @@ export class VultrModelDirectory {
   /** @param options - validated deployment endpoint, limits and cache freshness. */
   constructor(readonly options: VultrDirectoryOptions, private readonly report?: (message: string) => void) {}
 
-  /** @returns the immutable last-successful model snapshot, or undefined before one loads. */
+  /**
+   * Read the last successful directory without starting a refresh.
+   * @returns the immutable model snapshot, or undefined before one loads.
+   */
   models(): readonly PiAiModelProfile[] | undefined { return this.current }
 
   /**
@@ -50,6 +53,7 @@ export class VultrModelDirectory {
       if (cached !== undefined && !this.lifetime.signal.aborted) {
         this.current = cached.models
         if (!force && Date.now() - cached.fetchedAt < this.options.cacheTtlMs) {
+          this.attemptedAt = cached.fetchedAt
           this.outcome = { status: 'ready', modelCount: cached.models.length }
           return this.outcome
         }

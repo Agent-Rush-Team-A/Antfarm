@@ -33,7 +33,7 @@ The public Vultr directory is parsed with `@vultr/model-catalog`. Only ready tex
 
 Set `modelDiscovery: { type: vultr }` on an explicit `openai-completions` route to replace its live models with the public Vultr directory. Configured `models` remain available until the first successful load. Concurrent reads share one request; `timeoutMs`, `maxResponseBytes`, `maxTokens` and `cacheTtlMs` under `modelDiscovery` control request bounds and freshness. Refreshes publish `llm/models-updated` after replacing the directory and preserve prepared inference calls.
 
-Set `modelDiscovery.cachePath` to an absolute private Host file to retain the public directory across restarts. Fresh caches avoid network requests; an expired cache remains available if a refresh fails. Cache files are matched to the exact endpoint, parsed again and size-bounded. Empty or invalid replies never replace a successful cache. A cache write failure is logged without discarding usable network models.
+Set `modelDiscovery.cachePath` to an absolute private Host file to retain the public directory across restarts. Fresh caches avoid network requests; an expired cache remains available if a refresh fails. Restarts preserve the original cache expiry. Cache files are matched to the exact endpoint, parsed again and size-bounded. Empty or invalid replies never replace a successful cache. A cache write failure is logged without discarding usable network models.
 
 ### When to choose it
 

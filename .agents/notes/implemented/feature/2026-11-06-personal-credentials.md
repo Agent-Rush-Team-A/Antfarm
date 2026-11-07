@@ -14,6 +14,8 @@ The personal-credential plugin owns a separate encrypted domain and browser API.
 
 Encryption precedes the domain write because domain events carry record values. AES-GCM binds ciphertext to the account, record ID and version. The key is explicitly provisioned outside workspace mounts and is never regenerated when missing. Only safe metadata crosses read responses. A backend storage check exercises authorized decryption without releasing plaintext or implying external-service authorization.
 
+Model refresh accepts an owned credential ID and derives the provider from deployment bindings. The pi-ai plugin owns public Vultr discovery, request bounds and an optional persistent catalog cache. Public discovery sends no account key and does not validate inference authorization. Sharing this catalog across accounts is safe because it contains public capabilities; inference still resolves the initiating account's credential for each call. A failed refresh preserves the saved credential and last usable model directory.
+
 ## Alternatives considered
 
 **Expose the existing credential namespace.** Its flat references and environment fallback are deployment-wide. Opening it to ordinary users changes global provider behavior and cannot enforce personal ownership.

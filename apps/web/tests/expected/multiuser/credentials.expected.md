@@ -11,7 +11,7 @@
     - /placeholder: Paste the API key or access token from your provider
   - paragraph: Enter only the secret itself. For Vultr, the key must have Cloud Inference access; cloud management access alone is not enough.
   - button "Save credential"
-  - paragraph: Save Vultr inference credentials as Vultr API Key. Models are visible before saving a key; calls use only your own credential.
+  - paragraph: Save Vultr inference credentials as Vultr API Key to load available models automatically, then choose a model in the conversation. Calls use only your own credential.
   - paragraph: Storage checks do not validate access to an external service.
   - button "Refresh"
   - list:

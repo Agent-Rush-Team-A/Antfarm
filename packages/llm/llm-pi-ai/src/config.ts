@@ -237,7 +237,7 @@ export interface VultrModelDiscoveryConfig {
 export function resolveModelDiscovery(profile: Pick<PiAiProviderProfile, 'modelDiscovery' | 'api' | 'baseURL'>): Required<Omit<VultrModelDiscoveryConfig, 'cachePath'>> & { baseURL: string; cachePath?: string } | undefined {
   const source = profile.modelDiscovery
   if (source === undefined || source === false) return undefined
-  if (source.type !== 'vultr' || profile.api !== 'openai-completions' || profile.baseURL === undefined) {
+  if (profile.api !== 'openai-completions' || profile.baseURL === undefined) {
     throw new Error('Vultr model discovery requires an explicit Chat Completions baseURL.')
   }
   const url = new URL(profile.baseURL)

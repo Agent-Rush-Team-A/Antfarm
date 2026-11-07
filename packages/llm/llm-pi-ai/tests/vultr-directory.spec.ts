@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { createServer } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
 import Llm from '@deepseek-ai/dsh-llm'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import * as PiAi from '../src/index.ts'
 import { resolveModelDiscovery } from '../src/config.ts'
 
@@ -19,7 +19,7 @@ async function harness(cachePath?: string) {
   await new Promise<void>((resolve) => { host.listen(0, '127.0.0.1', resolve) })
   cleanups.push(async () => {
     host.closeAllConnections()
-    await new Promise<void>((resolve, reject) => host.close(error => error ? reject(error) : resolve()))
+    await new Promise<void>((resolve, reject) => host.close((error) => { if (error) reject(error); else resolve() }))
   })
   const address = host.address()
   if (address === null || typeof address === 'string') throw new Error('Missing address')
@@ -83,6 +83,26 @@ it('rejects unsafe endpoints and invalid deployment limits before discovery', ()
   }
   expect(() => resolveModelDiscovery({ ...base, modelDiscovery: { type: 'vultr', timeoutMs: 0 } })).toThrow(/positive/)
   expect(() => resolveModelDiscovery({ ...base, modelDiscovery: { type: 'vultr', cachePath: 'relative.json' } })).toThrow(/absolute/)
+})
+
+it('expires a restored directory at its original fetch time rather than the restart time', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'vultr-directory-expiry-'))
+  cleanups.push(() => rm(root, { recursive: true, force: true }))
+  const path = join(root, 'catalog.json')
+  const f = await harness(path)
+  const now = Date.now()
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(now)
+  cleanups.push(async () => { clock.mockRestore() })
+  const payload: unknown = JSON.parse(await readFile(new URL('./fixtures/vultr-catalog.json', import.meta.url), 'utf8'))
+  await writeFile(path, JSON.stringify({ version: 1, baseURL: f.config.providers!.vultr!.baseURL, fetchedAt: now - 240_000, payload }))
+  expect(await f.ctx.llm.listModels('vultr')).toHaveLength(2)
+  expect(f.calls()).toBe(0)
+  clock.mockReturnValue(now + 60_001)
+  f.refuse()
+  expect(await f.ctx.llm.listModels('vultr')).toHaveLength(2)
+  expect(f.calls()).toBe(1)
+  expect(await f.ctx.waterfall('llm-pi-ai/refresh-models', { provider: 'vultr', force: false },
+    () => Promise.resolve({ status: 'unsupported' as const, modelCount: 0 }))).toEqual({ status: 'stale', modelCount: 2 })
 })
 
 it('restores a public directory across reloads and preserves the cache on failed refreshes', async () => {

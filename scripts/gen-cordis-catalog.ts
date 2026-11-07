@@ -914,6 +914,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   UserCredentialView: 'credentials.md',
   CreateCredentialRequest: 'credentials.md',
   CredentialRequest: 'credentials.md',
+  CredentialModelCatalogResult: 'credentials.md',
+  RefreshCredentialModelsRequest: 'credentials.md',
   ReplaceCredentialRequest: 'credentials.md',
   CredentialRef: 'credentials.md',
   CredentialKey: 'credentials.md',
@@ -1035,6 +1037,8 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
 /** Project types deliberately documented outside the subsystems catalog. */
 export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   PiAiCredentialRequest: 'Host credential authorization inputs are owned by packages/llm/llm-pi-ai/README.md',
+  PiAiModelRefreshRequest: 'Host model discovery inputs are owned by packages/llm/llm-pi-ai/README.md',
+  PiAiModelRefreshResult: 'Host model discovery outcomes are owned by packages/llm/llm-pi-ai/README.md',
   ActionCardDecision: 'packages/experimental/action-cards/README.md',
   ActionCardKind: 'packages/experimental/action-cards/README.md',
   ActionCardResult: 'packages/experimental/action-cards/README.md',

@@ -9,11 +9,13 @@ kind: "user-guide"
 
 ## 选择模型
 
-完成[首次账号初始化](../../../README.zh.md#run-from-source)后，通过 `pnpm run start:web` 或 `pnpm run dev:web` 启动 Antfarm。登录、打开对话，并选择 Vultr 下的模型。[默认部署配置](../../../apps/cli/config/antfarm-web.patch.yml)提供模型目录；保存密钥之前和删除密钥之后，模型都保持可见。目录显示只确认模型已经配置，不代表可以访问外部服务。
+完成[首次账号初始化](../../../README.zh.md#run-from-source)后，通过 `pnpm run start:web` 或 `pnpm run dev:web` 启动 Antfarm。登录、打开对话，并选择 Vultr 下的模型。[默认部署配置](../../../apps/cli/config/antfarm-web.patch.yml)加载 Vultr 公共模型目录；保存密钥之前和删除密钥之后，模型都保持可见。目录显示只确认服务商声明的模型能力，不代表可以访问外部服务。
 
 ## 保存个人凭证
 
-打开侧边栏的**我的凭证**。名称准确填写 `Vultr API Key`，粘贴具备 Vultr Cloud Inference 访问权限的密钥并保存，然后选择 Vultr 模型发送一条简短消息。调用地址为 `https://api.vultrinference.com/v1`，只使用发起对话的账号保存的凭证。缺少凭证时会提示配置，不能借用部署全局密钥或另一账号的密钥。
+打开侧边栏的**我的凭证**。名称准确填写 `Vultr API Key`，粘贴具备 Vultr Cloud Inference 访问权限的密钥并保存。保存时会加载绑定的模型目录，并显示可用模型数量。随后在对话中选择 Vultr 模型，发送一条简短消息。调用地址为 `https://api.vultrinference.com/v1`，只使用发起对话的账号保存的凭证。缺少凭证时会提示配置，不能借用部署全局密钥或另一账号的密钥。
+
+通过**刷新模型**立即获取最新目录。如果模型加载失败，已保存的凭证与上次成功加载的目录会保留，弹窗提供重试入口并提示正在使用缓存。公共目录请求不携带凭证，也不验证密钥的推理权限。
 
 每个账号只保留一个同名凭证。通过**替换凭证值**更新密钥，通过**删除**移除凭证。调用时遇到多个同名凭证会被拒绝，请删除重复记录后重试。**检查保存状态**只确认后端能解密凭证，不检查外部服务权限。密钥被拒绝时，请更新凭证或检查推理权限；限流和服务故障请稍后重试，持续失败请联系管理员。能管理云实例不代表具备模型推理权限。
 
@@ -25,6 +27,8 @@ kind: "user-guide"
 
 ## 配置模型目录
 
-首批个人模型服务支持 Vultr。显式模型目录位于 [antfarm-web.patch.yml](../../../apps/cli/config/antfarm-web.patch.yml)，来源为 [Vultr 公共模型目录](https://api.vultrinference.com/v1/models)。保存凭证不会自动发现服务商或同步模型。预置目录提供文本输入，每个模型的单次输出上限为 8192 token。
+首批个人模型服务支持 Vultr。[部署补丁](../../../apps/cli/config/antfarm-web.patch.yml)在对应 pi-ai 路由上启用 `modelDiscovery.type: vultr`。发现流程读取 [Vultr 公共模型目录](https://api.vultrinference.com/v1/models)，保留已就绪、支持流式文本和工具调用且声明上下文上限的模型，并映射服务商声明的推理与图片输入能力。单次输出上限为 8192 token，或模型更低的输出、上下文上限。保存其他名称的凭证不会添加服务商。
+
+模型目录请求超时为五秒，响应上限为 4 MiB。并发请求共用一次刷新，成功结果在五分钟内保持有效。公共目录缓存位于 `$DSH_HOME/cache/vultr-model-catalog.json`，重启时复用。刷新失败时保留上次成功的结果；没有可用缓存时保留部署预置的三个模型。设置 `modelDiscovery: false` 可仅使用配置中的目录，见[适配器配置](../../../packages/llm/llm-pi-ai/README.zh.md#use-this-package)。
 
 管理员可通过后置补丁替换 `llm-pi-ai` 的服务配置。保留 `credentialScope: request`；更改服务、地址或凭证名称时，同时更新[个人凭证绑定](../../../packages/api/user-credentials/README.zh.md#api-behavior)。实际地址与绑定不同会拒绝调用。部署更新前，应根据服务商当前目录核对模型 ID 和能力。

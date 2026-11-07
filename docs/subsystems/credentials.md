@@ -58,6 +58,8 @@ interface CredentialInfo {
 
 The [personal-credential API](../../packages/api/user-credentials/README.md) stores authenticated ciphertext for each [multiuser account](../../packages/api/multiuser/README.md). `UserCredentialId` identifies a record; `UserCredentialView` returns only ID, name, configured state and timestamps. `CreateCredentialRequest` submits name and value, `CredentialRequest` addresses an owned ID, and `ReplaceCredentialRequest` supplies that ID and a new value. The caller identity comes from the authenticated Peer, independently of workspace permissions. These types are declared in [the browser-safe types module](../../packages/api/user-credentials/src/types.ts); credential management has no model tools or Session events.
 
+`RefreshCredentialModelsRequest` addresses an owned credential ID and optionally forces a refresh. The Host derives the route from deployment bindings and asks its adapter to refresh the public directory without decrypting the credential. `CredentialModelCatalogResult` returns a status and model count; it does not validate inference authorization. Successful changes invalidate the existing model catalog, while failed discovery retains committed credentials and the last usable directory.
+
 ## Embedded Platform credentials
 
 PlatformSession is a Host-only snapshot from getPlatformSession: origin names the configured Platform issuer and token contains its stored account credential. userId repeats the stable account ID from the most recent successful getProfile, and is null until one succeeds or when that profile carries no ID. The snapshot reuses that ID without issuing a profile request of its own, so an unknown ID leaves userId null instead of delaying the caller; a profile read whose stable ID first becomes available or changes notifies only Host subscribers using `watch(signal, true)`, which lets identity consumers re-read the snapshot. Consumers key persistent browser storage by origin and userId and fall back to temporary storage for null. Signed-out accounts and credentials changed during the credential read return no snapshot; a mismatched issuer fails. Native consumers own document invalidation when credentials change. This snapshot is excluded from account-controller RPC, AccountView, and AccountDetails.
@@ -384,6 +386,15 @@ Host service backing the personal-credential browser API.
  * @returns Metadata without secret fragments.
  */
 @Remote list(signal: AbortSignal): UserCredentialView[]
+
+/**
+ * Refresh the public model directory bound to a caller-owned credential.
+ * This never decrypts the credential or tests its inference authorization.
+ * @param request - own credential and optional explicit retry.
+ * @param signal - request lifetime, rechecked after directory work.
+ * @returns safe directory status; failures never change the stored credential.
+ */
+@Remote async refreshModels(request: RefreshCredentialModelsRequest, signal: AbortSignal): Promise<CredentialModelCatalogResult>
 
 /**
  * Encrypts and durably stores a new credential for the authenticated caller.

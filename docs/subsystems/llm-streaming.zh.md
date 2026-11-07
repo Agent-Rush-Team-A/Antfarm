@@ -1263,6 +1263,27 @@ Source: [`packages/llm/llm/src/index.ts`](../../packages/llm/llm/src/index.ts)
 
 ### `llm-pi-ai/*` events
 
+<a id="llm-pi-airefresh-models--waterfall"></a>
+
+#### `llm-pi-ai/refresh-models` — waterfall
+
+Refresh an explicitly configured public directory without resolving a key. Unowned routes delegate with next(); discovery failures retain the last usable catalog and return a status. Endpoints remain deployment-owned.
+
+```ts cordis-catalog
+/**
+ * Refresh an explicitly configured public directory without resolving a key.
+ * Unowned routes delegate with next(); discovery failures retain the last
+ * usable catalog and return a status. Endpoints remain deployment-owned.
+ * @mode waterfall
+ * @param request - provider route and explicit freshness override.
+ * @param next - delegate to another adapter instance.
+ * @returns public model status; this does not validate inference credentials.
+ */
+'llm-pi-ai/refresh-models'(request: PiAiModelRefreshRequest, next: () => Promise<PiAiModelRefreshResult>): Promise<PiAiModelRefreshResult>
+```
+
+Source: [`packages/llm/llm-pi-ai/src/index.ts`](../../packages/llm/llm-pi-ai/src/index.ts)
+
 <a id="llm-pi-airequest-headers--waterfall"></a>
 
 #### `llm-pi-ai/request-headers` — waterfall

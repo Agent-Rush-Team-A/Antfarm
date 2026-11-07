@@ -1,0 +1,5 @@
+- menu "Model":
+  - group "Vultr":
+    - text: Vultr
+    - menuitemradio "DeepSeek V4.1 Flash 1017" [checked]
+    - menuitemradio "GLM 5.2"

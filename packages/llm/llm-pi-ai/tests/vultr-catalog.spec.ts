@@ -28,7 +28,7 @@ async function server(body: string, status = 200, delay = 0) {
   cleanups.push(async () => {
     for (const timer of timers) clearTimeout(timer)
     host.closeAllConnections()
-    await new Promise<void>((resolve, reject) => host.close(error => error ? reject(error) : resolve()))
+    await new Promise<void>((resolve, reject) => host.close((error) => { if (error) reject(error); else resolve() }))
   })
   const address = host.address()
   if (address === null || typeof address === 'string') throw new Error('Missing server address')

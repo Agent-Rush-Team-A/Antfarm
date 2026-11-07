@@ -1,0 +1,8 @@
+version: 1
+scenario: vultr-model-discovery
+profile: web
+composition: web-vultr-model-discovery
+recording: authored
+header:
+  class: web-vultr-model-discovery
+  pin: true

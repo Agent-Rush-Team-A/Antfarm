@@ -343,7 +343,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-api-user-credentials`
 
 - `inject`: `storageDomain` · `multiuser`
-- `source`: [`packages/api/user-credentials/src/index.ts:23`](../packages/api/user-credentials/src/index.ts)
+- `source`: [`packages/api/user-credentials/src/index.ts:24`](../packages/api/user-credentials/src/index.ts)
 
 ```ts config-catalog
 /** Host deployment values; no secret is stored in plugin configuration. */
@@ -2106,7 +2106,7 @@ export interface Config extends ProtocolConfig, ModelListingConfig {
 
 - `inject`: `llm`
 - `refs`: `Api` (`@earendil-works/pi-ai`) · `CacheRetention` (`@earendil-works/pi-ai`) · `Model` (`@earendil-works/pi-ai`) · `ModelThinkingLevel` (`@earendil-works/pi-ai`) · `OpenAICompletionsCompat` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets` (`@earendil-works/pi-ai`) · `Transport` (`@earendil-works/pi-ai`) · `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/llm/llm-pi-ai/src/config.ts:255`](../packages/llm/llm-pi-ai/src/config.ts)
+- `source`: [`packages/llm/llm-pi-ai/src/config.ts:304`](../packages/llm/llm-pi-ai/src/config.ts)
 
 ```ts config-catalog
 /** Plugin configuration: the provider routes this instance owns. */
@@ -2121,6 +2121,8 @@ export interface Config {
 
 /** Configuration for one pi-ai provider route; the `providers` dict key IS the route. */
 export interface PiAiProviderProfile {
+  /** Opt-in public Vultr directory; configured models remain the first-load fallback. */
+  modelDiscovery?: false | VultrModelDiscoveryConfig
   /** Credential reference (environment-variable name) resolved per request through `ctx.credentials`. */
   apiKeyEnv?: string
   /** Request requires an authorized consumer and never falls back to deployment credentials. @default global */
@@ -2225,6 +2227,22 @@ export interface PiAiProviderProfile {
   requestImageMaxBytes?: number
   /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
+}
+
+/** Request bounds and freshness for the public Vultr directory. */
+export interface VultrModelDiscoveryConfig {
+  /** Provider-document parser; currently only Vultr is supported. */
+  type: 'vultr'
+  /** Maximum directory request duration. @default 5000 */
+  timeoutMs?: number
+  /** Maximum decoded directory bytes. @default 4194304 */
+  maxResponseBytes?: number
+  /** Default output token budget, capped by advertised model limits. @default 8192 */
+  maxTokens?: number
+  /** Freshness and failed-attempt backoff interval. @default 300000 */
+  cacheTtlMs?: number
+  /** Absolute cache file outside user workspaces; omission keeps only a process-local directory. */
+  cachePath?: string
 }
 
 /** One configured model entry: an id plus the catalog fields it overrides. */

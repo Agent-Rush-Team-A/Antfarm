@@ -4468,6 +4468,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Metadata without secret fragments.',
       },
       {
+        signature: '@Remote async refreshModels(request: RefreshCredentialModelsRequest, signal: AbortSignal): Promise<CredentialModelCatalogResult>',
+        description: 'Refresh the public model directory bound to a caller-owned credential. This never decrypts the credential or tests its inference authorization.',
+        parameters: [{ name: 'request', description: 'own credential and optional explicit retry.' }, { name: 'signal', description: 'request lifetime, rechecked after directory work.' }],
+        returns: 'safe directory status; failures never change the stored credential.',
+      },
+      {
         signature: '@Remote create(request: CreateCredentialRequest, signal: AbortSignal): Promise<UserCredentialView>',
         description: 'Encrypts and durably stores a new credential for the authenticated caller.',
         parameters: [{ name: 'request', description: 'Name and submitted secret.' }, { name: 'signal', description: 'Request lifetime.' }],
@@ -5395,6 +5401,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Module replacements have finished loading.',
     description: 'Module replacements have finished loading.',
     parameters: [{ name: 'reloads', description: 'Replaced plugins and their module locations.' }],
+  },
+  {
+    name: 'llm-pi-ai/refresh-models',
+    mode: 'waterfall',
+    signature: '\'llm-pi-ai/refresh-models\'(request: PiAiModelRefreshRequest, next: () => Promise<PiAiModelRefreshResult>): Promise<PiAiModelRefreshResult>',
+    summary: 'Refresh an explicitly configured public directory without resolving a key.',
+    description: 'Refresh an explicitly configured public directory without resolving a key. Unowned routes delegate with next(); discovery failures retain the last usable catalog and return a status. Endpoints remain deployment-owned.',
+    parameters: [{ name: 'request', description: 'provider route and explicit freshness override.' }, { name: 'next', description: 'delegate to another adapter instance.' }],
   },
   {
     name: 'llm-pi-ai/request-headers',
@@ -6519,6 +6533,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CredentialKey',
     declaration: 'export type CredentialKey = Branded<\'CredentialKey\'>;',
+  },
+  {
+    name: 'CredentialModelCatalogResult',
+    declaration: 'export interface CredentialModelCatalogResult {\n    readonly status: \'ready\' | \'stale\' | \'failed\' | \'unsupported\';\n    readonly modelCount: number;\n}',
   },
   {
     name: 'CredentialRecord',
@@ -7913,6 +7931,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PiAiCredentialRequest {\n    readonly provider: string;\n    readonly baseURL?: string;\n    readonly model?: string;\n    readonly apiKeyEnv?: string;\n    readonly credentialScope?: \'global\' | \'request\';\n    readonly sessionId?: GenerateOptions[\'sessionId\'];\n    readonly purpose?: GenerateOptions[\'purpose\'];\n    readonly signal?: AbortSignal;\n}',
   },
   {
+    name: 'PiAiModelRefreshRequest',
+    declaration: 'export interface PiAiModelRefreshRequest {\n    readonly provider: string;\n    readonly force: boolean;\n}',
+  },
+  {
+    name: 'PiAiModelRefreshResult',
+    declaration: 'export interface PiAiModelRefreshResult {\n    readonly status: \'ready\' | \'stale\' | \'failed\' | \'unsupported\';\n    readonly modelCount: number;\n}',
+  },
+  {
     name: 'PiAiRequestHeaderContext',
     declaration: 'export interface PiAiRequestHeaderContext extends Readonly<Pick<GenerateOptions<string>, \'provider\' | \'model\' | \'sessionId\' | \'purpose\'>> {\n    readonly baseURL: string;\n}',
   },
@@ -8263,6 +8289,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RedactedSecret',
     declaration: 'export interface RedactedSecret {\n    path: string[];\n    set: boolean;\n}',
+  },
+  {
+    name: 'RefreshCredentialModelsRequest',
+    declaration: 'export interface RefreshCredentialModelsRequest extends CredentialRequest {\n    readonly force?: boolean;\n}',
   },
   {
     name: 'Registry',

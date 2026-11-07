@@ -1,0 +1,25 @@
+- dialog "My credentials":
+  - heading "My credentials" [level=2]
+  - button "Close"
+  - paragraph: Credentials belong to your account. Sharing a workspace does not share them.
+  - text: Name
+  - textbox "Name":
+    - /placeholder: "For example: Vultr API Key"
+  - paragraph: Use the credential name required by your service, such as Vultr API Key.
+  - text: Credential value
+  - textbox "Credential value":
+    - /placeholder: Paste the API key or access token from your provider
+  - paragraph: Enter only the secret itself. For Vultr, the key must have Cloud Inference access; cloud management access alone is not enough.
+  - button "Save credential"
+  - paragraph: Save Vultr inference credentials as Vultr API Key to load available models automatically, then choose a model in the conversation. Calls use only your own credential.
+  - paragraph: Storage checks do not validate access to an external service.
+  - button "Refresh"
+  - list:
+    - listitem:
+      - strong: Vultr API Key
+      - text: Saved
+      - status: 2 models available. Choose a model in the conversation.
+      - button "Refresh models"
+      - button "Check storage"
+      - button "Replace value"
+      - button "Delete"

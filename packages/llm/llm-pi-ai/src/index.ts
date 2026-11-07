@@ -200,10 +200,12 @@ export function apply(ctx: Context, config: Config): void {
   let lastRaw: ReturnType<Config['providers']['get']> | undefined
   let memoized: ReadonlyMap<string, ResolvedPiAiProviderProfile> | undefined
   const directories = new Map<string, VultrModelDirectory>()
+  const pendingUpdates = new Set<Promise<void>>()
   let closed = false
   ctx.effect(() => async () => {
     closed = true
     await Promise.all([...directories.values()].map(directory => directory.dispose()))
+    await Promise.all(pendingUpdates)
     directories.clear()
   }, 'llm-pi-ai: public directories')
   /**
@@ -240,7 +242,7 @@ export function apply(ctx: Context, config: Config): void {
     let directory = directories.get(request.provider)
     if (directory === undefined || !deepEqualJson(directory.options, options)) {
       const previous = directory
-      directory = new VultrModelDirectory(options, message => ctx.logger.warn(message))
+      directory = new VultrModelDirectory(options, (message) => { ctx.logger.warn(message) })
       directories.set(request.provider, directory)
       await previous?.dispose()
     }
@@ -421,18 +423,25 @@ export function apply(ctx: Context, config: Config): void {
   }
   ensureRegistrationFacts()
 
-  ctx.on('loader/volatile-update', async () => {
-    for (const [provider, directory] of directories) {
-      const source = config.providers.get()[provider]
-      if (source === undefined || !deepEqualJson(resolveModelDiscovery(source), directory.options)) {
-        directories.delete(provider)
-        await directory.dispose()
+  async function updateProviders(): Promise<void> {
+    try {
+      for (const [provider, directory] of directories) {
+        const source = config.providers.get()[provider]
+        if (source === undefined || !deepEqualJson(resolveModelDiscovery(source), directory.options)) {
+          directories.delete(provider)
+          await directory.dispose()
+        }
       }
+      if (closed) return
+      ensureRegistrationFacts(); ensureDirectory()
+    } catch (_error) {
+      ctx.logger.error('llm-pi-ai: configuration could not be updated. Check provider routes and model discovery settings.')
     }
-    try { ensureRegistrationFacts(); ensureDirectory() }
-    catch (error) {
-      ctx.logger.error('llm-pi-ai: configuration conflicts with an existing provider route')
-      ctx.logger.error(error)
-    }
+  }
+  ctx.on('loader/volatile-update', () => {
+    if (closed) return
+    const update = updateProviders()
+    pendingUpdates.add(update)
+    void update.finally(() => { pendingUpdates.delete(update) })
   })
 }

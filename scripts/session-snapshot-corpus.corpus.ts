@@ -32,6 +32,7 @@ const snapshotAdapters = [
   'snapshots/sdk/sdk.snapshot.ts',
   'snapshots/session/headless.snapshot.ts',
   'snapshots/web/sandbox-bash/sandbox-bash.snapshot.ts',
+  'snapshots/web/vultr-model-discovery/vultr-model-discovery.snapshot.ts',
 ] as const
 
 interface Scenario {

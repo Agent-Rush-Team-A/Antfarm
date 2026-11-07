@@ -87,6 +87,7 @@
     "tests/navigation-panes.e2e.ts",
     "tests/shell-command-details.e2e.ts",
     "tests/terminal-command-browser.ts",
+    "tests/vultr-model-discovery.browser.ts",
     "tests/focus-rings.e2e.ts",
     "tests/chat-scroll-fixture.ts",
     "tests/trajectory-virtualization.e2e.ts",

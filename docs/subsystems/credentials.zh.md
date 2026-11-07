@@ -58,6 +58,8 @@ interface CredentialInfo {
 
 [个人凭证 API](../../packages/api/user-credentials/README.zh.md) 为每个[多用户账号](../../packages/api/multiuser/README.zh.md)保存认证密文。`UserCredentialId` 标识记录；`UserCredentialView` 仅返回 ID、名称、保存状态和时间戳。`CreateCredentialRequest` 提交名称与凭证值，`CredentialRequest` 指定当前用户拥有的 ID，`ReplaceCredentialRequest` 提供该 ID 与新值。调用者身份来自已认证 Peer，与工作区权限独立。这些类型定义在[浏览器安全类型模块](../../packages/api/user-credentials/src/types.ts)中；凭证管理不注册模型工具或 Session 事件。
 
+`RefreshCredentialModelsRequest` 指定本人凭证 ID，并可要求强制刷新。Host 从部署绑定确定路由，要求适配器刷新公共目录，无需解密凭证。`CredentialModelCatalogResult` 返回状态与模型数量，不验证推理授权。成功变更会使现有模型目录重新读取；发现失败时保留已提交的凭证与上次可用目录。
+
 ## 内嵌 Platform 凭证
 
 PlatformSession 是 getPlatformSession 返回的仅限 Host 快照：origin 指定所配置的 Platform 签发来源，token 包含其已存账号凭证。userId 复制最近一次成功 getProfile 得到的稳定账号 ID；尚无一次成功读取或资料不含 ID 时为 null。快照复用该 ID，不自行发起资料请求，因此 ID 未知时只会让 userId 为 null，而不会延迟调用方；资料读取首次取得稳定 ID 或该 ID 变化时仅通知使用 `watch(signal, true)` 的 Host 订阅者，供标识使用方重新读取快照。使用方以 origin 和 userId 作为持久化浏览器存储的键，为 null 时退回临时存储。账号已退登或读取凭证期间凭证变化时不返回快照；签发来源不匹配时失败。原生使用方负责在凭证变化时使文档失效。账号控制器 RPC、AccountView 和 AccountDetails 均不包含此快照。
@@ -384,6 +386,15 @@ Host service backing the personal-credential browser API.
  * @returns Metadata without secret fragments.
  */
 @Remote list(signal: AbortSignal): UserCredentialView[]
+
+/**
+ * Refresh the public model directory bound to a caller-owned credential.
+ * This never decrypts the credential or tests its inference authorization.
+ * @param request - own credential and optional explicit retry.
+ * @param signal - request lifetime, rechecked after directory work.
+ * @returns safe directory status; failures never change the stored credential.
+ */
+@Remote async refreshModels(request: RefreshCredentialModelsRequest, signal: AbortSignal): Promise<CredentialModelCatalogResult>
 
 /**
  * Encrypts and durably stores a new credential for the authenticated caller.

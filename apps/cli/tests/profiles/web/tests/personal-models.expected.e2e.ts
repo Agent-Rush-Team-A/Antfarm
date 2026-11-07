@@ -30,8 +30,17 @@ test.skipIf(process.platform !== 'linux')('default personal models stay visible 
   const home = join(root, 'home')
   const password = randomUUID()
   const requests: Array<{ authorization: string; body: unknown }> = []
+  const listingRequests: string[] = []
+  const catalogBody = await readFile(new URL('../../../../../../packages/llm/llm-pi-ai/tests/fixtures/vultr-catalog.json', import.meta.url), 'utf8')
+  let catalogStatus = 200
   let status = 200
   const server = createServer((request, response) => {
+    if (request.method === 'GET' && request.url === '/v1/models') {
+      listingRequests.push(request.headers.authorization ?? '')
+      response.writeHead(catalogStatus, { 'content-type': 'application/json' })
+      response.end(catalogBody)
+      return
+    }
     const chunks: Buffer[] = []
     request.on('data', (chunk: Buffer) => { chunks.push(chunk) })
     request.on('end', () => {
@@ -69,7 +78,9 @@ test.skipIf(process.platform !== 'linux')('default personal models stay visible 
   expect(vultr).toMatchObject({ credentialScope: 'request', baseURL: 'https://api.vultrinference.com/v1' })
   const externalPatch = join(root, 'inference.patch.yml')
   await writeFile(externalPatch, yaml.dump([
-    { id: 'llm-pi-ai', config: { providers: { vultr: { ...vultr, baseURL, apiKeyEnv: 'VULTR_API_KEY', retryPolicy: { mode: 'normal', maxRetries: 0 } } } } },
+    { id: 'llm-pi-ai', config: { providers: { vultr: { ...vultr, baseURL, apiKeyEnv: 'VULTR_API_KEY',
+      modelDiscovery: { type: 'vultr', cachePath: join(home, 'cache', 'vultr-model-catalog.json') },
+      retryPolicy: { mode: 'normal', maxRetries: 0 } } } } },
   ]) + `- id: user-credentials
   config:
     encryptionKeyFile: !!js process.getBuiltinModule('node:path').join(ctx.profileContext.home, 'secrets', 'user-credentials.key')
@@ -99,10 +110,10 @@ test.skipIf(process.platform !== 'linux')('default personal models stay visible 
       expect(result.ok, JSON.stringify(result.error)).toBe(true)
       return result.value
     }
-    async function session(cookie: string, selectModel = true) {
+    async function session(cookie: string, selectModel = true, selectedModel = model) {
       const { workspace } = await rpc<{ workspace: { workspaceId: string } }>(cookie, 'workspace/create', { request: {} })
       const { sessionId } = await rpc<{ sessionId: string }>(cookie, 'session/create', { request: { workspaceId: workspace.workspaceId } })
-      if (selectModel) await rpc(cookie, 'session/selectModel', { request: { sessionId, provider: 'vultr', model } })
+      if (selectModel) await rpc(cookie, 'session/selectModel', { request: { sessionId, provider: 'vultr', model: selectedModel } })
       return sessionId
     }
     async function prompt(cookie: string, sessionId: string, expected: string) {
@@ -124,15 +135,17 @@ test.skipIf(process.platform !== 'linux')('default personal models stay visible 
     expect(catalog.groups.map(group => group.id)).toEqual(['vultr'])
     expect(catalog.default).toEqual({ provider: 'vultr', model })
     expect(catalog.groups.find(group => group.id === 'vultr')?.models.map(entry => entry.id))
-      .toEqual(vultr.models!.map(entry => entry.id))
+      .toEqual(['deepseek-v4.1-flash-1017', 'glm-5.2'])
     expect(await rpc(alice, 'userCredentials/list')).toEqual([])
     await prompt(alice, await session(alice, false), 'PERSONAL_CREDENTIAL_MISSING')
     expect(requests).toHaveLength(0)
     aliceCredential = await rpc<Credential>(alice, 'userCredentials/create', { request: { name: 'Vultr API Key', value: 'ALICE-INFERENCE-CANARY' } })
+    expect(await rpc(alice, 'userCredentials/refreshModels', { request: { id: aliceCredential.id } }))
+      .toEqual({ status: 'ready', modelCount: 2 })
     originalKey = await readFile(join(home, 'secrets', 'user-credentials.key'))
     expect(originalKey).toHaveLength(32)
     expect(await readFile(join(home, 'storages', 'user_credentials.json'), 'utf8')).not.toContain('ALICE-INFERENCE-CANARY')
-  }, { home, patches: [antfarmPatch, noTitlePatch], prepare: async () => {
+  }, { home, patches: [antfarmPatch, noTitlePatch, externalPatch], prepare: async () => {
     const backend = new JsonStorageBackend(join(home, 'storages'))
     try {
       const unit = await backend.kv.open(descriptorOf(multiuserDomainSpec))
@@ -143,6 +156,7 @@ test.skipIf(process.platform !== 'linux')('default personal models stay visible 
       }
     } finally { await backend.close() }
   } })
+  catalogStatus = 503
   await withDefaultWeb(t, async ({ url, request }) => {
     // The listener starts before all authentication plugins finish loading.
     await request('roster')
@@ -154,14 +168,18 @@ test.skipIf(process.platform !== 'linux')('default personal models stay visible 
     await prompt(bob, await session(bob), 'PERSONAL_CREDENTIAL_MISSING')
     expect(requests).toHaveLength(0)
     await rpc(bob, 'userCredentials/create', { request: { name: 'Vultr API Key', value: 'BOB-INFERENCE-CANARY' } })
-    await prompt(alice, await session(alice), 'PERSONAL-MODEL-REPLY')
+    await prompt(alice, await session(alice, true, 'glm-5.2'), 'PERSONAL-MODEL-REPLY')
     await prompt(bob, await session(bob), 'PERSONAL-MODEL-REPLY')
     expect(requests.map(request => request.authorization)).toEqual(['Bearer ALICE-INFERENCE-CANARY', 'Bearer BOB-INFERENCE-CANARY'])
+    expect(requests[0]?.body).toMatchObject({ model: 'glm-5.2', max_tokens: 8192 })
+    expect(await rpc(alice, 'userCredentials/refreshModels', { request: { id: aliceCredential!.id, force: true } }))
+      .toEqual({ status: 'stale', modelCount: 2 })
+    expect(listingRequests.every(value => value === '')).toBe(true)
     expect(JSON.stringify(requests.map(request => request.body))).not.toMatch(/INFERENCE-CANARY|GLOBAL-MUST-NOT-BE-USED/)
     await rpc(alice, 'userCredentials/delete', { request: { id: aliceCredential!.id } })
     await prompt(alice, await session(alice), 'PERSONAL_CREDENTIAL_MISSING')
     expect(requests).toHaveLength(2)
-    expect((await rpc<Catalog>(alice, 'session/modelCatalog')).groups.find(group => group.id === 'vultr')?.models).toHaveLength(3)
+    expect((await rpc<Catalog>(alice, 'session/modelCatalog')).groups.find(group => group.id === 'vultr')?.models).toHaveLength(2)
     await prompt(bob, await session(bob), 'PERSONAL-MODEL-REPLY')
     expect(requests.at(-1)?.authorization).toBe('Bearer BOB-INFERENCE-CANARY')
     status = 401
