@@ -1,3 +1,4 @@
+import { mockWorkspaceRegistry } from './test-remote.ts'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
@@ -102,7 +103,7 @@ async function commandHarness(
     cancel,
   } satisfies Agent
   await ctx.agents.register(agent)
-  ctx.provide('workspaceRegistry', { get: () => undefined, list: () => [] } as never)
+  mockWorkspaceRegistry(ctx, { get: () => undefined, list: () => [] } as never)
   ctx.provide('agentDefaultModel', {
     currentSelection: () => ({ provider: 'fixture', model: 'fixture-model' }),
     saveSelection: () => Promise.resolve(),

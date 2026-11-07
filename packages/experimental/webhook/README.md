@@ -64,6 +64,8 @@ One data-dependent user-role message is retained in the new Session and contribu
 
 The initial prompt begins a new Session, so it establishes rather than invalidates that Session's reusable request prefix.
 
+Webhook creation reserves an ordinary Session through Workspace mode admission before Agent persistence. A single-mode limit refuses the action before a second log is written. Attachment and permanent locking complete together before permissions, title, and prompt. Disposing a failed Agent does not delete a saved Session log or release its durable reservation; trusted Workspace recovery reconciles it.
+
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>

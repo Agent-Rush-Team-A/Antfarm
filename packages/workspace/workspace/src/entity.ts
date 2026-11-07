@@ -12,6 +12,7 @@ import { stat } from 'node:fs/promises'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { WorkspaceRecord } from './spec.ts'
+import { WorkspaceModeError } from './mode-errors.ts'
 import type { WorkspaceModeConfig } from './mode-types.ts'
 import type { Workspace, WorkspaceId } from './types.ts'
 import { realpathNormalize } from './paths.ts'
@@ -135,6 +136,15 @@ export class WorkspaceEntity implements Workspace {
   }
 
   async attachSession(sessionId: SessionId): Promise<void> {
+    await this.attach(sessionId, false)
+  }
+
+  /** @param sessionId - Reserved ordinary identity. @returns after atomic attachment, locking, and intent clearance. */
+  async completeSession(sessionId: SessionId): Promise<void> {
+    await this.attach(sessionId, true)
+  }
+
+  private async attach(sessionId: SessionId, complete: boolean): Promise<void> {
     // Validation is skipped when the settled snapshot already accounts the
     // id: the cwd fact was checked when it first attached and both inputs
     // (stored header cwd, workspace path) are immutable. Membership itself is
@@ -171,9 +181,25 @@ export class WorkspaceEntity implements Workspace {
       }
       this.host.rememberSessionPath(sessionId, cwd)
     }
-    await this.mutate(record => record.sessionIds.includes(sessionId)
-      ? record
-      : { ...record, sessionIds: [sessionId, ...record.sessionIds] })
+    await this.mutate((record) => {
+      const pending = record.modeIntent
+      if (pending !== undefined && (!complete || pending.operation !== 'create-session' || pending.sessionId !== sessionId)) {
+        throw new WorkspaceModeError('workspace/mode-recovery-required', {
+          workspaceId: this.id, operation: pending.operation,
+        })
+      }
+      if (record.mode.startsWith('single-') && record.firstSessionId !== null && record.firstSessionId !== sessionId) {
+        throw new WorkspaceModeError('workspace/session-limit', { workspaceId: this.id, firstSessionId: record.firstSessionId })
+      }
+      const firstSessionId = record.firstSessionId ?? sessionId
+      if (record.sessionIds.includes(sessionId) && firstSessionId === record.firstSessionId && pending === undefined) return record
+      return {
+        ...record, firstSessionId,
+        modeRevision: record.modeRevision + (firstSessionId === record.firstSessionId && pending === undefined ? 0 : 1),
+        ...complete ? { modeIntent: undefined, modeOperationState: 'ready' as const } : {},
+        sessionIds: record.sessionIds.includes(sessionId) ? record.sessionIds : [sessionId, ...record.sessionIds],
+      }
+    })
   }
 
   async insertSessionBefore(sessionId: SessionId, beforeSessionId?: SessionId): Promise<void> {

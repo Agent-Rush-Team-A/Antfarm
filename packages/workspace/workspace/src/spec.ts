@@ -54,6 +54,22 @@ export const workspaceRecord = z.object({
   sessionIds: z.array(sessionId),
   createdAt: z.string(),
   updatedAt: z.string(),
+}).superRefine((record, ctx) => {
+  const intent = record.modeIntent
+  if ((intent === undefined) !== (record.modeOperationState === 'ready')) {
+    ctx.addIssue({ code: 'custom', message: 'Workspace operation state must agree with its durable intent' })
+  }
+  if (intent?.operation === 'switch-mode'
+    && (intent.from !== record.mode || intent.project !== record.path || intent.previousRevision >= record.modeRevision)) {
+    ctx.addIssue({ code: 'custom', message: 'Workspace mode change must retain its committed mode, project, and earlier revision' })
+  }
+  if (intent?.operation === 'create-session' && intent.mode !== record.mode) {
+    ctx.addIssue({ code: 'custom', message: 'Pending Session must retain its captured Workspace mode' })
+  }
+  if (record.mode.startsWith('single-') && (record.sessionIds.length > 1
+    || record.sessionIds.some(id => record.firstSessionId !== id))) {
+    ctx.addIssue({ code: 'custom', message: 'Single-mode accounting must retain only the permanent first Session' })
+  }
 })
 
 /** One stored workspace record, inferred from {@link workspaceRecord}. */

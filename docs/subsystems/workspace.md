@@ -31,6 +31,9 @@ Consumers see only the `Workspace` interface; the implementation stays package-p
  * implementation stays private.
  */
 interface Workspace {
+  /** Committed mode metadata and current operation admission state. */
+  readonly modeConfig: WorkspaceModeConfig
+
   /** Stable record id (generated uuid). */
   readonly id: WorkspaceId
 

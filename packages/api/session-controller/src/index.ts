@@ -305,7 +305,8 @@ export class SessionController extends TypertRemoteService {
   @Remote('create')
   create(request: SessionCreateRequest): Promise<SessionCreateValue> {
     const principal = principalOf(this.ctx.invocation)
-    return this.commands.create(request, principal?.kind === 'user' ? principal : undefined)
+    const signal = this.ctx.invocation?.signal ?? new AbortController().signal
+    return this.commands.create(request, principal?.kind === 'user' ? principal : undefined, signal)
   }
 
   /**

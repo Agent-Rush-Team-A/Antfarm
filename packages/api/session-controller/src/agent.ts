@@ -49,11 +49,24 @@ export class ApiSessionPresetConflict extends Error {
   }
 }
 
+/** Same-identity creation could not reuse its ordinary Session. */
+export class ApiSessionReuseUnavailable extends Error {
+  /** @param sessionId - Permanent single-mode identity whose conversation must be resumed. */
+  constructor(readonly sessionId: SessionId) {
+    super(`Session '${sessionId}' is no longer available for blank reuse`)
+  }
+}
+
 /** A blank Session chosen for reuse started a turn before this Host acquired its writer. */
 class ApiSessionStartedSinceObserved extends Error {}
 
 /** Placement and Agent preset for one Session created for a new conversation. */
 export interface ApiSessionCreateRequest {
+  /** Single-mode admission refuses minting any replacement identity. */
+  readonly preserveIdentity?: boolean
+  /** @param sessionId - New identity to reserve before writing any Session log. */
+  readonly reserveIdentity?: (sessionId: SessionId) => Promise<void>
+
   /** Blank Session to reuse, or the identity of a new Session when none is stored under it. */
   readonly sessionId?: SessionId
   /** Directory the Session owns. */
@@ -126,6 +139,12 @@ export class ApiSessionAgentController {
    */
   initialize(): void {
     const ctx = this.ctx
+    ctx.on('workspace/recover-session', async (sessionId, next) => {
+      if (await next()) return true
+      const resolved = await this.resolveAgent(sessionId)
+      if ('error' in resolved) throw resolved.error
+      return true
+    })
     ctx.typert.lookups.configure('agent', async (sessionId: SessionId) => {
       const found = await this.resolveAgent(sessionId)
       if ('error' in found) throw found.error
@@ -228,7 +247,9 @@ export class ApiSessionAgentController {
    */
   async createSession(request: ApiSessionCreateRequest): Promise<ApiSessionCreated> {
     const named = request.sessionId
-    if (named === undefined) return this.created(await this.createMinted(request.cwd, await this.composeAgent(request.agentPreset)))
+    if (named === undefined) {
+      return this.created(await this.createMinted(request.cwd, await this.composeAgent(request.agentPreset), request.reserveIdentity))
+    }
     return this.inOrder(named, async () => this.created(await this.claim(named, request)))
   }
 
@@ -340,14 +361,14 @@ export class ApiSessionAgentController {
         throw new ApiSessionCwdConflict(live.id, request.cwd, live.session.header.cwd)
       }
       const composition = await this.composeAgent(request.agentPreset)
-      return await this.reuseLive(live, request, composition) ?? this.createMinted(request.cwd, composition)
+      return await this.reuseLive(live, request, composition) ?? this.fallback(sessionId, request, composition)
     }
     let observation: SessionObservation
     try {
       observation = await this.ctx.sessionQuery.observeSession(sessionId)
     } catch (error: unknown) {
       if (!(error instanceof SessionQueryError) || error.code !== 'SESSION_QUERY_SESSION_NOT_FOUND') throw error
-      return this.createAgent(sessionId, request.cwd, await this.composeAgent(request.agentPreset))
+      return this.createAgent(sessionId, request.cwd, await this.composeAgent(request.agentPreset), request.reserveIdentity)
     }
     let reusable: boolean
     {
@@ -361,7 +382,7 @@ export class ApiSessionAgentController {
       reusable = request.reusable(sessionId) && !observed.events.some(event => event.type === 'turn/start')
     }
     const composition = await this.composeAgent(request.agentPreset)
-    if (!reusable) return this.createMinted(request.cwd, composition)
+    if (!reusable) return this.fallback(sessionId, request, composition)
     this.assertPresetApplicable(sessionId, request.agentPreset)
     try {
       return (await this.ctx.agents.resume({
@@ -370,11 +391,11 @@ export class ApiSessionAgentController {
         setup: this.reuseSetup(composition),
       })).agent
     } catch (error: unknown) {
-      if (error instanceof ApiSessionStartedSinceObserved) return this.createMinted(request.cwd, composition)
+      if (error instanceof ApiSessionStartedSinceObserved) return this.fallback(sessionId, request, composition)
       if (!(error instanceof Error) || error.name !== 'SessionAlreadyOwnedError') throw error
       // Another resume in this process may hold the writer for the Agent it published.
       return this.ctx.agents.get(sessionId) === undefined
-        ? this.createMinted(request.cwd, composition)
+        ? this.fallback(sessionId, request, composition)
         : this.claim(sessionId, request)
     }
   }
@@ -429,11 +450,19 @@ export class ApiSessionAgentController {
     return { agent, agentPreset: this.presetForSession(agent.session) }
   }
 
-  private createMinted(cwd: string, composition: ApiSessionComposition): Promise<Agent> {
-    return this.createAgent(brandString<SessionId>(`session-${randomUUID()}`), cwd, composition)
+  private fallback(sessionId: SessionId, request: ApiSessionCreateRequest, composition: ApiSessionComposition): Promise<Agent> {
+    if (request.preserveIdentity === true) throw new ApiSessionReuseUnavailable(sessionId)
+    return this.createMinted(request.cwd, composition, request.reserveIdentity)
   }
 
-  private async createAgent(sessionId: SessionId, cwd: string, composition: ApiSessionComposition): Promise<Agent> {
+  private createMinted(cwd: string, composition: ApiSessionComposition, reserve?: (id: SessionId) => Promise<void>): Promise<Agent> {
+    return this.createAgent(brandString<SessionId>(`session-${randomUUID()}`), cwd, composition, reserve)
+  }
+
+  private async createAgent(
+    sessionId: SessionId, cwd: string, composition: ApiSessionComposition, reserve?: (id: SessionId) => Promise<void>,
+  ): Promise<Agent> {
+    await reserve?.(sessionId)
     try {
       await mkdir(cwd, { recursive: true })
     } catch (error: unknown) {

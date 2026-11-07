@@ -164,6 +164,8 @@ Zero direct tokens on every request.
 
 Independent of live requests: the package never touches a request prefix, so it cannot invalidate provider cache reuse.
 
+The first successful ordinary Session permanently locks its mode. `withSessionCreation` holds exclusive admission, persists a stable Session identity before creation, and atomically attaches and locks it. Single modes permit only the permanent first identity and reject forks and archives, including stop requests and currently filtered Sessions. Failed setup with a retained log requires lifecycle takeover through `workspace/recover-session` before trusted recovery can complete; a definite fresh miss releases the reservation. Direct attachment checks the same permanent limit.
+
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>

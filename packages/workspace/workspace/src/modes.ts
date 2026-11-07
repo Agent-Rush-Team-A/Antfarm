@@ -167,10 +167,20 @@ export class WorkspaceModes implements IWorkspaceModes {
       }
       let phase: 'prepare' | 'settle' | 'persist' = 'persist'
       try {
-        await entity.updateMode(record => ({
-          ...record, modeIntent: { ...change, operation: 'switch-mode', phase: 'preparing' },
-          modeOperationState: 'switching',
-        }))
+        await entity.updateMode((record) => {
+          if (record.firstSessionId !== null) {
+            throw new WorkspaceModeError('workspace/mode-locked', {
+              workspaceId: entity.id, mode: record.mode, firstSessionId: record.firstSessionId,
+              lockReason: 'first-session-created',
+            })
+          }
+          if (record.modeRevision !== config.revision) {
+            throw new WorkspaceModeError('workspace/mode-revision-conflict', {
+              workspaceId: entity.id, expectedRevision: config.revision, actualRevision: record.modeRevision,
+            })
+          }
+          return { ...record, modeIntent: { ...change, operation: 'switch-mode', phase: 'preparing' }, modeOperationState: 'switching' }
+        })
         phase = 'prepare'
         await runtime.adapter.prepare(change, signal)
         signal.throwIfAborted()

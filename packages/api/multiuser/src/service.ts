@@ -167,9 +167,11 @@ export class MultiuserService extends Service implements ConnectionAdmissionProv
         }
         if (change.operation === 'put') {
           const record = workspaceRecord.parse(change.value)
-          for (const sessionId of record.sessionIds) {
-            this.workspaceBySession.set(String(sessionId), change.key)
-          }
+          const ids = [...record.sessionIds,
+            ...record.firstSessionId === null ? [] : [record.firstSessionId],
+            ...record.modeIntent?.operation === 'create-session' ? [record.modeIntent.sessionId] : [],
+          ]
+          for (const sessionId of ids) this.workspaceBySession.set(String(sessionId), change.key)
         }
       }
       this.ctx.remoteAccess.invalidate()
@@ -387,8 +389,8 @@ export class MultiuserService extends Service implements ConnectionAdmissionProv
    * @returns whether the account owns the session's live workspace.
    */
   ownsSession(userId: UserId, sessionId: SessionId): boolean {
-    const workspaceId = this.workspaceBySession.get(String(sessionId))
-    return workspaceId !== undefined && this.ownsWorkspace(userId, WorkspaceId(workspaceId))
+    const workspace = this.ctx.workspaceRegistry.findSession(sessionId)
+    return workspace !== undefined && this.ownsWorkspace(userId, workspace.id)
   }
 
   /**
@@ -622,7 +624,9 @@ export class MultiuserService extends Service implements ConnectionAdmissionProv
   private rebuildSessionIndex(): void {
     const next = new Map<string, string>()
     for (const workspace of this.ctx.workspaceRegistry.list()) {
-      for (const sessionId of workspace.sessionIds) next.set(String(sessionId), String(workspace.id))
+      const record = workspace.modeConfig
+      const ids = [...workspace.sessionIds, ...record.firstSessionId === null ? [] : [record.firstSessionId]]
+      for (const sessionId of ids) next.set(String(sessionId), String(workspace.id))
     }
     this.workspaceBySession = next
   }

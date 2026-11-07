@@ -420,7 +420,8 @@ export class ScheduleRuntime {
    * Session instead of creating another. A stored reserved identity is resolved first and created only when no Session
    * has it, because the Session controller creates a Session with a different id when the named Session has already
    * started a turn. A created Session joins the Workspace registered at `create.cwd` and takes the task title; a `new`
-   * target's title adds its launch time in the task's time zone. Neither step blocks delivery.
+   * target's title adds its launch time in the task's time zone. Workspace admission precedes persistence;
+   * title failure does not block delivery.
    */
   private async resolveTarget(task: ScheduleTask): Promise<DeliveryTarget> {
     const { target } = task
@@ -445,7 +446,6 @@ export class ScheduleRuntime {
       agent = await this.reservedAgent(sessionId)
     }
     agent ??= await this.createAgent(sessionId, target.create)
-    await this.joinWorkspace(sessionId, target.create.cwd)
     this.nameSession(agent, task)
     return { sessionId, agent }
   }
@@ -470,23 +470,15 @@ export class ScheduleRuntime {
   private async createAgent(sessionId: SessionIdType, create: ScheduleSessionCreateSpec): Promise<Agent> {
     const controller = this.ctx.get('sessionController')
     if (controller === undefined) throw new Error('schedule: no Session creation provider')
+    const workspace = create.cwd === undefined ? undefined : await this.ctx.get('workspaceRegistry')?.resolveByPath(create.cwd)
     await controller.create({
       sessionId,
-      ...(create.cwd === undefined ? {} : { cwd: create.cwd }),
+      ...workspace === undefined
+        ? create.cwd === undefined ? {} : { cwd: create.cwd }
+        : { workspaceId: workspace.id },
       ...(create.agentPreset === undefined ? {} : { agentPreset: create.agentPreset }),
     })
     return this.activate(sessionId)
-  }
-
-  /** Attach a created Session to the Workspace registered at its directory; a failure is logged and does not stop delivery. */
-  private async joinWorkspace(sessionId: SessionIdType, cwd: string | undefined): Promise<void> {
-    const registry = this.ctx.get('workspaceRegistry')
-    if (registry === undefined || cwd === undefined) return
-    try {
-      await (await registry.resolveByPath(cwd))?.attachSession(sessionId)
-    } catch (error: unknown) {
-      this.ctx.logger.warn(`schedule: Session ${sessionId} did not join the Workspace at ${cwd}: ${String(error)}`)
-    }
   }
 
   /** Name a created Session that has no title yet; a failure is logged and does not stop delivery. */

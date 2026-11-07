@@ -23,16 +23,17 @@ import type { PrincipalMap } from '@deepseek-ai/dsh-typert-protocol'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
-import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
-import type { Workspace } from '@deepseek-ai/dsh-workspace'
+import { RemoteError, remoteErrorOf, principalOf } from '@deepseek-ai/dsh-typert-protocol'
+import { WorkspaceModeError } from '@deepseek-ai/dsh-workspace'
+import type { Workspace, WorkspaceSessionAdmission } from '@deepseek-ai/dsh-workspace'
 import {
   ApiSessionAgentController,
   ApiSessionCwdConflict,
   ApiSessionPresetConflict,
+  ApiSessionReuseUnavailable,
   ApiSessionSubagentOwnership,
   apiSessionSubagentOwnershipError,
   hasApiSessionSubagentOwner,
-  type ApiSessionCreated,
 } from './agent.ts'
 import type {} from '@deepseek-ai/dsh-api-multiuser'
 import type {
@@ -104,7 +105,9 @@ export class SessionCommandController {
    * @param principal - authenticated account whose workspace must contain the Session.
    * @returns the created or reused Session identity and its preset when configured.
    */
-  async create(request: SessionCreateRequest, principal?: PrincipalMap['user']): Promise<SessionCreateValue> {
+  async create(request: SessionCreateRequest, principal?: PrincipalMap['user'], signal: AbortSignal = new AbortController().signal): Promise<SessionCreateValue> {
+    const caller = principalOf(this.ctx.invocation)
+    signal.throwIfAborted()
     if (request.workspaceId !== undefined && request.cwd !== undefined) {
       throw new RemoteError('gateway/bad-request', 'session.create accepts workspaceId or cwd, not both', {})
     }
@@ -122,7 +125,7 @@ export class SessionCommandController {
         })
       }
       if (request.sessionId !== undefined
-        && (!this.ctx.workspaceRegistry.get(request.workspaceId)?.sessionIds.includes(request.sessionId)
+        && (this.ctx.workspaceRegistry.findSession(request.sessionId)?.id !== request.workspaceId
           || !multiuser.ownsSession(principal.userId, request.sessionId))) {
         throw new RemoteError('session/not-found', `session "${request.sessionId}" is not reusable in this workspace`, {
           sessionId: request.sessionId,
@@ -139,31 +142,55 @@ export class SessionCommandController {
       }
     }
     const cwd = workspace?.path ?? request.cwd ?? this.defaultCwd
-    let created: ApiSessionCreated
-    try {
-      created = await this.agents.createSession({
-        ...(request.sessionId === undefined ? {} : { sessionId: request.sessionId }),
+    workspace ??= await this.ctx.workspaceRegistry.resolveByPath(cwd).catch((error: unknown) => {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined
+      throw error
+    })
+    const original = workspace
+    const admit = (): void => {
+      if (caller !== undefined && original !== undefined) {
+        const decision = this.ctx.get('remoteAccess')?.decide({
+          principal: caller, action: 'session/create', resources: [{ kind: 'workspace', id: original.id }],
+          args: { ...request },
+        })
+        if (decision?.kind === 'deny') throw new RemoteError('remote-access/denied', 'Session creation permission was withdrawn', {
+          action: 'session/create', reason: decision.reason,
+        })
+      }
+      if (original !== undefined && this.ctx.workspaceRegistry.get(original.id) !== original) {
+        throw new RemoteError('workspace/not-found', 'Workspace registration is no longer present', { workspaceId: original.id })
+      }
+      if (principal?.kind === 'user' && original !== undefined
+        && !this.ctx.get('multiuser')?.ownsWorkspace(principal.userId, original.id)) {
+        throw new RemoteError('workspace/not-found', 'Workspace is no longer owned by this account', { workspaceId: original.id })
+      }
+    }
+    const create = async (admission?: WorkspaceSessionAdmission) => {
+      const created = await this.agents.createSession({
+        ...admission === undefined
+          ? request.sessionId === undefined ? {} : { sessionId: request.sessionId }
+          : { sessionId: admission.sessionId, preserveIdentity: admission.single, reserveIdentity: admission.reserve },
         cwd,
         ...(request.agentPreset === undefined ? {} : { agentPreset: request.agentPreset }),
         reusable: sessionId => !this.ctx.workspaceRegistry.archivedSessionIds.includes(sessionId)
-          && (workspace === undefined || workspace.sessionIds.includes(sessionId)),
+          && (original === undefined || request.workspaceId === undefined
+            || this.ctx.workspaceRegistry.findSession(sessionId)?.id === original.id),
       })
+      return { sessionId: created.agent.id,
+        value: { sessionId: created.agent.id, ...(created.agentPreset === undefined ? {} : { agentPreset: created.agentPreset }) } }
+    }
+    try {
+      return original === undefined ? (await create()).value
+        : await this.ctx.workspaceRegistry.withSessionCreation(original.id, request.sessionId, create, { signal, admit })
     } catch (error) {
+      if (error instanceof ApiSessionReuseUnavailable && original !== undefined) {
+        throw new RemoteError('session/reuse-unavailable', 'Continue in the existing Session', {
+          workspaceId: original.id, sessionId: error.sessionId,
+        })
+      }
+      if (signal.aborted && !(error instanceof WorkspaceModeError)) throw new RemoteError('gateway/cancelled', 'Session creation was cancelled', {})
       this.rejectCreation(error)
     }
-    const sessionId = created.agent.id
-    if (workspace !== undefined) {
-      try {
-        await workspace.attachSession(sessionId)
-      } catch (error) {
-        throw new RemoteError(
-          'session/workspace-attach-failed',
-          `session "${sessionId}" was created but could not attach to workspace "${workspace.id}": ${String(error)}`,
-          { sessionId, workspaceId: workspace.id },
-        )
-      }
-    }
-    return { sessionId, ...(created.agentPreset === undefined ? {} : { agentPreset: created.agentPreset }) }
   }
 
   /**
@@ -240,7 +267,10 @@ export class SessionCommandController {
    * @param request - source Session and optional exact event boundary.
    * @returns the new Session identity.
    */
-  async fork(request: SessionForkRequest): Promise<SessionForkValue> {
+  async fork(request: SessionForkRequest, signal: AbortSignal = new AbortController().signal): Promise<SessionForkValue> {
+    const caller = principalOf(this.ctx.invocation)
+    signal.throwIfAborted()
+    try { this.ctx.workspaceRegistry.assertSessionOperation(request.sessionId, 'fork') } catch (error) { this.rejectCreation(error) }
     let atSeq: ReturnType<typeof SessionSeq> | undefined
     try {
       atSeq = request.atSeq === undefined ? undefined : SessionSeq(request.atSeq)
@@ -285,43 +315,60 @@ export class SessionCommandController {
         {},
       )
     }
+    if (workspace?.modeConfig.mode.startsWith('single-') === true) {
+      throw new RemoteError('workspace/session-operation-forbidden', 'Single-mode Sessions cannot be forked', {
+        workspaceId: workspace.id, sessionId: request.sessionId, operation: 'fork',
+      })
+    }
     const childId = brandString<SessionId>(`session-${randomUUID()}`)
     const composition = await this.agents.composeAgent(this.agents.presetForObservation(source))
-    try {
-      const { provider, model } = this.ctx.agentDefaultModel.currentSelection()
-      await this.ctx.agents.create({
-        sessionId: childId,
-        seed,
-        inheritedEventCount: SessionLogOffset(boundary + 1),
-        meta: {
-          ...(source.header.cwd === undefined ? {} : { cwd: source.header.cwd }),
-          isSeeded: true,
-          ...(composition.agentPreset === undefined
-            ? {}
-            : { agentPreset: composition.agentPreset }),
-        },
-        agentOptions: { provider, model },
-        setup: composition.setup,
-      })
-    } catch (error) {
-      throw new RemoteError(
-        'gateway/internal',
-        `failed to fork session "${request.sessionId}": ${String(error)}`,
-        {},
-      )
-    }
-    if (workspace !== undefined) {
+    const create = async () => {
       try {
-        await workspace.attachSession(childId)
+        const { provider, model } = this.ctx.agentDefaultModel.currentSelection()
+        await this.ctx.agents.create({
+          sessionId: childId,
+          seed,
+          inheritedEventCount: SessionLogOffset(boundary + 1),
+          meta: {
+            ...(source.header.cwd === undefined ? {} : { cwd: source.header.cwd }),
+            isSeeded: true,
+            ...(composition.agentPreset === undefined
+              ? {}
+              : { agentPreset: composition.agentPreset }),
+          },
+          agentOptions: { provider, model },
+          setup: composition.setup,
+        })
       } catch (error) {
         throw new RemoteError(
-          'session/workspace-attach-failed',
-          `session "${childId}" was forked but could not attach to workspace "${workspace.id}": ${String(error)}`,
-          { sessionId: childId, workspaceId: workspace.id },
+          'gateway/internal',
+          `failed to fork session "${request.sessionId}": ${String(error)}`,
+          {},
         )
       }
+      return { sessionId: childId, value: { sessionId: childId } }
     }
-    return { sessionId: childId }
+    try {
+      if (workspace === undefined) return (await create()).value
+      const original = workspace
+      return await this.ctx.workspaceRegistry.withSessionCreation(original.id, childId, create, {
+        signal,
+        admit: () => {
+          if (caller !== undefined) {
+            const decision = this.ctx.get('remoteAccess')?.decide({
+              principal: caller, action: 'session/fork', resources: [{ kind: 'session', id: request.sessionId }], args: { ...request },
+            })
+            if (decision?.kind === 'deny') throw new RemoteError('remote-access/denied', 'Fork permission was withdrawn', {
+              action: 'session/fork', reason: decision.reason,
+            })
+          }
+          this.ctx.workspaceRegistry.assertSessionOperation(request.sessionId, 'fork')
+          if (this.ctx.workspaceRegistry.get(original.id) !== original) {
+            throw new RemoteError('workspace/not-found', 'Workspace registration is no longer present', { workspaceId: original.id })
+          }
+        },
+      })
+    } catch (error) { this.rejectCreation(error) }
   }
 
   /**
@@ -546,6 +593,7 @@ export class SessionCommandController {
 
   private rejectCreation(error: unknown): never {
     if (remoteErrorOf(error) !== undefined) throw error
+    if (error instanceof WorkspaceModeError) throw new RemoteError(error.code, error.code, error.details)
     if (error instanceof ApiSessionPresetConflict) {
       throw new RemoteError('agent-preset/conflict', error.message, {
         sessionId: error.sessionId,
@@ -566,12 +614,11 @@ export class SessionCommandController {
   }
 
   private async forkWorkspace(source: SessionHeader): Promise<Workspace | undefined> {
-    const workspaces = this.ctx.workspaceRegistry.list()
-    const direct = workspaces.find(workspace => workspace.sessionIds.includes(source.id))
+    const direct = this.ctx.workspaceRegistry.findSession(source.id)
     if (direct !== undefined || source.origin !== 'subagent') return direct
     const lineage = await this.ctx.sessionQuery.traceSession(source.id)
     for (const ancestor of lineage.ancestors) {
-      const workspace = workspaces.find(candidate => candidate.sessionIds.includes(ancestor.header.id))
+      const workspace = this.ctx.workspaceRegistry.findSession(ancestor.header.id)
       if (workspace !== undefined) return workspace
     }
     return undefined

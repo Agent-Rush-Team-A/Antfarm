@@ -4,6 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { PrincipalMap } from '@deepseek-ai/dsh-typert-protocol'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import {
+  WorkspaceModeError,
   WorkspaceActiveSessionError,
   WorkspaceArchivedSessionPinError,
   WorkspaceId,
@@ -213,6 +214,7 @@ export class WorkspaceCommands {
         request.stopActivity === true ? { stopActivity: true } : {},
       )
     } catch (error) {
+      if (error instanceof WorkspaceModeError) throw new RemoteError(error.code, error.code, error.details)
       if (error instanceof WorkspaceUnknownSessionError) {
         throw new RemoteError('session/not-found', error.message, { sessionId: request.sessionId }, { cause: error })
       }
