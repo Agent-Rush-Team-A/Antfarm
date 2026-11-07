@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { zstdDecompressSync } from 'node:zlib'
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright'
+import Papa from 'papaparse'
 import { expect, test } from 'vitest'
 import { z } from 'zod'
 import { REPO_ROOT, requireDist, writeComposerDraft } from './support.ts'
@@ -19,7 +20,11 @@ const configuration = z.looseObject({ apiKeyFile: z.string(), apiEndpoint: z.str
 const workspaceResult = z.object({ workspace: z.object({ workspaceId: z.string(), title: z.string() }) })
 const cloudRecord = z.looseObject({ state: z.string(), instanceId: z.string().optional(), snapshotId: z.string().optional(),
   generation: z.string() })
-const normalizeCsv = (text: string): string => text.replace(/^\uFEFF/u, '').replaceAll('\r\n', '\n').trim()
+function csvRows(text: string): string[][] {
+  const result = Papa.parse<string[]>(text.replace(/^\uFEFF/u, ''), { skipEmptyLines: true })
+  expect(result.errors).toEqual([])
+  return result.data
+}
 
 function completion(child: ChildProcess): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -243,10 +248,10 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
       })
       await currentPage.getByText('Uploaded “销售明细.csv” to workspace', { exact: true }).waitFor({ timeout: 1_200_000 })
       await record('upload-complete', await stateOf(a.workspaceId))
-      await prompt('请使用 bash 处理工作区内的销售明细.csv。只统计状态为已完成的订单，负数量表示退货。按日期中的年月升序汇总，订单数按记录数计算，净销量为数量之和，净销售额为数量乘单价之和，金额用十进制精确计算并保留两位小数。生成 UTF-8 的月度汇总.csv，表头严格为：月份,订单数,净销量,净销售额。完成后只回复：销售汇总已完成', '销售汇总已完成')
+      await prompt('请使用 bash 处理工作区内的销售明细.csv。只统计状态为已完成的订单，负数量表示退货。按日期中的年月升序汇总，月份严格使用 YYYY-MM 格式，例如 2026-01。订单数按记录数计算，净销量为数量之和，净销售额为数量乘单价之和，金额用十进制精确计算并保留两位小数。生成 UTF-8 的月度汇总.csv，表头严格为：月份,订单数,净销量,净销售额。完成后只回复：销售汇总已完成', '销售汇总已完成')
       const expected = await readFile(join(fixture, 'monthly.expected.csv'), 'utf8')
       const monthly = await download('月度汇总.csv')
-      expect(normalizeCsv(monthly.toString())).toBe(normalizeCsv(expected))
+      expect(csvRows(monthly.toString())).toEqual(csvRows(expected))
       const original = await stateOf(a.workspaceId)
       await record('monthly-summary-matches', { sha256: createHash('sha256').update(monthly).digest('hex'), instanceId: original.instanceId })
       const firstSession = await currentPage.locator('[data-conversation-session]').first().getAttribute('data-conversation-session')
