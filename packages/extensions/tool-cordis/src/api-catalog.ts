@@ -2786,6 +2786,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Cancellation receipt, not cleanup confirmation.',
       },
       {
+        signature: 'activity(_workspaceId: WorkspaceId): Pick<SandboxActivity, \'openings\' | \'executions\' | \'closing\'> | undefined',
+        description: 'Observe work retained by backend preparation or cleanup.',
+        parameters: [{ name: '_workspaceId', description: 'Authorized identity.' }],
+        returns: 'Provider-owned work that survives a cancelled caller, or persistent cleanup barriers.',
+      },
+      {
+        signature: 'progress(_workspaceId: WorkspaceId): SandboxProgress | undefined',
+        description: 'Observe deployment progress without exposing cloud identities.',
+        parameters: [{ name: '_workspaceId', description: 'Authorized identity.' }],
+        returns: 'Optional provider-specific cloud progress without deployment coordinates.',
+      },
+      {
         signature: 'files(_workspaceId: WorkspaceId, _target: SandboxContainerId, _signal?: AbortSignal): Promise<WorkspaceRuntimeFiles>',
         description: 'Access files only in the captured execution generation; unsupported backends refuse rather than using host files.',
         parameters: [{ name: '_workspaceId', description: 'Authorized identity.' }, { name: '_target', description: 'Captured execution generation.' }, { name: '_signal', description: 'Caller lifetime.' }],
@@ -4818,6 +4830,31 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Stream a complete Workspace baseline followed by ordered increments. A non-owner receives only the Workspaces and Sessions `allows()` admits. When a delivered Workspace is no longer admitted at its next change or the next order change, the stream sends a `replace` frame with the complete filtered state instead of a `remove`, because a Client never resurrects a removed Workspace; a `remove` frame reports a deletion and reaches only a Client that received that Workspace.',
         parameters: [{ name: 'signal', description: 'generation cancellation.' }],
         returns: 'baseline followed by ordered Workspace increments.',
+      },
+    ],
+  },
+  {
+    key: 'workspaceFileAccess',
+    summary: 'Providers retain original authority and generation until all streams settle.',
+    description: 'Providers retain original authority and generation until all streams settle.',
+    methods: [
+      {
+        signature: 'abstract list(scope: WorkspaceFileScope, path: string, maxEntries: number): Promise<WorkspaceFileListing>',
+        description: 'Read a directory in the selected execution world or a completed read-only copy.',
+        parameters: [{ name: 'scope', description: 'Original authorized workspace.' }, { name: 'path', description: 'Relative path; empty names the root.' }, { name: 'maxEntries', description: 'Inclusive inspected-entry bound.' }],
+        returns: 'Metadata only, without deployment coordinates.',
+      },
+      {
+        signature: 'abstract download(scope: WorkspaceFileScope, path: string, maxBytes: number): Promise<WorkspaceFileDownload>',
+        description: 'Open one regular file without following symlinks; transfer resources to the body.',
+        parameters: [{ name: 'scope', description: 'Original authorized workspace.' }, { name: 'path', description: 'Relative file path.' }, { name: 'maxBytes', description: 'Complete-file byte limit.' }],
+        returns: 'Stream retaining its original file identity through settlement.',
+      },
+      {
+        signature: 'abstract upload(scope: WorkspaceFileScope, name: string, chunks: AsyncIterable<Uint8Array>, maxBytes: number): Promise<WorkspaceFileUpload>',
+        description: 'Exclusively publish one streamed file in the live execution workspace.',
+        parameters: [{ name: 'scope', description: 'Original authorized workspace.' }, { name: 'name', description: 'Exact validated root leaf name.' }, { name: 'chunks', description: 'Bounded-memory incoming bytes.' }, { name: 'maxBytes', description: 'Complete-file byte limit.' }],
+        returns: 'Published name and extent; failures retain their publication fact.',
       },
     ],
   },
@@ -8468,7 +8505,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RunnerClosedSandbox',
-    declaration: 'export interface RunnerClosedSandbox {\n    readonly state: \'closed\';\n}',
+    declaration: 'export interface RunnerClosedSandbox {\n    readonly state: \'closed\';\n    readonly reconciled?: true;\n}',
   },
   {
     name: 'RunnerExecutionIdentity',
@@ -8555,6 +8592,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SandboxPolicyRequest {\n    session?: Session;\n    mode?: SandboxMode;\n}',
   },
   {
+    name: 'SandboxProgress',
+    declaration: 'export interface SandboxProgress {\n    readonly phase: \'closed\' | \'creating\' | \'connecting\' | \'running\' | \'restoring\' | \'saving_files\' | \'stopping\' | \'saving_snapshot\' | \'deleting\' | \'failed\';\n    readonly failure?: \'create\' | \'connect\' | \'save\' | \'restore\' | \'delete\' | \'resource_missing\' | \'ownership\' | \'interrupted\';\n}',
+  },
+  {
     name: 'SandboxRequest',
     declaration: 'export interface SandboxRequest {\n    readonly workspaceId: WorkspaceId;\n}',
   },
@@ -8564,7 +8605,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SandboxValue',
-    declaration: 'export interface SandboxValue {\n    readonly workspaceId: WorkspaceId;\n    readonly state: \'closed\' | \'starting\' | \'running\' | \'closing\' | \'cleanup_required\';\n}',
+    declaration: 'export interface SandboxValue {\n    readonly workspaceId: WorkspaceId;\n    readonly state: \'closed\' | \'starting\' | \'running\' | \'closing\' | \'cleanup_required\';\n    readonly progress?: SandboxProgress;\n}',
   },
   {
     name: 'SaveFileAttachment',
@@ -10727,12 +10768,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type WorkspaceFileDiff = {\n    kind: \'text\';\n    path: string;\n    display: string;\n    before: boolean;\n    after: boolean;\n    hunks: WorkspaceDiffHunk[];\n    coarse: boolean;\n} | {\n    kind: \'binary\';\n    path: string;\n    display: string;\n} | {\n    kind: \'oversized\';\n    path: string;\n    display: string;\n};',
   },
   {
-    name: 'WorkspaceFileRange',
-    declaration: 'export interface WorkspaceFileRange {\n    readonly offset?: number;\n    readonly limit?: number;\n}',
+    name: 'WorkspaceFileDownload',
+    declaration: 'export interface WorkspaceFileDownload {\n    readonly bytes: number;\n    readonly body: ReadableStream<Uint8Array>;\n    readonly settled: Promise<void>;\n}',
   },
   {
-    name: 'WorkspaceFileScope',
-    declaration: 'export interface WorkspaceFileScope {\n    readonly sessionId: SessionId;\n    readonly workspaceRoot: string;\n}',
+    name: 'WorkspaceFileEntry',
+    declaration: 'export interface WorkspaceFileEntry {\n    readonly name: string;\n    readonly kind: \'file\' | \'directory\';\n    readonly bytes?: number;\n}',
+  },
+  {
+    name: 'WorkspaceFileListing',
+    declaration: 'export interface WorkspaceFileListing {\n    readonly entries: readonly WorkspaceFileEntry[];\n    readonly truncated: boolean;\n}',
+  },
+  {
+    name: 'WorkspaceFileRange',
+    declaration: 'export interface WorkspaceFileRange {\n    readonly offset?: number;\n    readonly limit?: number;\n}',
   },
   {
     name: 'WorkspaceFileStat',
@@ -10741,6 +10790,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceFileText',
     declaration: 'export interface WorkspaceFileText extends WorkspaceFileStat {\n    readonly offset: number;\n    readonly text: string;\n    readonly lines: number;\n    readonly eof: boolean;\n}',
+  },
+  {
+    name: 'WorkspaceFileUpload',
+    declaration: 'export interface WorkspaceFileUpload {\n    readonly name: string;\n    readonly bytes: number;\n}',
   },
   {
     name: 'WorkspaceFileWatchFrame',

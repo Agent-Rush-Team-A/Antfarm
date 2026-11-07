@@ -258,7 +258,7 @@ flowchart LR
   svc_workspaceSandbox["ctx.workspaceSandbox<br/>Authorized workspace sandboxes"]
   pkg_sandbox_runner["sandbox-runner"]
   svc_sandboxRunner["ctx.sandboxRunner<br/>Docker workspace lifecycle"]
-  svc_sandboxRunnerClient["ctx.sandboxRunnerClient<br/>Local Runner transport"]
+  svc_sandboxRunnerClient["ctx.sandboxRunnerClient<br/>Workspace execution backend"]
   svc_sandboxConversation["ctx.sandboxConversation<br/>Message-bound sandbox permission"]
   pkg_user_approval["user-approval"]
   svc_approval["ctx.approval<br/>Approval seam"]
@@ -271,6 +271,7 @@ flowchart LR
   pkg_tool_executor_ptc["tool-executor-ptc"]
   pkg_workflow_ptc["workflow-ptc"]
   pkg_fs["fs"]
+  svc_workspaceFileAccess["ctx.workspaceFileAccess<br/>Workspace binary files"]
   svc_fs["ctx.fs<br/>Filesystem provider seam"]
   pkg_fs_local["fs-local"]
   pkg_fs_observation_policy["fs-observation-policy"]
@@ -401,12 +402,14 @@ flowchart LR
   pkg_file_reference --> svc_fileReferences
   pkg_file_reference_local --> svc_fileReferences
   pkg_fs --> svc_fs
+  pkg_fs --> svc_workspaceFileAccess
   pkg_fs_local --> svc_fs
   pkg_fs_sandbox --> svc_fs
   pkg_fs_ssh --> svc_fs
   pkg_goal --> svc_goals
   pkg_harness_sandbox --> svc_sandboxConversation
   pkg_harness_sandbox --> svc_sandboxRunnerClient
+  pkg_harness_sandbox --> svc_workspaceFileAccess
   pkg_harness_sandbox --> svc_workspaceSandbox
   pkg_headless --> svc_headlessStartup
   pkg_hmr --> svc_hmr
@@ -669,6 +672,8 @@ flowchart LR
   svc_workingDirectory --> pkg_tool_pwsh
   svc_workingDirectory --> pkg_tool_working_directory
   svc_workspaceArtifacts --> pkg_client_ui_workspace
+  svc_workspaceFileAccess --> pkg_api_workspace_artifacts
+  svc_workspaceFileAccess --> pkg_api_workspace_upload
   svc_workspaceRegistry --> pkg_api_session_controller
   svc_workspaceRegistry --> pkg_api_workspace_controller
   svc_workspaceUpload --> pkg_client_ui_workspace
@@ -770,11 +775,12 @@ flowchart LR
 | `ctx.sandboxPolicy` | `core` | [`sandbox-policy`](../packages/sandbox/sandbox-policy) | - | [`bash-sandbox`](../packages/shell/bash-sandbox), [`fs-sandbox`](../packages/fs/fs-sandbox), [`terminal-bash`](../packages/terminal/terminal-bash) | - | The one home for the deployment default mode + workspace root; only the sandboxed executor and provider read the service (the tool layers use the pure `sandbox/mode` fold it also exports). Both enforcing families read it so bash and fs cannot confine to different roots. |
 | `ctx.workspaceSandbox` | `service` | [`harness-sandbox`](../packages/sandbox/harness-sandbox) | - | - | - | Native ownership checks precede Runner lifecycle requests; opening also validates the persistent workspace directory. |
 | `ctx.sandboxRunner` | `service` | [`sandbox-runner`](../packages/sandbox/sandbox-runner) | - | - | - | An independent deployment opens, queries, and closes Docker workspace containers through a local Unix socket. |
-| `ctx.sandboxRunnerClient` | `service` | [`harness-sandbox`](../packages/sandbox/harness-sandbox) | - | - | - | Bounded lifecycle, execution, and cancellation requests use a fixed local socket; callers own user authorization. |
+| `ctx.sandboxRunnerClient` | `service` | [`harness-sandbox`](../packages/sandbox/harness-sandbox) | - | - | - | Coordinates local Runner, fixed SSH or Vultr Workspace lifecycle, files and cancellation; callers own user authorization. |
 | `ctx.sandboxConversation` | `service` | [`harness-sandbox`](../packages/sandbox/harness-sandbox) | - | - | - | Authenticated prompt admission prepares the workspace and binds its original message and Agent turn; closing revokes earlier generations. |
 | `ctx.approval` | `seam` | [`user-approval`](../packages/interaction/user-approval) | - | [`tools`](../packages/core/tools), [`tool-bash`](../packages/shell/tool-bash), [`acp`](../packages/acp/acp) | - | One-shot permission decisions dispatched over the `approval/request` waterfall; answerers are listeners (the ACP bridge for its own agents), absence fails closed to `unavailable`. |
 | `ctx.permissionPresets` | `core` | [`permission-presets`](../packages/interaction/permission-presets) | - | - | - | User-facing preset table (`workspace-write`/`danger-full-access`) bundling the sandbox-mode and approval-policy knobs; a switch writes one `permission/preset` event through to both knob events. |
 | `ctx.ptcRuntime` | `seam` | [`ptc-runtime`](../packages/ptc-runtime/ptc-runtime) | [`ptc-runtime-node`](../packages/ptc-runtime/ptc-runtime-node), [`experimental-ptc-runtime-python`](../packages/experimental/ptc-runtime-python) | [`tool-executor-ptc`](../packages/core/tool-executor-ptc), [`workflow-ptc`](../packages/workflow/workflow-ptc) | - | Runs programs against host-provided async bindings; tool-executor-ptc owns PTC presentation and workflow-ptc owns workflow orchestration. |
+| `ctx.workspaceFileAccess` | `seam` | [`fs`](../packages/fs/fs) | [`harness-sandbox`](../packages/sandbox/harness-sandbox) | [`api-workspace-upload`](../packages/api/workspace-upload), [`api-workspace-artifacts`](../packages/api/workspace-artifacts) | - | Deployment providers retain Workspace authority through remote upload publication, bounded listing and pinned download cleanup. |
 | `ctx.fs` | `seam` | [`fs`](../packages/fs/fs) | [`fs-local`](../packages/fs/fs-local), [`fs-sandbox`](../packages/fs/fs-sandbox), [`fs-ssh`](../packages/ssh/fs-ssh) | [`tool-fs`](../packages/fs/tool-fs) | [`fs-observation-policy`](../packages/fs/fs-observation-policy) | tool-fs executes read/write/edit through ctx.fs; fs-sandbox fences mutations by the shared sandbox mode; fs-observation-policy contributes observed-state checks through the fs/* event gate. |
 | `ctx.compaction` | `seam` | [`compaction`](../packages/compaction/compaction) | [`compaction-basic`](../packages/compaction/compaction-basic) | [`compaction-basic`](../packages/compaction/compaction-basic) | - | The basic backend consumes post-step pressure and request-error recovery events; there is no model-facing compact tool. |
 | `ctx.subagents` | `seam` | [`subagent`](../packages/subagent/subagent) | [`subagent-spawn-in-process`](../packages/subagent/subagent-spawn-in-process), [`subagent-fork-in-process`](../packages/subagent/subagent-fork-in-process), [`subagent-acp`](../packages/subagent/subagent-acp), [`subagent-codex`](../packages/subagent/subagent-codex), [`subagent-claude-code`](../packages/subagent/subagent-claude-code), [`subagent-dsh-sdk`](../packages/subagent/subagent-dsh-sdk) | [`tool-subagent`](../packages/subagent/tool-subagent), [`tool-subagent-control`](../packages/subagent/tool-subagent-control), [`tool-ralph`](../packages/experimental/tool-ralph) | - | Providers prepare local children or execute external tasks; one activation manager owns both lifecycles. The delegation tool selects a backend, control tools deliver local follow-ups, and workflows await activation results. |

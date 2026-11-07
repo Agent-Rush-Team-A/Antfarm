@@ -836,9 +836,9 @@ const SERVICE_ROLES: ServiceRole[] = [
   {
     key: 'sandboxRunnerClient',
     pkg: 'harness-sandbox',
-    title: 'Local Runner transport',
+    title: 'Workspace execution backend',
     mode: 'service',
-    note: 'Bounded lifecycle, execution, and cancellation requests use a fixed local socket; callers own user authorization.',
+    note: 'Coordinates local Runner, fixed SSH or Vultr Workspace lifecycle, files and cancellation; callers own user authorization.',
   },
   {
     key: 'sandboxConversation',
@@ -872,6 +872,15 @@ const SERVICE_ROLES: ServiceRole[] = [
     implementations: ['ptc-runtime-node', 'experimental-ptc-runtime-python'],
     consumers: ['tool-executor-ptc', 'workflow-ptc'],
     note: 'Runs programs against host-provided async bindings; tool-executor-ptc owns PTC presentation and workflow-ptc owns workflow orchestration.',
+  },
+  {
+    key: 'workspaceFileAccess',
+    pkg: 'fs',
+    title: 'Workspace binary files',
+    mode: 'seam',
+    implementations: ['harness-sandbox'],
+    consumers: ['api-workspace-upload', 'api-workspace-artifacts'],
+    note: 'Deployment providers retain Workspace authority through remote upload publication, bounded listing and pinned download cleanup.',
   },
   {
     key: 'fs',

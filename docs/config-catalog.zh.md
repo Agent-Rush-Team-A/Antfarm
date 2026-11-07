@@ -382,11 +382,13 @@ export interface InferenceBinding {
 ## `@deepseek-ai/dsh-api-workspace-artifacts`
 
 - `inject`: `connection` · `remoteAccess` · `typert` · `workspaceRegistry` · `workspaceController`
-- `source`: [`packages/api/workspace-artifacts/src/index.ts:17`](../packages/api/workspace-artifacts/src/index.ts)
+- `source`: [`packages/api/workspace-artifacts/src/index.ts:18`](../packages/api/workspace-artifacts/src/index.ts)
 
 ```ts config-catalog
 /** Limits for bounded listing metadata and complete browser downloads. */
 export interface Config {
+  /** Explicit file provider; provided refuses startup when no remote provider is loaded. */
+  readonly storage?: 'local' | 'provided'
   /** Maximum directory entries inspected per request, including omitted entries. */
   readonly maxEntries?: number
   /** Inclusive byte cap for one download; larger files are refused. */
@@ -449,13 +451,15 @@ export interface Config {
 ## `@deepseek-ai/dsh-api-workspace-upload`
 
 - `inject`: `connection` · `remoteAccess` · `typert` · `workspaceRegistry` · `workspaceController`
-- `source`: [`packages/api/workspace-upload/src/index.ts:17`](../packages/api/workspace-upload/src/index.ts)
+- `source`: [`packages/api/workspace-upload/src/index.ts:18`](../packages/api/workspace-upload/src/index.ts)
 
 ```ts config-catalog
 /** Per-file streamed intake limit. */
 export interface Config {
   /** Inclusive maximum size of one uploaded file; uploads are never truncated. */
   readonly maxBytes?: number
+  /** Explicit file provider; provided refuses startup when no remote provider is loaded. */
+  readonly storage?: 'local' | 'provided'
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-workspace-upload -->
@@ -1714,7 +1718,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-harness-sandbox`
 
 - `inject`: `multiuser` · `remoteAccess` · `typert` · `workspaceRegistry`
-- `source`: [`packages/sandbox/harness-sandbox/src/index.ts:35`](../packages/sandbox/harness-sandbox/src/index.ts)
+- `source`: [`packages/sandbox/harness-sandbox/src/index.ts:37`](../packages/sandbox/harness-sandbox/src/index.ts)
 
 ```ts config-catalog
 /** Registered project root and deployment-selected local Runner or separately loaded backend. */
@@ -3683,6 +3687,8 @@ export interface Config {
 export interface Config {
   /** OpenSSH host alias, including its existing user, key and known-host configuration. */
   host: string
+  /** Absolute deployment-owned OpenSSH configuration, isolated from user-global aliases. */
+  configFile?: string
   /** Explicit script or self-contained executable invocation. */
   launch: HelperLaunch
   /** Absolute path to the installed, bundled helper entry. */
