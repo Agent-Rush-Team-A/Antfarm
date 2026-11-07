@@ -191,6 +191,8 @@ History stays with the task and is pruned only on append. Missing old history ke
 - [Time utilities](../../util/time/README.md) — Cron and RRULE parsers and occurrence arithmetic.
 - [Domain helpers](src/domain.ts), [timing edits](src/update.ts), [storage](src/storage.ts), and [runtime](src/runtime.ts) own Schedule policy.
 
+New reminder Sessions resolve their registered Workspace before calling Session creation. Workspace mode admission and attachment must succeed before delivery; an admission or directory-resolution failure retains the task and creates no second ordinary Session. Existing reserved Sessions continue through normal activation without a second attachment attempt.
+
 <a id="model-experience"></a>
 ## Model Experience
 
@@ -271,8 +273,6 @@ Each notice adds fixed text and the JSON-encoded id and title to the next reques
 #### KV Cache effect
 
 Notices append at the next step boundary and preserve the existing request prefix.
-
-New reminder Sessions resolve their registered Workspace before calling Session creation. Workspace mode admission and attachment must succeed before delivery; an admission or directory-resolution failure retains the task and creates no second ordinary Session. Existing reserved Sessions continue through normal activation without a second attachment attempt.
 
 ## Known Limitations and Deferred Work
 

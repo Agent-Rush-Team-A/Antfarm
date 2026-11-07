@@ -414,6 +414,21 @@ export function mockWorkspaceRegistry(ctx: Context, peer: Partial<import('@deeps
     },
   }))
   const get = peer.get ?? (id => normalized().find(workspace => workspace.id === id))
+  const withSessionCreation: import('@deepseek-ai/dsh-workspace').WorkspaceRegistry['withSessionCreation'] =
+    peer.withSessionCreation ?? (async (workspaceId, sessionId, create, options) => {
+      options.admit()
+      const workspace = get(workspaceId)
+      const result = await create({
+        sessionId: sessionId ?? SessionId('test-reserved'), mode: 'multi-vm', single: false,
+        reuseOnly: false, signal: options.signal, reserve: async () => {},
+      })
+      try { await workspace?.attachSession(result.sessionId) } catch (error) {
+        throw new RemoteError('session/workspace-attach-failed', 'Workspace attachment failed', {
+          workspaceId, sessionId: result.sessionId,
+        }, { cause: error })
+      }
+      return result.value
+    })
   ctx.provide('workspaceRegistry', {
     archivedSessionIds: [],
     ...peer,
@@ -427,17 +442,10 @@ export function mockWorkspaceRegistry(ctx: Context, peer: Partial<import('@deeps
       })
       return workspace
     },
-    resolveByPath: peer.resolveByPath ?? (async path => normalized().find(workspace => workspace.path === path)),
-    findSession: peer.findSession ?? (sessionId => normalized().find(workspace => workspace.sessionIds?.includes(sessionId))),
+    resolveByPath: peer.resolveByPath ?? (async (path: string) => normalized().find(workspace => workspace.path === path)),
+    findSession: peer.findSession ?? ((sessionId: SessionId) => normalized().find(workspace => workspace.sessionIds?.includes(sessionId))),
     assertSessionOperation: peer.assertSessionOperation ?? (() => {}),
-    withSessionCreation: peer.withSessionCreation ?? (async (workspaceId, sessionId, create, options) => {
-      options.admit()
-      const workspace = get(workspaceId)
-      const result = await create({ sessionId: sessionId ?? SessionId('test-reserved'), mode: 'multi-vm', single: false, reserve: async () => {} })
-      try { await workspace?.attachSession(result.sessionId) } catch (error) {
-        throw new RemoteError('session/workspace-attach-failed', 'Workspace attachment failed', { workspaceId, sessionId: result.sessionId }, { cause: error })
-      }
-      return result.value
-    }),
+    assertSessionReady: peer.assertSessionReady ?? (() => {}),
+    withSessionCreation,
   } as never)
 }

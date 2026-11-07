@@ -173,6 +173,17 @@ export class WorkspaceModes implements IWorkspaceModes {
         project: entity.path, from: config.mode, to: request.mode, previousRevision: config.revision,
       }
       let phase: 'prepare' | 'settle' | 'persist' = 'persist'
+      let admissionFailed = false
+      const admit = (): void => {
+        signal.throwIfAborted()
+        try {
+          options.admit()
+          this.requireEntity(entity.id, entity)
+        } catch (error) {
+          admissionFailed = true
+          throw error
+        }
+      }
       try {
         await entity.updateMode((record) => {
           if (record.firstSessionId !== null) {
@@ -190,22 +201,33 @@ export class WorkspaceModes implements IWorkspaceModes {
         })
         phase = 'prepare'
         await runtime.adapter.prepare(change, signal)
-        signal.throwIfAborted()
-        options.admit()
-        this.requireEntity(entity.id, entity)
+        admit()
         phase = 'persist'
-        await entity.updateMode(record => ({
-          ...record, modeIntent: { ...change, operation: 'switch-mode', phase: 'commit' },
-        }))
+        await entity.updateMode((record) => {
+          admit()
+          return { ...record, modeIntent: { ...change, operation: 'switch-mode', phase: 'commit' } }
+        })
         phase = 'settle'
         await runtime.adapter.settle(change, 'commit', this.settlementSignal(runtime))
         phase = 'persist'
         await this.finishChange(entity, change, 'commit')
         return entity.modeConfig
       } catch (error) {
+        this.host.report(error)
         // Reading the domain also respects unknown-state quarantine. No further writes follow it.
-        const intent = entity.modeRecord().modeIntent
-        if (intent?.operation !== 'switch-mode') throw error
+        let intent
+        try { intent = entity.modeRecord().modeIntent } catch (inspectionError) {
+          this.host.report(inspectionError)
+          throw new WorkspaceModeError('workspace/mode-switch-failed', {
+            workspaceId: entity.id, changeId: change.changeId, phase: 'persist', recoveryRequired: true, outcomeUnknown: true,
+          }, { cause: error })
+        }
+        if (intent?.operation !== 'switch-mode') {
+          if (error instanceof WorkspaceModeError) throw error
+          throw new WorkspaceModeError('workspace/mode-switch-failed', {
+            workspaceId: entity.id, changeId: change.changeId, phase, recoveryRequired: false, outcomeUnknown: false,
+          }, { cause: error })
+        }
         let recoveryRequired = true
         if (intent.phase !== 'commit') {
           try {
@@ -219,8 +241,11 @@ export class WorkspaceModes implements IWorkspaceModes {
             this.host.report(settlementError)
           }
         }
-        if (recoveryRequired) await this.markRecovery(entity)
+        if (recoveryRequired) {
+          try { await this.markRecovery(entity) } catch (persistenceError) { this.host.report(persistenceError) }
+        }
         if (signal.aborted && !recoveryRequired) throw signal.reason
+        if (admissionFailed && !recoveryRequired) throw error
         throw new WorkspaceModeError('workspace/mode-switch-failed', {
           workspaceId: entity.id, changeId: change.changeId, phase,
           recoveryRequired, outcomeUnknown: recoveryRequired,

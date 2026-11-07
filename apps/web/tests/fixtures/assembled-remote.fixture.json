@@ -240,7 +240,16 @@
             "fx-gamma"
           ],
           "createdAt": "2026-09-13T03:02:55.884Z",
-          "updatedAt": "2026-09-13T03:02:55.884Z"
+          "updatedAt": "2026-09-13T03:02:55.884Z",
+          "modeConfig": {
+            "workspaceId": "fx-ws-fixture",
+            "mode": "multi-vm",
+            "revision": 0,
+            "operationState": "ready",
+            "modeLocked": true,
+            "lockReason": "first-session-created",
+            "firstSessionId": "fx-gamma"
+          }
         },
         {
           "workspaceId": "fx-ws-home",
@@ -248,7 +257,16 @@
           "title": "project",
           "sessionIds": [],
           "createdAt": "2026-09-13T03:02:55.884Z",
-          "updatedAt": "2026-09-13T03:02:55.884Z"
+          "updatedAt": "2026-09-13T03:02:55.884Z",
+          "modeConfig": {
+            "workspaceId": "fx-ws-home",
+            "mode": "multi-vm",
+            "revision": 0,
+            "operationState": "ready",
+            "modeLocked": false,
+            "lockReason": null,
+            "firstSessionId": null
+          }
         }
       ],
       "archivedSessionIds": [],

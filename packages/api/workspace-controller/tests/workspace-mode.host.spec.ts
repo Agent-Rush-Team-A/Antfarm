@@ -107,3 +107,22 @@ it('publishes revisioned transitional and ready metadata through the Workspace f
   }
   expect(frames.at(-1)).toMatchObject({ type: 'upsert', workspace: { modeConfig: { revision: 3, mode: 'single-docker', operationState: 'ready' } } })
 })
+
+it('rolls preparation back and preserves a revoked ownership failure before committing', async () => {
+  const f = await fixture(), entered = barrier(), finish = barrier()
+  let allowed = true
+  f.ctx.remoteAccess.registerPolicy('mode-test', {
+    bindings: () => allowed ? [{
+      role: { name: 'mode-owner', resource: 'workspace', actions: ['workspace/setMode'] },
+      resource: { kind: 'workspace', id: f.workspace.id },
+    }] : [],
+  })
+  f.adapter.prepare = vi.fn(async () => { entered.resolve(); await finish.promise })
+  const owner = caller(f.ctx, { kind: 'mode-test', name: 'owner' }).workspaceController
+  const change = owner.setMode({ workspaceId: f.workspace.id, mode: 'single-vm', expectedRevision: 0 }, f.options.signal)
+  await entered.promise
+  allowed = false; finish.resolve()
+  await expect(change).rejects.toMatchObject({ code: 'remote-access/denied' })
+  expect(f.adapter.settle).toHaveBeenCalledWith(expect.anything(), 'rollback', expect.any(AbortSignal))
+  expect(f.workspace.modeConfig).toMatchObject({ mode: 'multi-vm', operationState: 'ready' })
+})

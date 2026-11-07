@@ -19,7 +19,7 @@ import type { SessionPromptAdmission } from './prompt-admission.ts'
 import { buildForkSeed } from '@deepseek-ai/dsh-session/fork'
 import { SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
-import type { PrincipalMap } from '@deepseek-ai/dsh-typert-protocol'
+import type { Principal, PrincipalMap } from '@deepseek-ai/dsh-typert-protocol'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
@@ -104,10 +104,13 @@ export class SessionCommandController {
    * @param request - optional blank Session to reuse, location, and Agent preset.
    * @param principal - authenticated account whose workspace must contain the Session.
    * @param signal - Creation admission lifetime.
+   * @param caller - Original Remote caller captured before asynchronous work.
    * @returns the created or reused Session identity and its preset when configured.
    */
-  async create(request: SessionCreateRequest, principal?: PrincipalMap['user'], signal: AbortSignal = new AbortController().signal): Promise<SessionCreateValue> {
-    const caller = principalOf(this.ctx.invocation)
+  async create(
+    request: SessionCreateRequest, principal?: PrincipalMap['user'], signal: AbortSignal = new AbortController().signal,
+    caller: Principal | undefined = principalOf(this.ctx.invocation),
+  ): Promise<SessionCreateValue> {
     signal.throwIfAborted()
     if (request.workspaceId !== undefined && request.cwd !== undefined) {
       throw new RemoteError('gateway/bad-request', 'session.create accepts workspaceId or cwd, not both', {})
@@ -148,6 +151,12 @@ export class SessionCommandController {
       throw error
     })
     const original = workspace
+    if (request.sessionId !== undefined && original !== undefined) {
+      const owner = this.ctx.workspaceRegistry.findSession(request.sessionId)
+      if (owner !== undefined && owner.id !== original.id) {
+        this.rejectCreation(new ApiSessionCwdConflict(request.sessionId, original.path, owner.path))
+      }
+    }
     const admit = (): void => {
       if (caller !== undefined && original !== undefined) {
         const decision = this.ctx.get('remoteAccess')?.decide({
@@ -170,7 +179,9 @@ export class SessionCommandController {
       const created = await this.agents.createSession({
         ...admission === undefined
           ? request.sessionId === undefined ? {} : { sessionId: request.sessionId }
-          : { sessionId: admission.sessionId, preserveIdentity: admission.single, reserveIdentity: admission.reserve },
+          : { sessionId: admission.sessionId, preserveIdentity: admission.single, reserveIdentity: admission.reserve,
+            reuseOnly: admission.reuseOnly },
+        signal: admission?.signal ?? signal,
         cwd,
         ...(request.agentPreset === undefined ? {} : { agentPreset: request.agentPreset }),
         reusable: sessionId => !this.ctx.workspaceRegistry.archivedSessionIds.includes(sessionId)
@@ -267,10 +278,13 @@ export class SessionCommandController {
    * completed-turn prefix. An open cut receives synthetic fork closers.
    * @param request - source Session and optional exact event boundary.
    * @param signal - Fork creation admission lifetime.
+   * @param caller - Original Remote caller captured before asynchronous work.
    * @returns the new Session identity.
    */
-  async fork(request: SessionForkRequest, signal: AbortSignal = new AbortController().signal): Promise<SessionForkValue> {
-    const caller = principalOf(this.ctx.invocation)
+  async fork(
+    request: SessionForkRequest, signal: AbortSignal = new AbortController().signal,
+    caller: Principal | undefined = principalOf(this.ctx.invocation),
+  ): Promise<SessionForkValue> {
     signal.throwIfAborted()
     try { this.ctx.workspaceRegistry.assertSessionOperation(request.sessionId, 'fork') } catch (error) { this.rejectCreation(error) }
     let atSeq: ReturnType<typeof SessionSeq> | undefined
@@ -324,11 +338,12 @@ export class SessionCommandController {
     }
     const childId = brandString<SessionId>(`session-${randomUUID()}`)
     const composition = await this.agents.composeAgent(this.agents.presetForObservation(source))
-    const create = async () => {
+    const create = async (admission?: WorkspaceSessionAdmission) => {
       try {
         const { provider, model } = this.ctx.agentDefaultModel.currentSelection()
         await this.ctx.agents.create({
           sessionId: childId,
+          signal: admission?.signal ?? signal,
           seed,
           inheritedEventCount: SessionLogOffset(boundary + 1),
           meta: {
@@ -392,6 +407,7 @@ export class SessionCommandController {
     }
     try {
       caller.throwIfAborted()
+      this.assertPromptReady(request.sessionId)
       return await this.ctx.waterfall('session/prompt-admission', admission,
         () => this.admitPrompt(request, source, caller, preparations, checks))
     } catch (error) {
@@ -407,6 +423,7 @@ export class SessionCommandController {
   ): Promise<SessionPromptValue> {
     const agent = await this.resolveAgent(request.sessionId)
     signal.throwIfAborted()
+    this.assertPromptReady(request.sessionId)
     if (hasPromptRequest(agent, request.requestId)) return { accepted: true }
     for (const prepare of preparations) {
       await prepare(agent)
@@ -445,6 +462,7 @@ export class SessionCommandController {
         using binding = this.ctx.fileUploads.bindPrompt(agent, admission.receiptIds, request.requestId)
         for (const check of checks) check(agent, message)
         signal.throwIfAborted()
+        this.assertPromptReady(request.sessionId)
         if (request.mode === 'steer') agent.steer(message)
         else agent.followup(message)
         binding.commit()
@@ -458,6 +476,10 @@ export class SessionCommandController {
       return { accepted: true }
     }
     return hasImage ? this.agents.serializeImageAdmission(agent, admit) : admit()
+  }
+
+  private assertPromptReady(sessionId: SessionId): void {
+    try { this.ctx.workspaceRegistry.assertSessionReady(sessionId) } catch (error) { this.rejectCreation(error) }
   }
 
   private async requireModel(selection: Pick<AgentModelSelection, 'provider' | 'model'>): Promise<void> {

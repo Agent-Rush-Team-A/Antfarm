@@ -4949,6 +4949,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'its Workspace, or undefined when no registration owns the identity.',
       },
       {
+        signature: 'assertSessionReady(sessionId: SessionId): void',
+        description: 'Refuse messages before ordinary Session creation commits or pending recovery settles.',
+        parameters: [{ name: 'sessionId', description: 'Ordinary Session whose original registration must be ready.' }],
+      },
+      {
         signature: 'assertSessionOperation(sessionId: SessionId, operation: \'fork\' | \'archive\'): void',
         description: 'Refuse single-mode forks and archives before any new log or activity stop.',
         parameters: [{ name: 'sessionId', description: 'Source or archive target.' }, { name: 'operation', description: 'Forbidden single-mode operation.' }],
@@ -10957,7 +10962,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WorkspaceSessionAdmission',
-    declaration: 'export interface WorkspaceSessionAdmission {\n    readonly sessionId: SessionId;\n    readonly mode: WorkspaceMode;\n    readonly single: boolean;\n    reserve(id: SessionId): Promise<void>;\n}',
+    declaration: 'export interface WorkspaceSessionAdmission {\n    readonly sessionId: SessionId;\n    readonly mode: WorkspaceMode;\n    readonly single: boolean;\n    readonly reuseOnly: boolean;\n    readonly signal: AbortSignal;\n    reserve(id: SessionId): Promise<void>;\n}',
   },
   {
     name: 'WorkspaceSetModeRequest',

@@ -55,11 +55,13 @@ export interface WorkspaceSource {
 /** Workspace Controller's Client service face. */
 export interface IWorkspaces {
   /**
+   * Read mode metadata without replacing a newer accepted revision.
    * @param workspaceId - Target Workspace.
    * @returns latest accepted mode metadata.
    */
   getMode(workspaceId: WorkspaceId): Promise<WorkspaceModeConfig>
   /**
+   * Change an unlocked Workspace mode and retain the latest accepted revision.
    * @param workspaceId - Target Workspace.
    * @param mode - Requested mode.
    * @param expectedRevision - Last observed revision.

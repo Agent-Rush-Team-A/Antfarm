@@ -47,6 +47,8 @@ Load the runtime on the Web Host plane after Agents, model defaults, agent prese
 
 The [GitHub review guide](../../../docs/user/guide/github-review.md) shows a rule module, dedicated ingress port, secret setup, and Workspace routing.
 
+Webhook creation reserves an ordinary Session through Workspace mode admission before Agent persistence. A single-mode limit refuses the action before a second log is written. Attachment and permanent locking complete together before permissions, title, and prompt. Disposing a failed Agent does not delete a saved Session log or release its durable reservation; trusted Workspace recovery reconciles it.
+
 <a id="model-experience"></a>
 ## Model Experience
 
@@ -63,8 +65,6 @@ One data-dependent user-role message is retained in the new Session and contribu
 #### KV Cache effect
 
 The initial prompt begins a new Session, so it establishes rather than invalidates that Session's reusable request prefix.
-
-Webhook creation reserves an ordinary Session through Workspace mode admission before Agent persistence. A single-mode limit refuses the action before a second log is written. Attachment and permanent locking complete together before permissions, title, and prompt. Disposing a failed Agent does not delete a saved Session log or release its durable reservation; trusted Workspace recovery reconciles it.
 
 ## Known Limitations and Deferred Work
 

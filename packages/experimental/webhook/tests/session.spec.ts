@@ -62,7 +62,7 @@ function harness(options: HarnessOptions = {}): SessionHarness {
   }
   const workspace = {
     path: '/workspace',
-    async attachSession() {
+    async attachSession(_sessionId: SessionId) {
       calls.push('attach')
       if (options.abortAt === 'attach') controller.abort(new Error('abort after attach'))
       if (options.failAt === 'attach') throw new Error('attach failed')
@@ -113,9 +113,10 @@ function harness(options: HarnessOptions = {}): SessionHarness {
     },
     workspaceRegistry: {
       async withSessionCreation(
-        _workspaceId: unknown, sessionId: SessionId, create: () => Promise<{ sessionId: SessionId; value: typeof handle }>,
+        _workspaceId: unknown, sessionId: SessionId,
+        create: (admission: { signal: AbortSignal }) => Promise<{ sessionId: SessionId; value: typeof handle }>,
       ) {
-        const result = await create()
+        const result = await create({ signal: controller.signal })
         await workspace.attachSession(sessionId)
         return result.value
       },

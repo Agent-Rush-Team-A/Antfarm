@@ -247,6 +247,7 @@ export class WorkspaceRegistry extends Service {
       report: error => ctx.logger.warn(`workspace mode recovery failed; dependent operations remain blocked: ${String(error)}`),
     })
     this.modeSessions = new WorkspaceModeSessions(this.modeCoordinator, {
+      owner: id => this.findSession(id)?.id,
       header: async (id) => {
         const persisted = (await this.listStoredHeaders()).find(header => header.id === id)
         return persisted ?? this.ctx.get('sessions')?.get(id)?.header
@@ -376,6 +377,18 @@ export class WorkspaceRegistry extends Service {
         || record.modeIntent?.operation === 'create-session' && record.modeIntent.sessionId === sessionId
         || record.sessionIds.includes(sessionId)
     })
+  }
+
+  /**
+   * Refuse messages before ordinary Session creation commits or pending recovery settles.
+   * @param sessionId - Ordinary Session whose original registration must be ready.
+   */
+  assertSessionReady(sessionId: SessionId): void {
+    const workspace = this.findSession(sessionId)
+    if (workspace === undefined) return
+    const entity = this.entities.get(workspace.id)
+    if (entity === undefined) throw new Error('Workspace Session registration is inconsistent')
+    this.modeCoordinator.assertReady(entity)
   }
 
   /**
@@ -847,6 +860,8 @@ export class WorkspaceRegistry extends Service {
       await table.update(id, record => ({
         ...record,
         sessionIds,
+        firstSessionId: record.firstSessionId ?? [...group.headers].sort((left, right) => left.createdAt - right.createdAt)[0]?.id ?? null,
+        modeRevision: record.modeRevision + 1,
         updatedAt: new Date().toISOString(),
       }))
       for (const sessionId of historical) accounted.set(sessionId, id)
@@ -903,6 +918,9 @@ export class WorkspaceRegistry extends Service {
     const paths = new Map<string, WorkspaceId>()
     const accounted = new Map<SessionId, WorkspaceId>()
     for (const [id, record] of table.entries()) {
+      if (record.modeIntent?.operation === 'switch-mode' && record.modeIntent.workspaceId !== id) {
+        throw new Error(`workspace domain is inconsistent: mode intent does not belong to workspace '${id}'`)
+      }
       const pathHolder = paths.get(record.path)
       if (pathHolder !== undefined) {
         throw new Error(
@@ -918,6 +936,16 @@ export class WorkspaceRegistry extends Service {
             `workspace domain is inconsistent: session '${sessionId}' is accounted `
             + `by both workspace '${holder}' and workspace '${id}'`,
           )
+        }
+        accounted.set(sessionId, id)
+      }
+      const retained = [record.firstSessionId,
+        record.modeIntent?.operation === 'create-session' ? record.modeIntent.sessionId : null]
+      for (const sessionId of retained) {
+        if (sessionId === null) continue
+        const holder = accounted.get(sessionId)
+        if (holder !== undefined && holder !== id) {
+          throw new Error(`workspace domain is inconsistent: retained Session '${sessionId}' has multiple owners`)
         }
         accounted.set(sessionId, id)
       }

@@ -176,6 +176,18 @@ describe('workspace mode coordination', () => {
     expect(f.workspace.modeConfig).toMatchObject({ mode: 'multi-vm', operationState: 'ready' })
   })
 
+  it('reports an initial persistence failure without invoking the runtime', async () => {
+    const f = await modeFixture()
+    f.ctx.effect(() => f.registry.modes.registerRuntime(f.adapter))
+    f.pool.failNextWrites = 1
+    await expect(f.registry.modes.setMode({ workspaceId: f.workspace.id, mode: 'single-vm', expectedRevision: 0 }, f.options))
+      .rejects.toMatchObject({ code: 'workspace/mode-switch-failed', details: {
+        phase: 'persist', recoveryRequired: false, outcomeUnknown: false,
+      } })
+    expect(f.adapter.prepare).not.toHaveBeenCalled()
+    expect(f.workspace.modeConfig).toMatchObject({ mode: 'multi-vm', revision: 0, operationState: 'ready' })
+  })
+
   it('cancels a queued reader without releasing another operation slot', async () => {
     const f = await modeFixture()
     const entered = barrier(), finish = barrier()

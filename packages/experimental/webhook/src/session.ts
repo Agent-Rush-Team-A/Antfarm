@@ -110,10 +110,10 @@ export async function createWebhookSession(
   let createdHandle: AgentHandle | undefined
   let handle: AgentHandle
   try {
-    handle = await ctx.workspaceRegistry.withSessionCreation(workspace.id, sessionId, async () => {
+    handle = await ctx.workspaceRegistry.withSessionCreation(workspace.id, sessionId, async (admission) => {
       const handle = await ctx.agents.create({
         sessionId,
-        signal,
+        signal: admission.signal,
         meta: { cwd: workspace.path, agentPreset: preset.id },
         agentOptions: resolved.agentOptions,
         setup: async (agentCtx) => {

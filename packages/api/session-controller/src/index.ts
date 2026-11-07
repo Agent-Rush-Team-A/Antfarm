@@ -306,7 +306,7 @@ export class SessionController extends TypertRemoteService {
   create(request: SessionCreateRequest): Promise<SessionCreateValue> {
     const principal = principalOf(this.ctx.invocation)
     const signal = this.ctx.invocation?.signal ?? new AbortController().signal
-    return this.commands.create(request, principal?.kind === 'user' ? principal : undefined, signal)
+    return this.commands.create(request, principal?.kind === 'user' ? principal : undefined, signal, principal)
   }
 
   /**
@@ -449,6 +449,9 @@ export class SessionController extends TypertRemoteService {
    */
   @Remote('fork')
   async fork(request: SessionForkRequest): Promise<SessionForkValue> {
+    const principal = principalOf(this.ctx.invocation)
+    const signal = this.ctx.invocation?.signal ?? new AbortController().signal
+    signal.throwIfAborted()
     if (request.allowMigration === false && this.ctx.sessions.get(request.sessionId) === undefined) {
       const stored = await this.ctx.get('sessionPersistence')?.stat(request.sessionId)
       if (stored?.formatStatus === 'migration-required' && this.ctx.sessions.get(request.sessionId) === undefined) {
@@ -457,7 +460,8 @@ export class SessionController extends TypertRemoteService {
         })
       }
     }
-    return this.commands.fork(request)
+    signal.throwIfAborted()
+    return this.commands.fork(request, signal, principal)
   }
 
   /**

@@ -700,3 +700,31 @@ it('refuses identity fallback when another writer holds a single-mode blank Sess
     .rejects.toMatchObject({ sessionId })
   expect(ctx.agents.list()).toEqual([])
 })
+
+it('refuses to recreate a missing permanent single-mode log', async () => {
+  const { ctx, cwd } = await harness({ presets: ['standard'] })
+  const sessionId = SessionId('single-missing-log')
+  const agents = new ApiSessionAgentController(ctx)
+  await expect(agents.createSession({ sessionId, cwd, preserveIdentity: true, reuseOnly: true, reusable: () => true }))
+    .rejects.toMatchObject({ sessionId })
+  expect(ctx.sessions.list()).toEqual([])
+  expect(ctx.agents.list()).toEqual([])
+})
+
+it('honors creation cancellation before writing a Session log', async () => {
+  const { ctx, cwd } = await harness({ presets: ['standard'] })
+  const controller = new AbortController()
+  controller.abort()
+  const agents = new ApiSessionAgentController(ctx)
+  await expect(agents.createSession({ cwd, signal: controller.signal, reusable: () => true })).rejects.toMatchObject({ name: 'AbortError' })
+  expect(ctx.sessions.list()).toEqual([])
+})
+
+it('captures the original Remote caller for ordinary creation admission', async () => {
+  const { ctx } = await harness({ workspace: { members: [], archived: [] } })
+  const principal = { kind: 'mode-test', name: 'creator' }
+  const decide = vi.spyOn(ctx.remoteAccess, 'decide').mockReturnValue({ kind: 'allow' } as never)
+  const actor = ctx.extend({ invocation: { signal: new AbortController().signal, peer: { principal } } as never })
+  await actor.sessionController.create({ workspaceId: WORKSPACE })
+  expect(decide).toHaveBeenCalledWith(expect.objectContaining({ principal, action: 'session/create' }))
+})

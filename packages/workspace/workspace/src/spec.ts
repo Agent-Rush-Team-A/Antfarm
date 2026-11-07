@@ -66,6 +66,17 @@ export const workspaceRecord = z.object({
   if (intent?.operation === 'create-session' && intent.mode !== record.mode) {
     ctx.addIssue({ code: 'custom', message: 'Pending Session must retain its captured Workspace mode' })
   }
+  if (record.modeOperationState === 'switching' && intent?.operation !== 'switch-mode'
+    || record.modeOperationState === 'creating-session' && intent?.operation !== 'create-session') {
+    ctx.addIssue({ code: 'custom', message: 'Workspace operation state must match its operation kind' })
+  }
+  if (record.sessionIds.length > 0 && record.firstSessionId === null) {
+    ctx.addIssue({ code: 'custom', message: 'Ordinary Session accounting requires a permanent first identity' })
+  }
+  if (record.mode.startsWith('single-') && record.firstSessionId !== null
+    && intent?.operation === 'create-session' && intent.sessionId !== record.firstSessionId) {
+    ctx.addIssue({ code: 'custom', message: 'Single-mode reservation cannot replace its permanent first identity' })
+  }
   if (record.mode.startsWith('single-') && (record.sessionIds.length > 1
     || record.sessionIds.some(id => record.firstSessionId !== id))) {
     ctx.addIssue({ code: 'custom', message: 'Single-mode accounting must retain only the permanent first Session' })

@@ -744,6 +744,12 @@ withSessionCreation<T>(workspaceId: WorkspaceId, sessionId: SessionId | undefine
 findSession(sessionId: SessionId): Workspace | undefined
 
 /**
+ * Refuse messages before ordinary Session creation commits or pending recovery settles.
+ * @param sessionId - Ordinary Session whose original registration must be ready.
+ */
+assertSessionReady(sessionId: SessionId): void
+
+/**
  * Refuse single-mode forks and archives before any new log or activity stop.
  * @param sessionId - Source or archive target.
  * @param operation - Forbidden single-mode operation.

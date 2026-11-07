@@ -403,7 +403,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-api-workspace-controller`
 
 - `inject`: `remoteAccess` · `typert` · `workspaceRegistry`
-- `source`: [`packages/api/workspace-controller/src/index.ts:38`](../packages/api/workspace-controller/src/index.ts)
+- `source`: [`packages/api/workspace-controller/src/index.ts:39`](../packages/api/workspace-controller/src/index.ts)
 
 ```ts config-catalog
 /** First-use directory policy for the Host account. */
@@ -5071,7 +5071,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-workspace`
 
 - `inject`: `storageDomain` · `sessionPersistence`
-- `source`: [`packages/workspace/workspace/src/index.ts:165`](../packages/workspace/workspace/src/index.ts)
+- `source`: [`packages/workspace/workspace/src/index.ts:180`](../packages/workspace/workspace/src/index.ts)
 
 ```ts config-catalog
 /** Workspace registration deployment policy. */
@@ -5080,7 +5080,7 @@ export interface Config {
   defaultMode: WorkspaceMode
 }
 
-/** The four workspace modes shared by issues #41, #42, #43, and #45. */
+/** Ordinary Session topology and VM or Docker execution environment selection. */
 export type WorkspaceMode = 'single-vm' | 'multi-vm' | 'single-docker' | 'multi-docker'
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-workspace -->

@@ -566,7 +566,10 @@ interface FixtureWorkspaceApi {
 }
 
 interface FixtureWorkspace {
-  modeConfig: import('@deepseek-ai/dsh-workspace/types').WorkspaceModeConfig
+  modeConfig: Omit<import('@deepseek-ai/dsh-workspace/types').WorkspaceModeConfig, 'workspaceId' | 'firstSessionId'> & {
+    workspaceId: WorkspaceId
+    firstSessionId: SessionId | null
+  }
   workspaceId: WorkspaceId
   path: string
   title: string

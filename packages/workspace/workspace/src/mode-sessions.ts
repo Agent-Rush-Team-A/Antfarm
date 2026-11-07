@@ -16,12 +16,18 @@ export interface WorkspaceSessionAdmission {
   readonly mode: WorkspaceMode
   /** Whether automatic identity fallback is forbidden. */
   readonly single: boolean
+  /** Existing permanent identity must be reused; a missing log cannot be recreated. */
+  readonly reuseOnly: boolean
+  /** Coordinator-owned lifetime, including runtime withdrawal. */
+  readonly signal: AbortSignal
   /** @param id - Replacement identity reserved before a multi-mode fallback creates its log. */
   reserve(id: SessionId): Promise<void>
 }
 
 /** Facilities owned by the registry rather than a transient API provider. */
 export interface WorkspaceModeSessionsHost {
+  /** Read permanent or pending ownership before reserving an identity. */
+  owner(id: SessionId): WorkspaceId | undefined
   /**
    * @param id - Identity to inspect.
    * @returns a fresh durable or live header, or undefined for a definite miss.
@@ -70,7 +76,7 @@ export class WorkspaceModeSessions {
       if (!reusingFirst) await this.reserve(entity, reserved, config.mode)
       try {
         const result = await create({
-          sessionId, mode: config.mode, single,
+          sessionId, mode: config.mode, single, reuseOnly: reusingFirst, signal,
           reserve: async (id) => {
             signal.throwIfAborted()
             options.admit()
@@ -83,7 +89,10 @@ export class WorkspaceModeSessions {
         if (result.sessionId !== reserved) throw new Error('ordinary Session created outside its reserved identity')
         signal.throwIfAborted()
         options.admit()
-        await entity.completeSession(reserved)
+        await entity.completeSession(reserved, () => {
+          signal.throwIfAborted()
+          options.admit()
+        })
         return result.value
       } catch (error) {
         if (reusingFirst) throw error
@@ -123,9 +132,11 @@ export class WorkspaceModeSessions {
   }
 
   private async reserve(entity: WorkspaceEntity, sessionId: SessionId, mode: WorkspaceMode): Promise<void> {
-    await entity.updateMode(record => ({
-      ...record, modeIntent: { operation: 'create-session', sessionId, mode }, modeOperationState: 'creating-session',
-    }))
+    await entity.updateMode((record) => {
+      const owner = this.host.owner(sessionId)
+      if (owner !== undefined && owner !== entity.id) throw new Error('Session identity belongs to another Workspace')
+      return { ...record, modeIntent: { operation: 'create-session', sessionId, mode }, modeOperationState: 'creating-session' }
+    })
   }
 
   private async requireRecovery(entity: WorkspaceEntity): Promise<void> {

@@ -97,6 +97,44 @@ const remote = async (ctx: Context) => await createSessionTestRemote(ctx, {
   cwd: '/tmp',
 })
 
+it('passes the original Remote cancellation signal through ordinary fork creation', async () => {
+  const ctx = await composed()
+  try {
+    const source = ctx.sessions.create(sid('signal-source'), { meta: { cwd: '/proj' } })
+    source.append('turn/start', { turn: 1 })
+    source.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    await remote(ctx)
+    const controller = new AbortController()
+    const actor = ctx.extend({ invocation: { signal: controller.signal, peer: { principal: undefined } } as never })
+    const create = vi.spyOn(ctx.agents, 'create')
+    await actor.sessionController.fork({ sessionId: source.id })
+    expect(create.mock.calls[0]?.[0].signal).toBe(controller.signal)
+  } finally {
+    await ctx.fiber.dispose()
+  }
+})
+
+it('captures the original Remote caller for fork admission', async () => {
+  const sourceId = sid('caller-source')
+  const workspace = {
+    id: 'caller-workspace', path: '/proj', sessionIds: [sourceId], attachSession: async () => {},
+  } as never
+  const ctx = await composed([workspace])
+  try {
+    const source = ctx.sessions.create(sourceId, { meta: { cwd: '/proj' } })
+    source.append('turn/start', { turn: 1 })
+    source.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    await remote(ctx)
+    const principal = { kind: 'user', userId: 'fork-owner', username: 'alice' }
+    const decide = vi.spyOn(ctx.remoteAccess, 'decide').mockReturnValue({ kind: 'allow' } as never)
+    const actor = ctx.extend({ invocation: { signal: new AbortController().signal, peer: { principal } } as never })
+    await actor.sessionController.fork({ sessionId: source.id })
+    expect(decide).toHaveBeenCalledWith(expect.objectContaining({ principal, action: 'session/fork' }))
+  } finally {
+    await ctx.fiber.dispose()
+  }
+})
+
 describe('sessions.fork', () => {
   it.each([
     { allowMigration: undefined, status: 'current' },

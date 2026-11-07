@@ -112,6 +112,8 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 Blockquotes travel as ordinary prompt text without quote metadata. Local submission echoes and durable messages use the same text rendering rules; queue edits replace content while retaining prompt correlation.
 
+Registered Workspace creation uses exclusive mode admission for explicit Workspace ids and matching directory paths. Single modes preserve the first Session identity: an unavailable blank reuse returns `session/reuse-unavailable` and never mints a replacement. Forks trace subagent ancestry to the permanent Workspace identity and enforce its mode before creating a log. Captured permission is rechecked after waiting. Failed creation with a persisted log leaves a recoverable reservation rather than releasing the ordinary Session slot.
+
 <a id="model-experience"></a>
 ## Model Experience
 
@@ -120,8 +122,6 @@ None, as invoked Agent commands own any model-visible effect.
 #### KV Cache effect
 
 No direct effect; model requests remain owned by the Agent and LLM packages.
-
-Registered Workspace creation uses exclusive mode admission for explicit Workspace ids and matching directory paths. Single modes preserve the first Session identity: an unavailable blank reuse returns `session/reuse-unavailable` and never mints a replacement. Forks trace subagent ancestry to the permanent Workspace identity and enforce its mode before creating a log. Captured permission is rechecked after waiting. Failed creation with a persisted log leaves a recoverable reservation rather than releasing the ordinary Session slot.
 
 ## Known Limitations and Deferred Work
 

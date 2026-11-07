@@ -146,3 +146,61 @@ it('reserves a multi-mode fallback before writing and preserves the first perman
   await f.registry.archiveSession(replacement)
   expect(f.registry.archivedSessionIds).toEqual([replacement])
 })
+
+it('blocks message admission until creation and recovery have settled', async () => {
+  const f = await modeFixture({ mode: 'single-vm' }), id = SessionId('message-pending')
+  await expect(f.registry.withSessionCreation(f.workspace.id, id, async (admission) => {
+    persist(f, admission.sessionId)
+    expect(() => f.registry.assertSessionReady(id)).toThrow('workspace/mode-recovery-required')
+    throw new Error('setup left a log')
+  }, f.options)).rejects.toMatchObject({ code: 'workspace/mode-recovery-required' })
+  expect(() => f.registry.assertSessionReady(id)).toThrow('workspace/mode-recovery-required')
+  f.ctx.on('workspace/recover-session', async (_id, next) => { await next(); return true })
+  await f.registry.modes.recover(f.workspace.id, f.options)
+  expect(() => f.registry.assertSessionReady(id)).not.toThrow()
+})
+
+it('aborts creation on runtime withdrawal and drains its actual cleanup', async () => {
+  const f = await modeFixture(), entered = barrier(), finish = barrier(), aborted = barrier()
+  const dispose = f.registry.modes.registerRuntime(f.adapter)
+  const creation = f.registry.withSessionCreation(f.workspace.id, undefined, async (admission) => {
+    admission.signal.addEventListener('abort', () => { aborted.resolve() }, { once: true })
+    entered.resolve(); await finish.promise
+    admission.signal.throwIfAborted()
+    return createIn(f)(admission)
+  }, f.options)
+  await entered.promise
+  let disposed = false
+  const disposal = dispose().then(() => { disposed = true })
+  await aborted.promise
+  expect(disposed).toBe(false)
+  finish.resolve()
+  await expect(creation).rejects.toMatchObject({ name: 'AbortError' })
+  await disposal
+  expect(f.headers.size).toBe(0)
+  expect(f.workspace.modeConfig.operationState).toBe('ready')
+})
+
+it('refuses a retained identity from another Workspace before reserving or creating', async () => {
+  const f = await modeFixture()
+  const first = await f.registry.withSessionCreation(f.workspace.id, undefined, createIn(f), f.options)
+  const other = await modeFixture()
+  const target = await f.registry.create(other.path)
+  const create = vi.fn(createIn(f))
+  await expect(f.registry.withSessionCreation(target.id, first, create, f.options)).rejects.toThrow('another Workspace')
+  expect(create).not.toHaveBeenCalled()
+  expect(target.modeConfig).toMatchObject({ revision: 0, modeLocked: false, operationState: 'ready' })
+})
+
+it('rechecks captured creation authority in the final attachment write', async () => {
+  const f = await modeFixture()
+  let checks = 0
+  const options = { ...f.options, admit: () => {
+    if (++checks === 3) throw new Error('ownership revoked before attachment')
+  } }
+  await expect(f.registry.withSessionCreation(f.workspace.id, undefined, createIn(f), options))
+    .rejects.toMatchObject({ code: 'workspace/mode-recovery-required' })
+  expect(checks).toBe(3)
+  expect(f.workspace.modeConfig).toMatchObject({ operationState: 'recovery-required', firstSessionId: null })
+  expect(f.headers.size).toBe(1)
+})
