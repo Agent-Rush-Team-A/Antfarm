@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { WorkspaceFileAccess, type WorkspaceFileScope } from '@deepseek-ai/dsh-fs/workspace-access'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import { SandboxExecutionBackend } from './backend.ts'
-import { Config, type ResolvedConfig } from './vultr-config.ts'
+import { Config, type ResolvedConfig, vultrEndpoint } from './vultr-config.ts'
 import { VultrApi } from './vultr-api.ts'
 import { CloudWorkspaceStore } from './vultr-storage.ts'
 import { VultrSshProvisioning } from './vultr-provision.ts'
@@ -54,11 +54,7 @@ export default class VultrWorkspaceBackend extends SandboxExecutionBackend {
     this.settings = Config(config)
     if (process.platform !== 'linux') throw new Error('Vultr workspace backend requires a Linux Harness')
     z.string().regex(/^[a-zA-Z0-9_-]{1,32}$/u).parse(this.settings.deploymentId)
-    const endpoint = new URL(this.settings.apiEndpoint)
-    if (endpoint.protocol !== 'https:' && !(endpoint.protocol === 'http:'
-      && ['127.0.0.1', 'localhost', '[::1]'].includes(endpoint.hostname))) throw new Error('Vultr endpoint must use HTTPS or test loopback')
-    if (endpoint.username || endpoint.password || endpoint.search
-      || endpoint.hash) throw new Error('Vultr API endpoint cannot contain credentials, query or fragment')
+    this.settings.apiEndpoint = vultrEndpoint(this.settings.apiEndpoint)
   }
 
   async [Service.init](): Promise<void> {
@@ -87,7 +83,7 @@ export default class VultrWorkspaceBackend extends SandboxExecutionBackend {
     const key = (await readFile(this.settings.apiKeyFile, 'utf8')).trim()
     if (key.length === 0 || /[\r\n]/u.test(key)) throw new Error('Vultr API credential is empty or malformed')
     accepting()
-    const api = new VultrApi(key, this.settings.apiEndpoint.replace(/\/$/u, ''), this.settings.requestTimeoutMs,
+    const api = new VultrApi(key, this.settings.apiEndpoint, this.settings.requestTimeoutMs,
       this.settings.maxInventoryPages, this.settings.maxApiResponseBytes)
     const runtime = new WorkspaceSshRuntime(this.ctx, { bindings: {}, maxExecutions: this.settings.maxExecutions,
       maxOutputBytes: this.settings.maxOutputBytes, graceMs: this.settings.graceMs })

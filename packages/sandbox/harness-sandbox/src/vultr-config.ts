@@ -39,6 +39,20 @@ export interface Config {
 /** Resolved provider configuration. */
 export type ResolvedConfig = Required<Config>
 
+/**
+ * Resolve the API origin before passing any credentials to it.
+ * @param address - Deployment endpoint, with HTTP accepted for loopback fixtures.
+ * @returns Endpoint without a trailing slash.
+ */
+export function vultrEndpoint(address: string): string {
+  const endpoint = new URL(address)
+  if (endpoint.protocol !== 'https:' && !(endpoint.protocol === 'http:'
+    && ['127.0.0.1', 'localhost', '[::1]'].includes(endpoint.hostname))) throw new Error('Vultr endpoint must use HTTPS or test loopback')
+  if (endpoint.username || endpoint.password || endpoint.search
+    || endpoint.hash) throw new Error('Vultr API endpoint cannot contain credentials, query or fragment')
+  return address.replace(/\/$/u, '')
+}
+
 /** Explicit cloud allocation with bounded polling, capacity, and file-copy budgets. */
 export const Config: Schema<Config, ResolvedConfig> = Schema.object({
   apiKeyFile: Schema.string().required(), stateRoot: Schema.string().required(), deploymentId: Schema.string().required(),

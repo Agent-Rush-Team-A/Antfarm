@@ -2,6 +2,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
+import { posix } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
@@ -27,11 +28,19 @@ const object = z.object({}).strict()
 const processIdRequest = z.object({ id: processIdSchema }).strict()
 const textStreamIdRequest = z.object({ id: textStreamIdSchema }).strict()
 
-async function services() {
+class SharedWorkspaceFileSystem extends SandboxedFileSystem {
+  protected override newTextFileMode(target: FsTarget): number | undefined {
+    const path = posix.relative(this.config.cwd, target.targetKey)
+    return path === '..' || path.startsWith('../') || posix.isAbsolute(path) ? undefined : 0o660
+  }
+}
+
+async function services(sharedWorkspace?: string) {
+  const cwd = sharedWorkspace ?? process.cwd()
   const ctx = new Context()
   const fibers = [await ctx.plugin(SessionProjectionRegistry)]
-  fibers.push(await ctx.plugin(SandboxPolicyService, { mode: 'read-only', workspaceRoot: process.cwd() }))
-  fibers.push(await ctx.plugin(SandboxedFileSystem, { cwd: process.cwd() }))
+  fibers.push(await ctx.plugin(SandboxPolicyService, { mode: 'read-only', workspaceRoot: cwd }))
+  fibers.push(await ctx.plugin(sharedWorkspace === undefined ? SandboxedFileSystem : SharedWorkspaceFileSystem, { cwd }))
   fibers.push(await ctx.plugin(LocalSubprocessRuntime))
   fibers.push(await ctx.plugin(LocalSandboxProvider))
   return { ctx, close: async () => { for (const fiber of fibers.reverse()) await fiber.dispose() } }
@@ -49,6 +58,8 @@ export interface HelperTransport {
   kind: 'node-script' | 'executable'
   /** Process termination joins the same cleanup as transport loss. */
   signal: AbortSignal
+  /** Canonical VFS directory fixed by the trusted launcher before it dropped privileges. */
+  sharedWorkspace?: string
 }
 
 /**
@@ -58,7 +69,8 @@ export interface HelperTransport {
 export async function runSshHelper(transport: HelperTransport): Promise<void> {
   if (process.platform !== 'linux' && process.platform !== 'darwin') throw new Error('SSH helper requires a POSIX host')
   transport.signal.throwIfAborted()
-  const runtime = await services()
+  const sharedWorkspace = transport.sharedWorkspace
+  const runtime = await services(sharedWorkspace)
   const { ctx } = runtime
   const root = await mkdtemp('/tmp/dsh-ssh-')
   const processes = new RemoteProcesses(ctx, root, SSH_MAX_PROCESS_HANDLES, 30_000)
@@ -119,6 +131,7 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
       }).strict().parse(raw)
       if (transport.kind === 'executable' && input.bootstrapPath !== undefined) throw new Error('Executable SSH helper uses its embedded PTC bootstrap')
       workspace = ctx.fs.processPath(await ctx.fs.resolve(input.workspace, { signal }))
+      if (sharedWorkspace !== undefined && workspace !== sharedWorkspace) throw new Error('Shared SSH helper workspace differs from its launch directory')
       leaseMs = input.leaseMs
       binary = new WorkspaceBinaryHandles(workspace, lifetime.signal, root)
       initialized = true

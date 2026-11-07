@@ -6,18 +6,30 @@ import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 export type VultrInstanceId = Branded<'VultrInstanceId'>
 /** Opaque durable disk snapshot identity. */
 export type VultrSnapshotId = Branded<'VultrSnapshotId'>
+/** Opaque Vultr File System volume identity. */
+export type VultrVolumeId = Branded<'VultrVolumeId'>
 const instanceId = z.uuid().transform(value => brandString<VultrInstanceId>(value))
 const snapshotId = z.uuid().transform(value => brandString<VultrSnapshotId>(value))
+/** Parse the volume identity supplied by deployment or returned by Vultr. */
+export const vultrVolumeId = z.uuid().transform(value => brandString<VultrVolumeId>(value))
 /** Validated instance facts used by readiness and restart reconciliation. */
 export const vultrInstance = z.object({
   id: instanceId, label: z.string(), tags: z.array(z.string()),
-  main_ip: z.string(), status: z.string(), power_status: z.string(), server_status: z.string() })
+  main_ip: z.string(), status: z.string(), power_status: z.string(), server_status: z.string(),
+  region: z.string().optional(), plan: z.string().optional(), enable_memorybacking: z.string().optional() })
 /** Validated snapshot facts; only complete permits removal of the source VM. */
 export const vultrSnapshot = z.object({ id: snapshotId, description: z.string(), status: z.string() })
 /** One cloud instance observation. */
 export type VultrInstance = z.infer<typeof vultrInstance>
 /** One cloud snapshot observation. */
 export type VultrSnapshot = z.infer<typeof vultrSnapshot>
+const volume = z.object({ id: vultrVolumeId, region: z.string(), status: z.string() })
+const attachment = z.object({ vfs_id: vultrVolumeId, target_id: instanceId, state: z.string(),
+  mount_tag: z.number().int().nonnegative().nullable().optional() })
+/** VFS volume identity and regional availability. */
+export type VultrVolume = z.infer<typeof volume>
+/** Observed attachment for one volume and one instance. */
+export type VultrAttachment = z.infer<typeof attachment>
 
 /** A sanitized API failure; unknown mutations require inventory reconciliation. */
 export class VultrApiError extends Error {
@@ -63,6 +75,59 @@ export class VultrApi {
     try { return (await this.request('GET', '/instances/' + id, undefined, z.object({ instance: vultrInstance }), signal)).instance }
     catch (error) { if (error instanceof VultrApiError && error.status === 404) return undefined; throw error }
   }
+
+  /**
+   * Request Shared Memory Backing for a verified VM. The caller confirms readiness after the update.
+   * @param id - Owned instance.
+   * @param signal - Operation lifetime.
+   */
+  async shareMemory(id: VultrInstanceId, signal: AbortSignal): Promise<void> {
+    await this.request('PATCH', '/instances/' + id, { enable_memorybacking: 'shared' },
+      z.object({ instance: vultrInstance }), signal)
+  }
+
+  /**
+   * Read the configured volume before allocating a VM in its region.
+   * @param id - Deployment-owned volume identity.
+   * @param signal - Operation lifetime.
+   * @returns Validated VFS facts.
+   */
+  volume(id: VultrVolumeId, signal: AbortSignal): Promise<VultrVolume> {
+    return this.request('GET', '/vfs/' + id, undefined, volume, signal)
+  }
+
+  /**
+   * Request a native attachment without replaying an unknown outcome.
+   * @param id - Deployment-owned volume.
+   * @param target - Original VM.
+   * @param signal - Operation lifetime.
+   * @returns Attachment facts from the mutation response.
+   */
+  attach(id: VultrVolumeId, target: VultrInstanceId, signal: AbortSignal): Promise<VultrAttachment> {
+    return this.request('PUT', '/vfs/' + id + '/attachments/' + target, undefined, attachment, signal)
+  }
+
+  /**
+   * Read the native attachment by both identities.
+   * @param id - Deployment-owned volume.
+   * @param target - Original VM.
+   * @param signal - Operation lifetime.
+   * @returns Current attachment or confirmed HTTP 404.
+   */
+  async attachment(id: VultrVolumeId, target: VultrInstanceId, signal: AbortSignal): Promise<VultrAttachment | undefined> {
+    try { return await this.request('GET', '/vfs/' + id + '/attachments/' + target, undefined, attachment, signal) }
+    catch (error) { if (error instanceof VultrApiError && error.status === 404) return undefined; throw error }
+  }
+
+  /**
+   * Remove only the original VM's attachment. The volume remains under deployment ownership.
+   * @param id - Original volume.
+   * @param target - Original VM.
+   * @param signal - Cleanup lifetime.
+   */
+  async detach(id: VultrVolumeId, target: VultrInstanceId, signal: AbortSignal): Promise<void> {
+    await this.remove('/vfs/' + id + '/attachments/' + target, signal)
+  }
   /**
    * Request start or halt; the caller separately confirms power state.
    * @param id - Source VM.
@@ -73,8 +138,8 @@ export class VultrApi {
     await this.request('POST', '/instances/' + id + '/' + action, {}, z.null(), signal)
   }
   /**
-   * Request removal of an already preserved VM without retrying automatically.
-   * @param id - Source VM with a recorded completed snapshot.
+   * Request removal of a reclaimed VM without retrying automatically.
+   * @param id - VM whose persistent data has been preserved by its owner.
    * @param signal - Operation lifetime.
    */
   async deleteInstance(id: VultrInstanceId, signal: AbortSignal): Promise<void> {

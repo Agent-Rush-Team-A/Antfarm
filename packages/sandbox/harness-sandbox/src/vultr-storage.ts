@@ -2,7 +2,7 @@
 import { constants } from 'node:fs'
 import { open, mkdir, readdir, rename, rm, realpath, stat, lstat, type FileHandle } from 'node:fs/promises'
 import { tryLockExclusive } from '@deepseek-ai/node-addon-system/flock'
-import { isAbsolute, join, relative } from 'node:path'
+import { dirname, isAbsolute, join, relative } from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
 import { z } from 'zod'
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
@@ -14,12 +14,17 @@ import { listArtifacts, openArtifact, streamArtifact, artifactComponents } from 
 import { UploadFailure } from '@deepseek-ai/dsh-fs-local/workspace-upload'
 import { copyWorkspaceDirectory, type WorkspaceModeCopyLimits } from './mode-copy.ts'
 
+/** Safe workspace ID used as a private record directory name. */
+export const cloudWorkspaceId = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/u).transform(WorkspaceId)
+/** Durable identity reserved for one execution generation. */
+export const cloudGeneration = z.string().regex(/^[a-f0-9]{64}$/u).transform(value => brandString<SandboxContainerId>(value))
+
 /** Restart-safe ownership and disk-save facts; no API credentials or task content. */
 export const cloudRecord = z.strictObject({
   format: z.literal(1),
-  workspaceId: z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/u).transform(WorkspaceId),
+  workspaceId: cloudWorkspaceId,
   project: z.string(), remoteRoot: z.string().startsWith('/'), deploymentId: z.string(), label: z.string(),
-  generation: z.string().regex(/^[a-f0-9]{64}$/u).transform(value => brandString<SandboxContainerId>(value)),
+  generation: cloudGeneration,
   state: z.enum(['closed', 'starting', 'running', 'closing', 'cleanup_required']),
   phase: z.enum(['closed', 'creating', 'connecting', 'running', 'restoring', 'saving_files', 'stopping',
     'saving_snapshot', 'deleting', 'failed']),
@@ -38,11 +43,14 @@ export const cloudRecord = z.strictObject({
 /** One persisted Workspace lifecycle record. */
 export type CloudRecord = z.infer<typeof cloudRecord>
 
-/** Atomic metadata writer; one Harness deployment exclusively owns the directory. */
-export class CloudWorkspaceStore {
+/** One deployment's private, exclusively owned workspace records. */
+export class CloudWorkspaceRecords<RecordType extends { readonly workspaceId: CloudRecord['workspaceId'] }> {
   private lock: FileHandle | undefined
-  /** @param root - Private durable root. */
-  constructor(readonly root: string) {}
+  /**
+   * @param root - Private durable root.
+   * @param schema - Stored record schema for this deployment.
+   */
+  constructor(readonly root: string, private readonly schema: z.ZodType<RecordType>) {}
 
   /** Validate a private real directory before any key or state publication. */
   async initialize(): Promise<void> {
@@ -52,8 +60,11 @@ export class CloudWorkspaceStore {
     const info = await stat(this.root)
     if ((info.mode & 0o077) !== 0 || info.uid !== process.getuid?.()) throw new Error('Cloud stateRoot must be private and owned by the Harness user')
     const lock = await open(join(this.root, '.owner.lock'), constants.O_RDWR | constants.O_CREAT | constants.O_NOFOLLOW, 0o600)
-    try { await tryLockExclusive(lock.fd); this.lock = lock }
+    try { await tryLockExclusive(lock.fd) }
     catch (error) { await lock.close(); throw new Error('Another Harness owns this cloud stateRoot', { cause: error }) }
+    try { await this.sync(dirname(this.root)) }
+    catch (error) { await lock.close(); throw error }
+    this.lock = lock
   }
 
   /** Release single-writer ownership after all metadata and cloud operations settle; crashes release the kernel lock. */
@@ -63,8 +74,8 @@ export class CloudWorkspaceStore {
    * Load validated private ownership and save facts without accessing the cloud API.
    * @returns All validated persistent lifecycle records.
    */
-  async load(): Promise<CloudRecord[]> {
-    const records: CloudRecord[] = []
+  async load(): Promise<RecordType[]> {
+    const records: RecordType[] = []
     for (const entry of await readdir(this.root, { withFileTypes: true })) {
       if (!entry.isDirectory() || !/^[a-zA-Z0-9_-]{1,128}$/u.test(entry.name)) continue
       const path = join(this.root, entry.name, 'state.json')
@@ -73,9 +84,8 @@ export class CloudWorkspaceStore {
       catch (error) { if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') continue; throw error }
       try {
         const raw: unknown = JSON.parse(await file.readFile('utf8'))
-        const record = cloudRecord.parse(raw)
+        const record = this.schema.parse(raw)
         if (record.workspaceId !== entry.name) throw new Error('Cloud record does not match its directory')
-        for (const copy of [record.cache, record.candidateCache]) if (copy !== undefined) this.copyPath(record.workspaceId, copy)
         records.push(record)
       } finally { await file.close() }
     }
@@ -86,8 +96,8 @@ export class CloudWorkspaceStore {
    * Publish the complete next record only after file and directory synchronization.
    * @param record - Complete next state. Publish only after fsync succeeds.
    */
-  async save(record: CloudRecord): Promise<void> {
-    const path = join(this.root, record.workspaceId)
+  async save(record: RecordType): Promise<void> {
+    const path = join(this.root, cloudWorkspaceId.parse(record.workspaceId))
     await mkdir(path, { recursive: true, mode: 0o700 })
     const temporary = join(path, '.state-' + randomUUID())
     const file = await open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600)
@@ -95,9 +105,48 @@ export class CloudWorkspaceStore {
     finally { await file.close() }
     try {
       await rename(temporary, join(path, 'state.json'))
-      const directory = await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
-      try { await directory.sync() } finally { await directory.close() }
+      await this.sync(path)
+      await this.sync(this.root)
     } finally { await rm(temporary, { force: true }) }
+  }
+
+  /**
+   * Retire the allocation record after its owner has confirmed resource cleanup.
+   * @param id - Original workspace; retain private bootstrap files for the deployment.
+   */
+  async remove(id: CloudRecord['workspaceId']): Promise<void> {
+    const path = join(this.root, cloudWorkspaceId.parse(id))
+    await rm(join(path, 'state.json'), { force: true })
+    await this.sync(path)
+  }
+
+  /**
+   * Refuse state storage reachable from a workspace mount.
+   * @param project - Registered project or shared volume root.
+   */
+  outside(project: string): void {
+    const path = relative(project, this.root)
+    if (path === '' || (!path.startsWith('../') && path !== '..'
+      && !isAbsolute(path))) throw new Error('Cloud stateRoot must be outside workspace projects')
+  }
+
+  private async sync(path: string): Promise<void> {
+    const directory = await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
+    try { await directory.sync() } finally { await directory.close() }
+  }
+}
+
+/** Snapshot records and retained read-only file copies for the multi-session VM provider. */
+export class CloudWorkspaceStore extends CloudWorkspaceRecords<CloudRecord> {
+  /** @param root - Private durable root. */
+  constructor(root: string) { super(root, cloudRecord) }
+
+  override async load(): Promise<CloudRecord[]> {
+    const records = await super.load()
+    for (const record of records) {
+      for (const copy of [record.cache, record.candidateCache]) if (copy !== undefined) this.copyPath(record.workspaceId, copy)
+    }
+    return records
   }
 
   /**
@@ -186,16 +235,6 @@ export class CloudWorkspaceStore {
       }
     }
     await scan('')
-  }
-
-  /**
-   * Refuse state storage reachable from the registered execution project.
-   * @param project - Registered project root. Refuse state storage reachable from that execution mount.
-   */
-  outside(project: string): void {
-    const path = relative(project, this.root)
-    if (path === '' || (!path.startsWith('../') && path !== '..'
-      && !isAbsolute(path))) throw new Error('Cloud stateRoot must be outside workspace projects')
   }
 
   /**

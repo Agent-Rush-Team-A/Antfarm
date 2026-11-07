@@ -1,5 +1,6 @@
-# Optional single/multi-session Docker modes over the default Antfarm Web composition.
+# Workspace modes over the default Antfarm Web composition.
 # Runner and Harness share workspaceRoot; mode journals use a private stateRoot.
+# Add the optional vultr object to enable single-session VFS and multi-session snapshots.
 - id: ui-workspace-sandbox
   disabled: false
 - insert:

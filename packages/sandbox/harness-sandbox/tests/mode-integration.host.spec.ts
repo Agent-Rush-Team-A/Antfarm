@@ -159,6 +159,23 @@ test('input during deletion waits for another generation and status reports the 
   expect(f.created[0]?.containerId).not.toBe(f.created[1]?.containerId)
 })
 
+test('single VM delegates the captured generation even after the helper health check fails', async () => {
+  const f = await fixture('single-vm')
+  const closeTask = vi.fn(async (id: WorkspaceId, target: SandboxContainerId) => {
+    expect(target).toBe(f.created[0]?.containerId)
+    return f.backend.close(id)
+  })
+  f.backend.closeTask = closeTask
+  await f.prompt('original')
+  await f.entered.promise
+  vi.mocked(f.backend.status).mockResolvedValue({ state: 'cleanup_required' })
+  f.release()
+  await f.agent.whenIdle()
+  await vi.waitFor(() => {
+    expect(closeTask).toHaveBeenCalledExactlyOnceWith(f.alice.id, f.created[0]?.containerId)
+  })
+})
+
 test('native write/edit/read use the selected persistent file world across task generations', async () => {
   const f = await fixture()
   await f.run('write', { file_path: '/workspace/result.txt', content: 'old value\n' })
@@ -213,6 +230,35 @@ test('binary upload and download work before execution and retain streaming mode
   await stream.settled
   expect(f.counts.get(f.alice.id)).toBe(0)
   expect(f.backend.open).not.toHaveBeenCalled()
+})
+
+test('single VM reads retain the mode lease when the execution generation requires cleanup', async () => {
+  const f = await fixture('single-vm')
+  const files = f.targets.get('single-vm')!.files
+  const list = vi.spyOn(files, 'list').mockResolvedValue({ entries: [{ name: 'input.txt', kind: 'file' }], truncated: false })
+  const read = Promise.withResolvers<undefined>()
+  vi.spyOn(files, 'download').mockResolvedValue({ bytes: 0, body: new ReadableStream(), settled: read.promise })
+  f.backend.closeTask = vi.fn(async () => { throw new Error('Original VM deletion is unconfirmed') })
+  const recover = f.backend.recoverTask = vi.fn(async () => { throw new Error('Original VM still exists') })
+
+  const first = await f.ctx.sandboxRunnerClient.admit(f.scope)
+  await first.ready()
+  await expect(first.release()).rejects.toMatchObject({ phase: 'close' })
+  try {
+    await expect(f.ctx.sandboxRunnerClient.status(f.alice.id)).resolves.toEqual({ state: 'cleanup_required' })
+    await expect(f.ctx.workspaceFileAccess.list(f.scope, '', 100)).resolves.toMatchObject({ entries: [{ name: 'input.txt' }] })
+    expect(list).toHaveBeenCalledOnce()
+    const stream = await f.ctx.workspaceFileAccess.download(f.scope, 'input.txt', 100)
+    expect(f.counts.get(f.alice.id)).toBe(1)
+    read.resolve(undefined)
+    await stream.settled
+    expect(f.counts.get(f.alice.id)).toBe(0)
+    expect(recover).not.toHaveBeenCalled()
+    expect(f.backend.open).toHaveBeenCalledOnce()
+  } finally {
+    read.resolve(undefined)
+    await f.fiber.dispose().catch(() => {})
+  }
 })
 
 test('unloading mode admission cancels a live turn and waits for actual environment destruction', async () => {

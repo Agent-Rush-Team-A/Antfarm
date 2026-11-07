@@ -36,8 +36,16 @@ findmnt -rn --mountpoint /srv/antfarm/vfs -o TARGET,SOURCE,FSTYPE,FSROOT
 - 文件所有者在任务结束前将网页需要访问的产物设为工作区组可读，例如 `0640`。任务生成的 `0600` 文件可能使网页文件列表或下载失败。
 - 原生挂载依靠受限任务身份隔离工作区，执行 VM 的管理员和初始化程序需要受信。若需要在存储层按子目录和客户端 IP 限制访问，Storage Gateway 需要另行接入。[Vultr Storage Gateway](https://docs.vultr.com/products/storage/storage-gateway/provisioning)
 
+单会话 VM 使用独立的登记根和 VFS 工作区根。`SingleVmWorkspaces` 按登记目录名映射到卷内目录。Web 的补充组预先包含所有预留的任务组，卷内工作区总目录由 Web 持有且模式为 `0711`。提供方把 UID/GID 绑定保存在挂载外的私有 `stateRoot`，迁移 Harness 时随登记一起保留。切入单会话 VM 时，暂存目录使用 `2770`，暂存文件给对应任务组读写权限。现有的可执行文件保留执行权限。
+
+管理员用[挂载检查脚本](vfs/check-mount.sh)核对整卷与绑定挂载，并验证实际任务账号可读写后，从可信安装目录调用[受限 helper 启动脚本](vfs/run-workspace-helper.sh)。参数依次为绑定的任务 UID/GID、已验证的 `/workspace` 路径和已安装 helper 的绝对路径。脚本以该任务身份启动 helper，Bash 子进程继承同一身份和权限限制。文本工具的新文件以 `0660` 发布，替换保留原权限。Bash 创建的私有文件仍由所有者发布。
+
+单会话分配提供方从部署配置取得卷 UUID，并从 `vfsScriptsRoot` 读取上述两个脚本。该目录、管理密钥、helper 归档和分配记录位于所有工作区挂载之外。执行 VM 镜像需提供 OpenSSH、`sudo`、util-linux 的 `setpriv` 和 `flock`、procps 的 `pgrep`，以及 `virtiofs` 支持。管理连接负责挂载和安装。任务用户的 SSH 密钥只允许启动固定 helper，并允许其 Unix 套接字转发。[OpenSSH 密钥选项](https://man.openbsd.org/sshd.8#AUTHORIZED_KEYS_FILE_FORMAT)
+
 ## 回收执行 VM
 
-停止向该实例派发任务，等待命令和写入完成，再同步文件系统。先卸载 `/workspace`，再卸载卷根。按卷 ID 和实例 ID 解除连接，确认旧实例无法重挂载，再销毁并核对实例列表。结果不明确时，按已记录的 ID 核对资源状态后再重试。保留卷和工作区登记，下一台执行 VM 使用同一登记目录。[Vultr 卷连接管理](https://docs.vultr.com/products/storage/file-system/management/attach-instances)
+单会话 VM 等已排队的输入、命令和写入收尾后，由任务生命周期回收原代次。管理员在原 VM 上禁止 helper 再启动，确认任务用户的进程退出，同步文件系统，再依次卸载 `/workspace` 和卷根。提供方按卷 ID 和实例 ID 解除连接，确认连接消失后删除实例，再确认实例和连接均已消失。下一台 VM 使用同一卷和登记目录。[Vultr 卷连接管理](https://docs.vultr.com/products/storage/file-system/management/attach-instances)
+
+Harness 启动时串行核对保留的记录，后续任务也可触发核对。创建未获应答时用原唯一标签查找实例。卷连接、删除或写入结果仍不明确时，保留原阶段和容量，状态显示 `cleanup_required`。核对时仅操作符合原标签和资源 ID 的实例与连接。
 
 团队预留的 `antfarm-i40-vfs` 卷位于东京（`nrt`），容量 10 GB，ID 为 `a785919f-b9d2-42b9-8771-6d48b28af5b3`。复用前在控制台核对连接与 Mount Tag。

@@ -17,6 +17,10 @@ export interface WorkspaceModeDirectoryResourceConfig extends WorkspaceModeCopyL
   readonly backend: WorkspaceModeTarget['execution']
   /** Resolve the immutable directory mapping and verify its parent/mount, including publication recovery. */
   directory(change: WorkspaceModeChange, signal: AbortSignal): Promise<WorkspaceModeDirectory>
+  /** Prepare the destination before recording its ownership for the staged copy. */
+  prepareDestination?(change: WorkspaceModeChange, directory: WorkspaceModeDirectory): void | Promise<void>
+  /** Give copied files and directories access for the destination's task group. */
+  readonly shareWithGroup?: true
   /** Omitted for bind directories; VM providers return their completed read-only file copy after closure. */
   checkpointRoot?(change: WorkspaceModeChange, signal: AbortSignal): Promise<string>
   /** Omitted for bind directories; VM providers replace their closed file view and obsolete snapshots. */
@@ -31,7 +35,8 @@ const journalSchema = z.strictObject({
   role: z.discriminatedUnion('kind', [
     z.strictObject({ kind: z.literal('source'), phase: z.enum(['checkpointing', 'checkpointed', 'restored', 'retired']), wasRunning: z.boolean() }),
     z.strictObject({ kind: z.literal('target'), phase: z.enum(['staging', 'staged', 'publishing', 'published', 'discarded']),
-      uid: z.number().int().nonnegative(), gid: z.number().int().nonnegative(), rootMode: z.number().int().min(0).max(0o3777) }),
+      uid: z.number().int().nonnegative(), gid: z.number().int().nonnegative(), rootMode: z.number().int().min(0).max(0o3777),
+      shareWithGroup: z.literal(true).optional() }),
   ]),
 })
 type Journal = z.infer<typeof journalSchema>
@@ -74,10 +79,12 @@ export class WorkspaceModeDirectoryResources implements WorkspaceModeResources {
     const directory = await this.directory(change, signal)
     let journal = await this.load(change)
     if (journal === undefined) {
+      await this.config.prepareDestination?.(change, directory)
       const info = await lstat(directory.root)
       if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('Mode destination directory is unavailable')
       journal = this.record(change, directory.root, {
         kind: 'target', phase: 'staging', uid: info.uid, gid: info.gid, rootMode: info.mode & 0o3777,
+        ...this.config.shareWithGroup === true ? { shareWithGroup: true } : {},
       })
       await this.save(change, journal)
     }

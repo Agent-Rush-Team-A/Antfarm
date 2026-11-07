@@ -1,5 +1,5 @@
 /** Real helper dispatch over private in-memory transport, without changing the Harness process cwd. */
-import { readFile, symlink, writeFile } from 'node:fs/promises'
+import { chmod, readFile, stat, symlink, writeFile } from 'node:fs/promises'
 import { describe, expect, it, vi } from 'vitest'
 import { LocalSandboxProvider } from '@deepseek-ai/dsh-sandbox-local'
 import { SubprocessExecutableNotFoundError } from '@deepseek-ai/dsh-subprocess'
@@ -76,6 +76,7 @@ describe.skipIf(process.platform === 'win32')('SSH helper runtime', () => {
       const target = await test.client.request('fs.resolve', { path: 'file.txt' }, targetSchema)
       const created = await test.client.request('fs.write', { target, content: 'first text', policy: policy(test.root), expected: { kind: 'createIfAbsent' } }, writeResultSchema)
       expect(created).toMatchObject({ operation: 'create', before: null, after: 'first text' })
+      expect((await stat(target.targetKey)).mode & 0o777).toBe(0o600)
       await expect(test.client.request('fs.write', { target, content: 'stale', policy: policy(test.root), expected: { kind: 'replaceIfVersion', version: 'stale' } }, writeResultSchema)).rejects.toMatchObject({ code: 'FS_STALE_VERSION' })
       const updated = await test.client.request('fs.write', { target, content: 'second text', policy: policy(test.root), expected: { kind: 'replaceIfVersion', version: created.version } }, writeResultSchema)
       const edited = await test.client.request('fs.edit', { target, edit: { oldString: 'second', newString: 'third', replaceAll: false }, expected: { version: updated.version }, policy: policy(test.root) }, editResultSchema)
@@ -83,6 +84,33 @@ describe.skipIf(process.platform === 'win32')('SSH helper runtime', () => {
       await test.client.request('fs.edit', { target, edit: { oldString: 'third', newString: 'fourth', replaceAll: false }, policy: policy(test.root) }, editResultSchema)
       expect(await test.client.request('fs.readText', { target }, z.string())).toBe('fourth text')
       await expect(test.client.request('fs.write', { target, content: 'denied', policy: { mode: 'read-only', workspaceRoot: test.root } }, writeResultSchema)).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+    } finally { await test.close() }
+  })
+
+  it.skipIf(process.platform !== 'linux')('publishes new VFS text to the group and retains existing file permissions', async () => {
+    const test = await helper(false, 30_000, 'node-script', true)
+    try {
+      await expect(test.client.request('hello', { protocol: 3, workspace: '/tmp', leaseMs: 30_000 }, z.unknown()))
+        .rejects.toThrow('differs from its launch directory')
+      await test.hello()
+      const create = await test.client.request('fs.resolve', { path: 'new.txt' }, targetSchema)
+      const write = (target: typeof create, content: string) => test.client.request('fs.write', {
+        target, content, policy: policy(test.root),
+      }, writeResultSchema)
+      await expect(write(create, 'first')).resolves.toMatchObject({ operation: 'create' })
+      expect((await stat(create.targetKey)).mode & 0o777).toBe(0o660)
+
+      const existing = await test.client.request('fs.resolve', { path: 'published.txt' }, targetSchema)
+      await writeFile(existing.targetKey, 'old')
+      await chmod(existing.targetKey, 0o640)
+      await expect(write(existing, 'updated')).resolves.toMatchObject({ operation: 'update' })
+      expect((await stat(existing.targetKey)).mode & 0o777).toBe(0o640)
+      expect(await readFile(existing.targetKey, 'utf8')).toBe('updated')
+
+      const privateFile = await test.client.request('fs.resolve', { path: 'private.txt' }, targetSchema)
+      await writeFile(privateFile.targetKey, 'private', { mode: 0o600 })
+      await write(privateFile, 'still private')
+      expect((await stat(privateFile.targetKey)).mode & 0o777).toBe(0o600)
     } finally { await test.close() }
   })
 
