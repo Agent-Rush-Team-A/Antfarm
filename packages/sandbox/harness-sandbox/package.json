@@ -52,6 +52,10 @@
     "./files": {
       "types": "./lib/types/files.d.ts",
       "default": "./lib/files.js"
+    },
+    "./vultr": {
+      "types": "./lib/types/vultr.d.ts",
+      "default": "./lib/vultr.js"
     }
   },
   "files": [
@@ -68,7 +72,8 @@
     "lib/typert.remote-client.d.ts",
     "lib/backend.js",
     "lib/ssh.js",
-    "lib/files.js"
+    "lib/files.js",
+    "lib/vultr.js"
   ],
   "license": "MIT",
   "peerDependencies": {

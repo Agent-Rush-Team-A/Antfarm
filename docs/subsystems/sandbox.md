@@ -175,7 +175,7 @@ Provider selection, probing, caching, and backend-specific enforcement reports b
 <a id="workspace-sandbox-management"></a>
 ## Workspace sandbox management
 
-`ctx.workspaceSandbox` authorizes native multiuser ownership and validates the registered persistent directory before calling the configured local Runner or SSH backend. `SandboxRequest` contains only `workspaceId`; `SandboxValue` returns that id and one of `closed`, `starting`, `running`, `closing`, or `cleanup_required`. Browser results omit container identities and paths. `SandboxFailureReason` distinguishes capacity, cleanup, conflicts and unavailable or unconfirmed operations under `sandbox/failed`; a failed query never guesses a state. Explicit-user backend methods retain the full `RunnerRunningSandbox.containerId` for execution integration. See the [package reference](../../packages/sandbox/harness-sandbox/README.md) and [optional Web deployment](../user/guide/workspace-sandboxes.md).
+`ctx.workspaceSandbox` authorizes native multiuser ownership and validates the registered persistent directory before calling the configured local Runner or SSH backend. `SandboxRequest` contains only `workspaceId`; `SandboxValue` returns that id and one of `closed`, `starting`, `running`, `closing`, or `cleanup_required`. Browser results omit container identities and paths; the optional `SandboxProgress` reports cloud phases and sanitized failures. `SandboxFailureReason` distinguishes capacity, cleanup, conflicts and unavailable or unconfirmed operations under `sandbox/failed`; a failed query never guesses a state. Explicit-user backend methods retain the full `RunnerRunningSandbox.containerId` for execution integration. See the [package reference](../../packages/sandbox/harness-sandbox/README.md) and [optional Web deployment](../user/guide/workspace-sandboxes.md).
 
 The internal `ctx.sandboxRunnerClient` transport accepts a complete `RunnerExecutionRequest` bound to its original `RunnerExecutionIdentity`; `RunnerExecutionResult` retains the confirmed exit and output tails. `RunnerCancellationResult` is only an acknowledgement, while `RunnerExecutionError.execution` preserves `RunnerExecutionFailure` cleanup and known Bash status. Local aborts and transport deadlines never confirm remote cleanup. The transport adds neither user authorization nor model tools; the [package reference](../../packages/sandbox/harness-sandbox/README.md#execution-transport) owns request limits, independent budgets and safe result retrieval.
 
@@ -185,7 +185,7 @@ The internal `ctx.sandboxRunnerClient` transport accepts a complete `RunnerExecu
 
 The [Workspace SSH backend](../../packages/sandbox/harness-sandbox/README.md#workspace-ssh) supplies files from the same execution generation as Bash. Trusted consumers enforce their original user and turn permissions and path policy, recheck `assertCurrent()` and pass the captured signal for every operation. Closing or losing that connection invalidates the capability; the local Runner does not substitute host files.
 
-The [Workspace text entry](../../packages/sandbox/harness-sandbox/README.md#workspace-text-tools) applies these checks to native read/write/edit. It preserves native result rendering and optional observed-version policy, confines paths to the captured remote root, and separates observation keys by Workspace and generation. Helper closure waits for accepted file requests; cancellation does not roll back committed writes. Web file transfer requires its own remote integration.
+The [Workspace text entry](../../packages/sandbox/harness-sandbox/README.md#workspace-text-tools) applies these checks to native read/write/edit. It preserves native result rendering and optional observed-version policy, confines paths to the captured remote root, and separates observation keys by Workspace and generation. Helper closure waits for accepted file requests; cancellation does not roll back committed writes. The [Vultr backend](../../packages/sandbox/harness-sandbox/README.md#workspace-vultr) also supplies generation-bound web transfers and completed read-only copies through `ctx.workspaceFileAccess`.
 
 ```ts type-equiv
 /** Files and directory of one original execution generation, never the Harness project directory. */
@@ -376,6 +376,20 @@ abstract execute(workspaceId: WorkspaceId, request: RunnerExecutionRequest, sign
 abstract cancel(workspaceId: WorkspaceId, request: RunnerExecutionIdentity): Promise<RunnerCancellationResult>
 
 /**
+ * Observe work retained by backend preparation or cleanup.
+ * @param _workspaceId - Authorized identity.
+ * @returns Provider-owned work that survives a cancelled caller, or persistent cleanup barriers.
+ */
+activity(_workspaceId: WorkspaceId): Pick<SandboxActivity, 'openings' | 'executions' | 'closing'> | undefined
+
+/**
+ * Observe deployment progress without exposing cloud identities.
+ * @param _workspaceId - Authorized identity.
+ * @returns Optional provider-specific cloud progress without deployment coordinates.
+ */
+progress(_workspaceId: WorkspaceId): SandboxProgress | undefined
+
+/**
  * Access files only in the captured execution generation; unsupported backends refuse rather than using host files.
  * @param _workspaceId - Authorized identity.
  * @param _target - Captured execution generation.
@@ -455,3 +469,5 @@ Types: [UserId](typert.md) · [WorkspaceId](workspace.md)
 
 Source: [`packages/sandbox/harness-sandbox/src/index.ts`](../../packages/sandbox/harness-sandbox/src/index.ts)
 <!-- END GENERATED cordis-surface -->
+
+The optional [Vultr provider](../../packages/sandbox/harness-sandbox/README.md#workspace-vultr) owns versioned cloud records, single-writer locking, snapshot-gated deletion and restoration. Its cloud-owned activity keeps cancelled preparations and persistent failure barriers visible to `activityForUser`; idle timing remains with its consumer. `RunnerClosedSandbox.reconciled` is an internal acknowledgement that original cloud mutation identities have been reconciled and the original VM is confirmed absent; only that acknowledgement can clear prior mutation uncertainty.

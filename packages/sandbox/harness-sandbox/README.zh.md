@@ -1,5 +1,5 @@
 ---
-description: "授权原生工作区沙箱操作，并调用独立的本机 Runner。"
+description: "通过本地 Docker、固定 SSH 或独立 Vultr VM 授权工作区执行。"
 kind: "package-reference"
 ---
 
@@ -48,7 +48,7 @@ kind: "package-reference"
 | `cancelTimeoutMs` | cancel 总期限，默认 15,000 ms；独立于已中止的 exec 等待。 |
 | `maxExecResponseBytes` | exec 完整响应体最大字节数，默认 1 MiB，包含 JSON 转义。 |
 
-三个 Typert 方法为 `workspaceSandbox/open`、`workspaceSandbox/status` 和 `workspaceSandbox/close`，由 Connection 的 POST `/api/<method>` 承载。唯一业务参数是 `request: { workspaceId }`。沿用现有登录 cookie 和 Connection Host/Origin 检查。额外字段、owner 身份和没有用户调用上下文的访问均被拒绝。结果仅含 `{ workspaceId, state }`；管理结果不暴露容器编号或部署路径。
+三个 Typert 方法为 `workspaceSandbox/open`、`workspaceSandbox/status` 和 `workspaceSandbox/close`，由 Connection 的 POST `/api/<method>` 承载。唯一业务参数是 `request: { workspaceId }`。沿用现有登录 cookie 和 Connection Host/Origin 检查。额外字段、owner 身份和没有用户调用上下文的访问均被拒绝。结果含 `{ workspaceId, state }`，可附带云端 `progress`；管理结果不暴露容器编号或部署路径。
 
 每次调用检查原生归属及同一 Workspace Registry 编号。开启还要求登记路径是可信根目录下已存在、无符号链接的直接子目录，并在联系 Runner 前再次检查归属。登记目录丢失或移动后仍可查询和关闭。不存在的工作区及跨用户访问沿用原生 `remote-access/denied` 策略；无效业务输入使用 `gateway/bad-request`。
 
@@ -69,7 +69,43 @@ Runner 失败使用 `sandbox/failed`，详情为 `{ reason, outcomeUnknown }`。
 
 `files(workspaceId, containerId, signal)` 提供原代次的文件系统、远程根目录、取消信号和 `assertCurrent()`。受信任调用方须保留原用户和轮次权限，在每次操作前复核权限与访问有效性，传递访问取消信号，并实施路径约束。后端本身不注册模型工具。本机 Runner 拒绝文件能力请求，不访问宿主文件。
 
-SSH 关闭只释放 helper 及其受管理进程，不关闭或删除 VM。云实例创建、快照、空闲 VM 回收和网页上传下载适配由云迁移负责。绑定和执行记录仅保存在当前进程中；实例隔离依赖正确部署的独立 VM 及 SSH 别名，不能仅凭不同 `instanceId` 字符串确认。同宿主机 SSH 测试验证分派与目录分离，不证明 VM 隔离。
+SSH 关闭只释放 helper 及其受管理进程，不关闭或删除 VM。[Vultr 后端](#workspace-vultr)单独提供云实例创建、快照保存及网页文件传输；空闲计时仍由使用方负责。绑定和执行记录仅保存在当前进程中；实例隔离依赖正确部署的独立 VM 及 SSH 别名，不能仅凭不同 `instanceId` 字符串确认。同宿主机 SSH 测试验证分派与目录分离，不证明 VM 隔离。
+
+<a id="workspace-vultr"></a>
+### Vultr 工作区 VM
+
+可选 [Vultr overlay](../../../apps/cli/config/examples/harness-vultr.patch.yml) 通过 `DSH_VULTR_CONFIG_JSON` 中的部署 JSON 选用 `@deepseek-ai/dsh-harness-sandbox/vultr`，使用方式见[部署指南](../../../docs/user/guide/workspace-vultr.zh.md)。Runner 协调保留在 Harness，每个活跃 Workspace 获得一台独立 VM。私有管理凭据、地区、套餐、镜像和 helper 产物由部署配置选择。首次开启只导入一次登记文件；快照恢复保留执行环境。SSH 和 helper 完整性检查通过后才接纳任务；远程失败不选择宿主执行。
+
+云资源所有者在私有 `stateRoot` 下保存带版本的元数据，并持有独占内核锁。并发调用共用准备操作；重启先核对已记录标签、VM 标识和快照描述，再分配实例。未获确认的创建不重放，归属不明或缺失的资源会阻止依赖工作。提供方卸载收束连接与请求，并保留云磁盘供后续核对。浏览器安全的 `SandboxValue.progress` 提供阶段和脱敏失败分类，不含 VM 标识或路径。
+
+关闭撤销原代次、停止命令并等待 helper 确认写入已收束。生成完整受限文件副本，确认 helper 清理，刷新 VM 磁盘并确认停机后才创建快照。完整快照与副本持久记录成功后才允许删除 VM。保存失败保留源磁盘。关闭中替换失效连接，须由云所有者先确认原 VM 已停机。显式云资源核对可解除管理器的未知修改屏障；本地 Runner 原有的保守行为保持不变。
+
+提供方提供 `ctx.workspaceFileAccess`，上传与产物 API 通过 `storage: provided` 选用。关闭后的列表和下载使用私有只读副本；上传或执行恢复 VM 并更新代次。副本文件从不在 Harness 上执行。`maxInstances`、轮询与期限设置、`maxSavedBytes`、`maxSavedFiles` 约束资源使用。容量计入待完成创建和本部署的孤立实例。完整的新保存替换旧快照；快照存储仍会计费。空闲策略通过 `activityForUser`、`statusForUser`、`closeForUser` 单独提供，本后端不增加空闲计时器。
+
+`/vultr` 入口接受以下部署配置。凭据文件和 `stateRoot` 必须位于所有登记项目之外。首次创建和快照恢复均通过 cloud-init 安装固定的主机密钥；就绪检查确认当前分配标签后才安装 helper。
+
+| 配置 | 默认值 | 含义 |
+| --- | --- | --- |
+| `apiKeyFile` | 必填 | 绝对路径的私有 Vultr 管理密钥文件。 |
+| `stateRoot` | 必填 | 由单个 Harness 持有的绝对路径私有持久目录。 |
+| `deploymentId` | 必填 | 1–32 个字母、数字、`_` 或 `-` 组成的稳定标识。 |
+| `region`, `plan`, `osId` | 必填 | 首次创建使用的 Vultr 地区、套餐和正整数 OS 镜像编号。 |
+| `sshKeyFile` | 必填 | 绝对路径私有客户端密钥；在本地派生公钥。 |
+| `helperArchive` | 必填 | 经过校验的独立 helper 归档绝对路径。 |
+| `helperArchiveHash`, `helperHash` | 必填 | 归档和可执行文件的 SHA-256。 |
+| `remoteRoot` | `/workspace` | VM 上可写的绝对路径目录；跨重启保持不变。 |
+| `apiEndpoint` | `https://api.vultr.com/v2` | HTTPS 管理地址；仅回环测试允许 HTTP。 |
+| `maxInstances` | `2` | 同时存在或创建中的自有 VM 上限，包括孤立实例。 |
+| `requestTimeoutMs` | `30000` | 单次 API 和 helper 请求期限。 |
+| `operationTimeoutMs` | `1800000` | 开启或保存的完整操作期限。 |
+| `pollIntervalMs` | `3000` | 云端与 SSH 就绪轮询间隔。 |
+| `maxInventoryPages` | `100` | 完整云资源列表的最大页数。 |
+| `maxApiResponseBytes` | `4194304` | 完整管理响应体上限。 |
+| `maxSavedBytes` | `1073741824` | 首次导入或单份完整文件副本的总字节上限。 |
+| `maxSavedFiles` | `100000` | 每次导入或复制的普通文件与目录总项数上限。 |
+| `maxExecutions` | `1024` | 每个代次保留的执行记录上限。 |
+| `maxOutputBytes` | `65536` | 保留的命令输出字节上限。 |
+| `graceMs` | `5000` | 受管进程终止宽限期。 |
 
 <a id="workspace-text-tools"></a>
 ### Workspace 文本工具
@@ -173,7 +209,9 @@ Agent 步骤信号在异步工具策略前标识原 turn，工具在发送时重
 <a id="known-limitations-and-deferred-work"></a>
 
 - **部署** — Runner 需要 Linux Unix socket 和单独配置的非 root 文件系统身份。Windows 命名管道仅用于通信测试。
-- **能力** — 只有 Runner Bash 拥有多用户执行例外。文件、搜索、PowerShell、后台、终端、浏览器和间接工具须先完成各自隔离；空闲计时器和网页管理控件仍由其他接入负责。
+- **能力** — 隔离入口启用 Bash 和原生 read/write/edit。搜索、PowerShell、后台、终端、浏览器和间接工具须先完成各自隔离；空闲计时器和网页管理控件仍由其他接入负责。
+- **云端保留** — 删除工作区登记不会移除已保留的云快照或私有副本；部署运维负责已删除工作区的保留策略。关闭后的下载副本仅保留普通文件和目录，符号链接及特殊条目仅保留在完整磁盘快照中。
+- **云端验收** — `DSH_VULTR_TEST_CONFIG` 为[可选真实云端 Loader 测试](tests/vultr-loader.e2e.ts)指定私有部署 JSON，通过 `pnpm exec vitest run --config vitest.e2e.config.ts packages/sandbox/harness-sandbox/tests/vultr-loader.e2e.ts` 运行；`DSH_VULTR_TEST_EVIDENCE` 可选指定报告路径。测试创建两台计费 VM 和磁盘快照，以脚本模型验证真实 SSH 和已认证 HTTP，并移除带有唯一测试标签的资源；它不验证真实模型提供方或浏览器控件。
 - **修改结果不明** — PUT/DELETE 响应丢失后需要部署维护确认旧 Runner 请求已收束。现有协议不能自动解除本进程阻止标记；仅重启 Harness 不能证明远端已收束。
 - **验证** — [可选 Docker 验收夹具](../../../apps/cli/tests/profiles/harness-sandbox/fixtures/docker-acceptance.mjs)使用可控模型及真实鉴权的 Web、Runner profile。它要求 Linux、用于测试准备的 root、当前构建产物及 Linux 依赖、Docker 访问权限，以及由 `M5_DATA_ROOT` 选择且 daemon 可见的专用 `/tmp/antfarm-issue7-m5` 绑定；`M5_EVIDENCE_DIR` 选择证据目录。其独立测试部署与容器为可丢弃资源，不证明真实模型或 Vultr 结果。
 

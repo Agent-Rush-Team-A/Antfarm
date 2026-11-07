@@ -21,8 +21,11 @@
   en: 1c8a8d9d256afcfc
   zh: 5259981d8e7a81b6
 /process-sandbox/workspace-sandbox-management:
-  en: bdd87be1dd3b8857
-  zh: 582f32e3e1bde5d3
+  en: bacf0455c04bf89d
+  zh: b1360ad5d05b94e2
 /process-sandbox/workspace-remote-files:
-  en: 94fcd7a3d47f8043
-  zh: 276ba8a463a7fa44
+  en: 83c738660200d3ad
+  zh: b171727bd030a6a2
+/process-sandbox/cordis-api/ctx-workspacesandbox-workspacesandbox:
+  en: c4a191f8eb4b8ae4
+  zh: 77376d5ea0bd8ffa

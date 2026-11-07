@@ -3,8 +3,8 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/sandbox/harness-sandbox/README.md
 /:
-  en: c25b05444f80c557
-  zh: 15da94265b27c163
+  en: 50e77b7a9face112
+  zh: 8f15f68e78ff417a
 /deepseek-ai-dsh-harness-sandbox:
   en: ca75baea6594ad66
   zh: 478e602b53732af8
@@ -15,11 +15,14 @@
   en: d152484eb41ac6b4
   zh: 3d8cf8aeb7cfa49b
 /deepseek-ai-dsh-harness-sandbox/use-this-package:
-  en: ae76919f0b0914f8
-  zh: a38b3b8e0905612c
+  en: 970174aee2b3d505
+  zh: be5c728ca8a7f359
 /deepseek-ai-dsh-harness-sandbox/use-this-package/workspace-ssh-backend:
-  en: 5238cd8015c3fa30
-  zh: 485e93f075ed8137
+  en: b10f62979718a163
+  zh: 2ce75a578adc20a4
+/deepseek-ai-dsh-harness-sandbox/use-this-package/vultr-workspace-vms:
+  en: a95bd0b0df5b6e1d
+  zh: 758bae5ec6837818
 /deepseek-ai-dsh-harness-sandbox/use-this-package/workspace-text-tools:
   en: b16ca89e4c6a7545
   zh: 00a1125764ec8be1
@@ -57,8 +60,8 @@
   en: a52f5a0d545aa9c9
   zh: 652adb3585e2d66f
 /deepseek-ai-dsh-harness-sandbox/known-limitations-and-deferred-work:
-  en: ae5c4bb41144d575
-  zh: 593ea23352d7fa03
+  en: f94384c459901cbd
+  zh: d6ce8cade5e16976
 /deepseek-ai-dsh-harness-sandbox/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: 8ec3e73528ddb1a6

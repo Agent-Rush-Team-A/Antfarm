@@ -1,5 +1,5 @@
 ---
-description: "Authorize native workspace operations through a local Runner or fixed SSH instances."
+description: "Authorize workspace execution through local Docker, fixed SSH or independent Vultr VMs."
 kind: "package-reference"
 ---
 
@@ -48,7 +48,7 @@ The composition must also load native multiuser, Workspace Registry, Typert and 
 | `cancelTimeoutMs` | Total cancel deadline, default 15,000 ms; independent of an aborted exec wait. |
 | `maxExecResponseBytes` | Maximum complete exec response body, default 1 MiB, including JSON escaping. |
 
-The three Typert methods are `workspaceSandbox/open`, `workspaceSandbox/status`, and `workspaceSandbox/close`, carried by Connection POST `/api/<method>`. Their sole business argument is `request: { workspaceId }`. Use the existing login cookie and Connection Host/Origin checks. Extra fields, owner principals and calls without a user invocation are rejected. Results contain only `{ workspaceId, state }`; container identities and deployment paths never appear in management results.
+The three Typert methods are `workspaceSandbox/open`, `workspaceSandbox/status`, and `workspaceSandbox/close`, carried by Connection POST `/api/<method>`. Their sole business argument is `request: { workspaceId }`. Use the existing login cookie and Connection Host/Origin checks. Extra fields, owner principals and calls without a user invocation are rejected. Results contain `{ workspaceId, state }` with optional cloud `progress`; container identities and deployment paths never appear in management results.
 
 Each call checks native ownership and the same Workspace Registry id. Opening also validates the saved path as an existing non-symlink direct child of the trusted root, then rechecks ownership before contacting the Runner. Queries and closure remain available when the registered directory is missing or moved. Unknown workspaces and cross-user access follow the native `remote-access/denied` policy; invalid business input uses `gateway/bad-request`.
 
@@ -69,7 +69,43 @@ Repeated opens share the same generation. Execution ids retain original requests
 
 `files(workspaceId, containerId, signal)` returns the captured generation's filesystem, remote root, abort signal and `assertCurrent()`. Trusted consumers retain original user/turn authority, recheck it and the lease before each operation, pass the lease signal, and enforce their path policy. The backend does not register model tools. The local Runner refuses file capability requests instead of accessing host files.
 
-SSH close releases the helper and its managed processes; it does not power off or delete the VM. Cloud allocation, snapshots, idle VM reclamation and Web upload/download adaptation belong to cloud migration. Bindings and execution receipts are process-local; endpoint isolation depends on correctly prepared distinct VMs and SSH aliases, not merely distinct `instanceId` strings. Shared-host SSH tests validate dispatch and directory separation, not VM isolation.
+SSH close releases the helper and its managed processes; it does not power off or delete the VM. The [Vultr backend](#workspace-vultr) supplies cloud allocation, snapshot preservation and Web transfers separately; idle timing remains a consumer policy. Bindings and execution receipts are process-local; endpoint isolation depends on correctly prepared distinct VMs and SSH aliases, not merely distinct `instanceId` strings. Shared-host SSH tests validate dispatch and directory separation, not VM isolation.
+
+<a id="workspace-vultr"></a>
+### Vultr Workspace VMs
+
+The optional [Vultr overlay](../../../apps/cli/config/examples/harness-vultr.patch.yml) selects `@deepseek-ai/dsh-harness-sandbox/vultr` with deployment JSON in `DSH_VULTR_CONFIG_JSON`; use the [deployment guide](../../../docs/user/guide/workspace-vultr.md). It keeps Runner coordination on Harness and assigns one bare VM per active Workspace. Private control credentials, region, plan, image and helper artifact are deployment choices. The first open imports registered files once; restored snapshots retain the execution environment. SSH and helper integrity must pass before work is accepted. Remote failure never selects host execution.
+
+The cloud owner persists versioned metadata under private `stateRoot` and holds an exclusive kernel lock. Concurrent callers share preparation; restart reconciles recorded labels, VM ids and snapshot descriptions before allocating. An unacknowledged creation is never replayed, and ambiguous or missing resources block dependent work. Provider unload drains connections and requests while retaining cloud disks for reconciliation. Browser-safe `SandboxValue.progress` exposes phases and sanitized failure categories, without VM ids or paths.
+
+Closure revokes the original generation, stops commands and waits for the helper's write-quiescence acknowledgement. It produces a complete bounded file copy, confirms helper cleanup, flushes the guest disk and confirms stopped power state before snapshotting. Only a complete, durably recorded snapshot and copy authorize VM deletion. Save failure retains the source. A failed connection can be replaced during closure only after the cloud owner confirms the original VM is stopped. Explicit cloud reconciliation may clear the manager's unknown-mutation barrier; the local Runner's earlier conservative semantics remain unchanged.
+
+The provider supplies `ctx.workspaceFileAccess`; upload and artifact APIs select it with `storage: provided`. Closed listings and downloads use the private read-only copy; uploads or execution restore a VM and renew its generation. A copied file is never executed on Harness. `maxInstances`, polling and deadline settings, `maxSavedBytes` and `maxSavedFiles` bound resource usage. Capacity counts pending creation and owned orphan instances. A complete new save replaces superseded snapshots; snapshot storage remains billable. The idle policy is supplied separately through `activityForUser`, `statusForUser` and `closeForUser`; this backend adds no idle timer.
+
+The `/vultr` entry accepts these deployment settings. Keep credential files and `stateRoot` outside every registered project. Creation and snapshot restoration both install the pinned host key through cloud-init; readiness checks the current allocation label before installing the helper.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `apiKeyFile` | Required | Absolute private Vultr management-key file. |
+| `stateRoot` | Required | Absolute private durable directory owned by one Harness. |
+| `deploymentId` | Required | Stable 1–32 character identifier using letters, digits, `_` or `-`. |
+| `region`, `plan`, `osId` | Required | Vultr region, plan and positive OS image id for initial creation. |
+| `sshKeyFile` | Required | Absolute private client-key file; public key is derived locally. |
+| `helperArchive` | Required | Absolute verified standalone-helper archive path. |
+| `helperArchiveHash`, `helperHash` | Required | SHA-256 of the archive and its executable. |
+| `remoteRoot` | `/workspace` | Absolute writable VM directory; keep it stable across restarts. |
+| `apiEndpoint` | `https://api.vultr.com/v2` | HTTPS management endpoint; HTTP is permitted only for loopback tests. |
+| `maxInstances` | `2` | Maximum simultaneous live or pending owned VMs, including orphans. |
+| `requestTimeoutMs` | `30000` | Per-request API and helper deadline. |
+| `operationTimeoutMs` | `1800000` | Total opening or preservation deadline. |
+| `pollIntervalMs` | `3000` | Cloud and SSH readiness polling interval. |
+| `maxInventoryPages` | `100` | Maximum pages per complete cloud inventory. |
+| `maxApiResponseBytes` | `4194304` | Maximum complete management response body. |
+| `maxSavedBytes` | `1073741824` | Aggregate bytes for initial import or one completed file copy. |
+| `maxSavedFiles` | `100000` | Aggregate regular-file and directory entries per import or copy. |
+| `maxExecutions` | `1024` | Maximum retained execution records per generation. |
+| `maxOutputBytes` | `65536` | Retained command-output byte limit. |
+| `graceMs` | `5000` | Managed-process termination grace period. |
 
 <a id="workspace-text-tools"></a>
 ### Workspace text tools
@@ -173,7 +209,9 @@ The stable tool description can share the prompt prefix; results append as ordin
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Deployment** — the Runner requires Linux Unix sockets and a separately provisioned non-root filesystem identity. Windows named pipes support transport tests only.
-- **Capabilities** — Only Runner Bash has a multiuser execution exception. File, search, PowerShell, background, terminal, browser and indirect tools require their own isolation before activation; idle timers and Web management controls remain separate integrations.
+- **Capabilities** — Isolated entries enable Bash and native read/write/edit. Search, PowerShell, background, terminal, browser and indirect tools require their own isolation before activation; idle timers and Web management controls remain separate integrations.
+- **Cloud retention** — Workspace registration deletion does not remove retained cloud snapshots or private copies. Deployment operators manage retention for deleted workspaces. The provider preserves only regular files and directories in the closed download copy; symlinks and special entries remain available only in the full disk snapshot.
+- **Cloud acceptance** — `DSH_VULTR_TEST_CONFIG` selects a private deployment JSON for [the opt-in real-cloud Loader test](tests/vultr-loader.e2e.ts). Run it with `pnpm exec vitest run --config vitest.e2e.config.ts packages/sandbox/harness-sandbox/tests/vultr-loader.e2e.ts`; `DSH_VULTR_TEST_EVIDENCE` optionally selects its report path. It creates two billable VMs and disk snapshots, checks real SSH and authenticated HTTP with a scripted model, and removes its uniquely tagged resources. It does not verify a live model provider or browser controls.
 - **Uncertain mutations** — Lost PUT/DELETE outcomes require deployment maintenance to establish that old Runner requests have settled. This protocol cannot automatically clear that process-local barrier; restarting the Harness alone does not prove remote settlement.
 - **Validation** — the [opt-in Docker acceptance fixture](../../../apps/cli/tests/profiles/harness-sandbox/fixtures/docker-acceptance.mjs) uses a controlled model and real authenticated Web and Runner profiles. It requires Linux, root for test setup, current built artifacts with Linux dependencies, Docker access, and the dedicated daemon-visible `/tmp/antfarm-issue7-m5` bind, selected with `M5_DATA_ROOT`; `M5_EVIDENCE_DIR` selects its evidence directory. Its isolated test deployment and containers are disposable; it establishes no real-model or Vultr result.
 
