@@ -50,6 +50,7 @@ test('bootstrap assigns the stable identity and separates admin commands from th
   const script = await f.provisioning.bootstrap(f.record, f.directory, AbortSignal.timeout(1000))
   expect(script).toContain('groupadd -g 11001 workspace-exec')
   expect(script).toContain('useradd -M -d /home/workspace-exec -u 11001 -g workspace-exec -s /bin/sh workspace-exec')
+  expect(script).toContain('install -d -o workspace-exec -g workspace-exec -m 0700 /home/workspace-exec/.cache')
   const adminKey = written(script, '/etc/ssh/antfarm-keys/root')
   expect(adminKey).toBe('restrict ssh-ed25519 client-public-key\n')
   const taskKey = written(script, '/etc/ssh/antfarm-keys/workspace-exec')

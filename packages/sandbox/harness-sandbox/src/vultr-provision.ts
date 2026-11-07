@@ -231,6 +231,7 @@ export class VultrSshProvisioning implements VultrProvisioning {
       'groupadd -g ' + task + ' workspace-exec',
       'useradd -M -d /home/workspace-exec -u ' + task + ' -g workspace-exec -s /bin/sh workspace-exec',
       'install -d -o root -g root -m 0755 /home/workspace-exec ' + keys + ' ' + guestVfsSetup,
+      'install -d -o workspace-exec -g workspace-exec -m 0700 /home/workspace-exec/.cache',
       write(keys + '/root', 'restrict ' + publicKey),
       write(keys + '/workspace-exec', 'restrict,port-forwarding,command="/usr/bin/sudo -n ' + guestLaunch + '" ' + publicKey),
       'chmod 0644 ' + keys + '/root ' + keys + '/workspace-exec',
