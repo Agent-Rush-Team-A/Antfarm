@@ -57,7 +57,7 @@ kind: "package-reference"
 | workspace | `session/create`、`workspace/follow`、`workspace/rename`、`workspace/delete`、`workspace/insertBefore`、`workspace/insertSessionBefore`、`workspaceUpload/limits`、`workspaceUpload/upload`, `workspaceArtifacts/list`, `workspaceArtifacts/download` | condition 在判定时重新检查归属行。 |
 | session | `workspace/follow`、`session/create`、`session/list`、`session/search`、`session/control`、`session/page`、`session/events`、`session/observeEvent`、`session/observeProjections`、`session/state`、`session/observeState`、`session/wait`、`session/follow`、`session/projections`、`session/prompt`、`session/updateQueue`、`session/cancel`、`session/rename`、`session/fork`、`session/selectModel`、`workspace/insertSessionBefore`、`workspace/archiveSession`、`workspace/unarchiveSession`、`workspace/pinSession`、`workspace/unpinSession`，以及五个 `event:api-session/*` 通知 | Session 成员关系来自权威工作区记录。 |
 
-已认证账号也可调用个人 `userCredentials` API；[个人凭证插件](../user-credentials/README.zh.md)独立于工作区权限检查记录归属。`workspaceRoot` 向 Host 插件提供分配根目录，用于确保私有文件不在挂载目录内。
+已认证账号也可调用个人 `userCredentials` API，包括已绑定模型目录的刷新；[个人凭证插件](../user-credentials/README.zh.md)独立于工作区权限检查记录归属。`workspaceRoot` 向 Host 插件提供分配根目录，用于确保私有文件不在挂载目录内。
 
 其余入口均在派发前拒绝，包括 `workspace/initializeDefault`、仅带 cwd 的 `session/create`、模型默认值写入、附件读取、文件服务、终端、后台任务、设置、全局凭证以及未显式提供资源作用域授权的精确 Fetch 路由。[工作区上传](../workspace-upload/README.zh.md)在上限读取和原始上传路由中均检查工作区归属权限。[工作区文件](../workspace-artifacts/README.zh.md)会检查列表访问的工作区归属，并在二进制下载过程中持续复查。非 global 资源被拒绝时返回 `remote-access/denied` 与 `reason: "not-found"`，不泄露其他账号的资源身份。
 

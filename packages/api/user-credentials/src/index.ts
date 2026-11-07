@@ -10,11 +10,12 @@ import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typer
 import type { PeerScope, UserId } from '@deepseek-ai/dsh-typert-protocol'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-api-multiuser'
+import type {} from '@deepseek-ai/dsh-llm-pi-ai'
 import { loadCredentialKey, encryptCredential, decryptCredential, provisionCredentialKey } from './crypto.ts'
 import { userCredentialsDomain, type EncryptedCredential } from './spec.ts'
 import { inferenceBindingsSchema, installInferenceBindings } from './inference.ts'
 import type { InferenceBinding } from './inference.ts'
-import type { CreateCredentialRequest, CredentialRequest, ReplaceCredentialRequest, UserCredentialId, UserCredentialView } from './types.ts'
+import type { CreateCredentialRequest, CredentialRequest, ReplaceCredentialRequest, RefreshCredentialModelsRequest, CredentialModelCatalogResult, UserCredentialId, UserCredentialView } from './types.ts'
 
 export type * from './types.ts'
 export type { InferenceBinding } from './inference.ts'
@@ -50,6 +51,7 @@ export const Config: schema<Config> = schema.object({
 const createSchema = z.object({ name: z.string().trim().min(1).max(128), value: z.string().min(1) }).strict()
 const idSchema = z.object({ id: z.uuid() }).strict()
 const replaceSchema = z.object({ id: z.uuid(), value: z.string().min(1) }).strict()
+const refreshSchema = z.object({ id: z.uuid(), force: z.boolean().optional() }).strict()
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -149,6 +151,24 @@ export class UserCredentials extends TypertRemoteService {
     return this.safe(() => [...this.table.entries()]
       .filter(([, record]) => record.ownerUserId === caller.userId)
       .map(([, record]) => view(record)))
+  }
+
+  /**
+   * Refresh the public model directory bound to a caller-owned credential.
+   * This never decrypts the credential or tests its inference authorization.
+   * @param request - own credential and optional explicit retry.
+   * @param signal - request lifetime, rechecked after directory work.
+   * @returns safe directory status; failures never change the stored credential.
+   */
+  @Remote
+  async refreshModels(request: RefreshCredentialModelsRequest, signal: AbortSignal): Promise<CredentialModelCatalogResult> {
+    const caller = this.caller(signal)
+    const parsed = parse(refreshSchema, request)
+    const record = this.owned(caller.userId, parsed.id)
+    const result = await this.refreshBoundModels(record.name, parsed.force ?? false)
+    this.assertLive(caller)
+    this.owned(caller.userId, parsed.id)
+    return result
   }
 
   /**
@@ -261,6 +281,7 @@ export class UserCredentials extends TypertRemoteService {
   }
 
   private async notifyModels(name: string): Promise<void> {
+    await this.refreshBoundModels(name, false)
     for (const binding of this.config.inferenceBindings) {
       if (binding.credentialName !== name) continue
       try { await this.ctx.parallel('llm/models-updated', binding.provider) }
@@ -269,6 +290,26 @@ export class UserCredentials extends TypertRemoteService {
         this.ctx.logger.warn('Personal credential saved; model catalog refresh failed. Reopen the model selector.')
       }
     }
+  }
+
+  private async refreshBoundModels(name: string, force: boolean): Promise<CredentialModelCatalogResult> {
+    const bindings = this.config.inferenceBindings.filter(binding => binding.credentialName === name)
+    let outcome: CredentialModelCatalogResult = { status: 'unsupported', modelCount: 0 }
+    for (const binding of bindings) {
+      try {
+        const result = await this.ctx.waterfall('llm-pi-ai/refresh-models', { provider: binding.provider, force },
+          () => Promise.resolve({ status: 'unsupported' as const, modelCount: 0 }))
+        const status = outcome.status === 'failed' || result.status === 'failed' ? 'failed'
+          : outcome.status === 'stale' || result.status === 'stale' ? 'stale'
+            : outcome.status === 'ready' || result.status === 'ready' ? 'ready' : 'unsupported'
+        outcome = { status, modelCount: outcome.modelCount + result.modelCount }
+      } catch (_error) {
+        // Directory observers cannot undo an already committed credential write.
+        this.ctx.logger.warn('Personal credential is saved; its model directory could not be loaded. Retry loading models.')
+        outcome = { status: 'failed', modelCount: outcome.modelCount }
+      }
+    }
+    return outcome
   }
 
   private safe<T>(operation: () => T): T {

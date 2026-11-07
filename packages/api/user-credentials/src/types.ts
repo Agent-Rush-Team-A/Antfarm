@@ -29,6 +29,20 @@ export interface ReplaceCredentialRequest extends CredentialRequest {
   readonly value: string
 }
 
+/** Refresh only a provider bound to one caller-owned credential. */
+export interface RefreshCredentialModelsRequest extends CredentialRequest {
+  /** Bypass directory freshness for a user-requested retry. @default false */
+  readonly force?: boolean
+}
+
+/** Public directory status, independent of inference authorization. */
+export interface CredentialModelCatalogResult {
+  /** Ready list, retained stale list, failed load, or an unbound credential. */
+  readonly status: 'ready' | 'stale' | 'failed' | 'unsupported'
+  /** Number of models advertised after the attempt. */
+  readonly modelCount: number
+}
+
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
     /** A personal credential does not exist for the caller. */

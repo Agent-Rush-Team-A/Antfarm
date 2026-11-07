@@ -60,6 +60,7 @@ const GLOBAL_ACTIONS = [
   'userCredentials/replace',
   'userCredentials/delete',
   'userCredentials/check',
+  'userCredentials/refreshModels',
 ] as const
 
 /** Actions allowed on a workspace the account owns. */

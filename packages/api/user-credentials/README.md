@@ -59,6 +59,8 @@ Responses contain only ID, name, configured state and timestamps. Checks authent
 
 An optional `inferenceBindings` array binds each pi-ai provider to an exact `baseURL` and account-local `credentialName`. Configure the pi-ai route with `credentialScope: request`; it never falls back to deployment keys, including when the consumer is unloaded. For example, bind provider `vultr`, endpoint `https://api.vultrinference.com/v1` and name `Vultr API Key`, then configure its `openai-completions` route and chosen model. HTTPS is required; `allowLoopbackHttp` permits only explicitly configured local test providers. Model catalogs expose configured metadata without reading credentials; authorization happens only at inference. Inference captures the authenticated prompt principal at the current turn, rejects mixed-account input, and rechecks live Session ownership before decrypting. Calls without a live authorized turn, duplicate matching names, and endpoint changes are refused. The Host-only credential waterfall is not forwarded to the browser; only the selected transport receives the secret. Saving, replacing and deleting bound credentials publish only model-catalog invalidation metadata.
 
+Saving or replacing a bound credential refreshes its opt-in public model directory before notifying selectors. `refreshModels` accepts only an owned credential ID and an optional `force` retry; callers cannot supply an endpoint or another account. The result reports directory status and model count without decrypting the credential. A directory failure preserves a committed credential and does not claim that its key is valid.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

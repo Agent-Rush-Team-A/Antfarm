@@ -86,6 +86,43 @@ it('initializes an empty deployment once and preserves the key and credentials a
   expect(await f.invoke(alice, 'check', { id: record.id })).toEqual({ readable: true })
 })
 
+it('refreshes only routes bound to caller-owned credentials without exposing a key', async () => {
+  const f = await setup(undefined, { inferenceBindings: [
+    { provider: 'vultr', baseURL: 'https://api.vultrinference.com/v1', credentialName: 'Vultr API Key' },
+  ] })
+  const requests: unknown[] = []
+  f.ctx.on('llm-pi-ai/refresh-models', async (request, next) => {
+    if (request.provider !== 'vultr') return next()
+    requests.push(request)
+    return { status: 'ready', modelCount: 12 }
+  })
+  const alice = await f.login('alice'); const bob = await f.login('bob')
+  const record = await f.invoke<UserCredentialView>(alice, 'create', { name: 'Vultr API Key', value: 'PRIVATE-CANARY' })
+  expect(requests).toEqual([{ provider: 'vultr', force: false }])
+  expect(await f.invoke(alice, 'refreshModels', { id: record.id, force: true })).toEqual({ status: 'ready', modelCount: 12 })
+  await expect(f.invoke(bob, 'refreshModels', { id: record.id })).rejects.toMatchObject({ code: 'user-credentials/not-found' })
+  await expect(f.invoke(bob, 'refreshModels', { id: randomUUID() })).rejects.toMatchObject({ code: 'user-credentials/not-found' })
+  await expect(f.invoke(alice, 'refreshModels', { id: record.id, baseURL: 'https://attacker.example' }))
+    .rejects.toMatchObject({ code: 'user-credentials/invalid-request' })
+  expect(JSON.stringify(requests)).not.toContain('PRIVATE-CANARY')
+  await f.invoke(alice, 'replace', { id: record.id, value: 'REPLACEMENT-CANARY' })
+  expect(requests.at(-1)).toEqual({ provider: 'vultr', force: false })
+  const other = await f.invoke<UserCredentialView>(alice, 'create', { name: 'Unbound key', value: 'UNBOUND-CANARY' })
+  expect(await f.invoke(alice, 'refreshModels', { id: other.id })).toEqual({ status: 'unsupported', modelCount: 0 })
+})
+
+it('preserves a committed credential when model discovery observers fail', async () => {
+  const f = await setup(undefined, { inferenceBindings: [
+    { provider: 'vultr', baseURL: 'https://api.vultrinference.com/v1', credentialName: 'Vultr API Key' },
+  ] })
+  f.ctx.on('llm-pi-ai/refresh-models', () => { throw new Error('SECRET-DIAGNOSTIC') })
+  const alice = await f.login('alice')
+  const record = await f.invoke<UserCredentialView>(alice, 'create', { name: 'Vultr API Key', value: 'PRIVATE-CANARY' })
+  expect(await f.invoke(alice, 'list')).toEqual([record])
+  expect(await f.invoke(alice, 'refreshModels', { id: record.id })).toEqual({ status: 'failed', modelCount: 0 })
+  expect(await f.invoke(alice, 'check', { id: record.id })).toEqual({ readable: true })
+})
+
 it('refuses to generate a replacement key when the encrypted store is nonempty', async () => {
   const f = await setup(undefined, { initializeKeyIfEmpty: true }, false)
   const alice = await f.login('alice')
