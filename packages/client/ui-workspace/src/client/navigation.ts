@@ -1,3 +1,4 @@
+import { multipleSessions } from './mode-policy.ts'
 /** Workspace archive and directory UI capability. */
 
 import { Service, type Context } from '@deepseek-ai/cordis'
@@ -183,6 +184,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
    * @param sessions - pure Session Controller.
    * @param view - the browser's viewing-store write set (one instance shared with its registration).
    * @param notify - show one notice through the Workspace notice channel.
+   * @param configureMode - Offer mode choices before an explicit first-Session continuation.
    */
   constructor(
     ctx: Context,
@@ -191,6 +193,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     private readonly sessions: ISessions,
     private readonly view: Pick<WorkspaceViewStoreActions, 'pinSessionOrder'>,
     private readonly notify: (toast: RowToast) => void,
+    private readonly configureMode: (workspaceId: WorkspaceId, begin: () => void) => void,
   ) {
     super(ctx, 'uiWorkspace')
     ctx.effect(() => {
@@ -235,6 +238,12 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   private createInWorkspace(workspace: WorkspaceView, options: Pick<StartSessionOptions, 'agentPreset'>): Promise<SessionId> {
     const archived = this.workspaces.list.getSnapshot().archivedSessionIds
     const sessions = this.sessions.list.getSnapshot()
+    const first = workspace.modeConfig.firstSessionId
+    if (!multipleSessions(workspace) && first !== null) {
+      return sessions.byId[first]?.blank === true
+        ? this.createNamed({ workspaceId: workspace.workspaceId, sessionId: first })
+        : Promise.resolve(first)
+    }
     const blank = sessions.ids.find((id) => {
       const summary = sessions.byId[id]
       const listed = summary?.projectionValues?.agentPreset
@@ -299,6 +308,15 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     beforeOpen?: (sessionId: SessionId) => void,
     options: Pick<StartSessionOptions, 'agentPreset'> = {},
   ): Promise<void> {
+    const row = this.workspaces.list.getSnapshot().items.find(item => item.workspaceId === workspaceId)
+    if (row?.modeConfig.firstSessionId === null) {
+      let opening: Promise<void> | undefined
+      this.configureMode(workspaceId, () => {
+        opening = this.openWorkspaceSession(workspaceId, beforeOpen, options)
+        void opening.catch((error: unknown) => { console.warn('configured Session creation failed:', error) })
+      })
+      return opening ?? Promise.resolve()
+    }
     return this.openWorkspaceSession(workspaceId, beforeOpen, options)
   }
 
@@ -357,14 +375,16 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       this.clearMain()
       return
     }
-    const opening = this.openWorkspace(target, initializeDraft ? (id) => {
-      const binding = this.sessions.binding(id)
-      if (binding === undefined) this.draftPreparationFailed()
-      this.prepareDraft(binding, draftOptions)
-    } : undefined, agentPreset === undefined ? {} : { agentPreset })
-    void opening.catch(
-      (reason: unknown) => { console.warn('new session failed:', reason) },
-    )
+    const begin = (): void => {
+      if (this.lifetime.signal.aborted) return
+      const opening = this.openWorkspace(target, initializeDraft ? (id) => {
+        const binding = this.sessions.binding(id)
+        if (binding === undefined) this.draftPreparationFailed()
+        this.prepareDraft(binding, draftOptions)
+      } : undefined, agentPreset === undefined ? {} : { agentPreset })
+      void opening.catch((reason: unknown) => { console.warn('new session failed:', reason) })
+    }
+    begin()
   }
 
   private prepareDraft(binding: SessionBinding, options: DraftInitializationOptions): void {
@@ -489,7 +509,11 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       if (navigation.aborted) return
       target = prepared?.workspaceId
     }
-    if (sessionId === undefined && target !== undefined) sessionId = await this.connectWorkspace(target)
+    if (sessionId === undefined && target !== undefined) {
+      const row = this.workspaces.list.getSnapshot().items.find(item => item.workspaceId === target)
+      // Fresh Workspaces remain configurable until the user starts the first Session.
+      if (row?.modeConfig.firstSessionId !== null) sessionId = await this.connectWorkspace(target)
+    }
     if (sessionId !== undefined && !navigation.aborted) {
       this.replaceMain(sessionId, navigation, 'preserve')
     }

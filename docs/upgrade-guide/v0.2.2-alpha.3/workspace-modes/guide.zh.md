@@ -20,3 +20,4 @@ Workspace Remote 投影现在要求 `modeConfig`，Client Workspace 服务要求
 3. 运行时提供方从 `@deepseek-ai/dsh-workspace/types` 导入 `WorkspaceModeRuntime` 和 `IWorkspaceModes`，在切换模式前通过 `ctx.workspaceRegistry.modes.registerRuntime` 注册。
 4. 更新外部 Workspace mock 和协议消费者，提供 `WorkspaceView.modeConfig`，实现 `IWorkspaces.getMode` 与 `IWorkspaces.setMode`，并保留错误的 `WorkspaceModeCommandError.rpcError`。
 5. 验证新注册的工作区报告版本 0 和未锁定模式配置。
+6. 在 Web 界面中，先选择工作区模式，再点击**开始会话**。新工作区不再在启动或目录登记后立即创建首个 Session；已有工作区的永久锁定保持不变。

@@ -16,7 +16,7 @@ import clsx from 'clsx'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   HoverCard, IconArchiveOutlineRegular,
-  IconEllipsisOutlineRegular, IconFolderCloseRegular, IconFolderOpenRegular,
+  IconEllipsisOutlineRegular, IconFolderCloseRegular, IconFolderOpenRegular, IconShieldOutlineRegular,
   IconNewChatOutlineRegular, IconPinFillRegular,
   IconTriangleRightFillRegular, IconUnarchiveOutlineRegular, relativeTime, StateDot, Tooltip, useRowDragPreview,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -220,6 +220,7 @@ function rowHalf(e: { clientY: number; currentTarget: HTMLElement }): 'before' |
 
 /** Owner props of one Workspace header row; the access Hooks are the browser root's own standard seats. */
 type ProjectRowItemProps = {
+  configureWorkspace?: ((workspaceId: WorkspaceId) => void) | undefined
   group: GroupNode
   newShortcut?: ShortcutCatalogEntry | undefined
   containsCurrentDescendant?: boolean
@@ -235,6 +236,7 @@ type ProjectRowItemProps = {
 /** Which of one header row's actions the caller's access snapshot allows. */
 interface ProjectRowAccess {
   readonly create: boolean
+  readonly configure?: boolean
   readonly reorder: boolean
 }
 
@@ -272,13 +274,14 @@ function WorkspaceProjectRow({ workspaceId, ...props }: ProjectRowItemProps & { 
   const { useWorkspaceAccess } = props
   const access: ProjectRowAccess = {
     create: useWorkspaceAccess(workspaceId, 'session/create'),
+    configure: useWorkspaceAccess(workspaceId, 'workspace/getMode'),
     reorder: useWorkspaceAccess(workspaceId, 'workspace/insertBefore'),
   }
   return <ProjectRow {...props} access={access} />
 }
 
 function ProjectRow({
-  group, containsCurrentDescendant = false, onToggle, onCreate, drag: offeredDrag, home, newShortcut, t, access,
+  configureWorkspace, group, containsCurrentDescendant = false, onToggle, onCreate, drag: offeredDrag, home, newShortcut, t, access,
   openWorkspaceMenu, useContextMenuTarget, useContextMenu,
 }: ProjectRowItemProps & { access: ProjectRowAccess }) {
   const { getTriggerProps } = useContextMenu()
@@ -320,6 +323,14 @@ function ProjectRow({
         <span className={css.title}>{label}</span>
       </span>
       <span className={css.rowActions}>
+        {access.configure && configureWorkspace !== undefined && row.workspaceId !== undefined &&
+          <Tooltip label={t('mode.title')} portal>
+            <button type="button" className={css.iconButton} aria-label={t('mode.title')}
+              onClick={(event) => { event.stopPropagation(); if (row.workspaceId !== undefined) configureWorkspace(row.workspaceId) }}>
+              <IconShieldOutlineRegular size={14} />
+            </button>
+          </Tooltip>}
+
         {workspaceMenuTarget !== undefined && (
           <button type="button" className={css.iconButton} data-context-menu-trigger
             aria-label={t('actions.workspace.aria', { name: label })} aria-haspopup="menu" aria-expanded={menuOpen}
