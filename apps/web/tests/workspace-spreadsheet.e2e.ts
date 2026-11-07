@@ -277,6 +277,7 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
       await record('second-session-shares-files-and-vm')
       await prompt('请测试 bash 超时：执行 echo $$ > timeout.pid; sleep 20，timeoutMs 必须设为 1000。收到超时错误后，再用 bash 检查 timeout.pid 中的进程已经退出，并创建 timeout-confirmed.txt，内容为 TIMEOUT_PROCESS_GONE。不要重复 sleep 命令。检查成功后只回复：超时清理已确认', '超时清理已确认')
       await currentPage.getByRole('button', { name: /^Completed in /u }).last().click()
+      await currentPage.getByRole('button', { name: 'Ran commands', exact: true }).last().click()
       const timeout = currentPage.locator('[data-tool="bash"][data-state="error"]').filter({ hasText: 'Command timed out after 1000ms.' }).first()
       await timeout.waitFor()
       await timeout.scrollIntoViewIfNeeded()
