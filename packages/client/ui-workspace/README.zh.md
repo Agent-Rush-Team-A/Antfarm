@@ -237,6 +237,8 @@ Workspace 与 Session 悬浮卡片会复制对应行被截断的值：激活 Wor
 
 -----
 
+每个工作区菜单都提供配置入口，无须加载执行环境 Provider。表单读取 `modeConfig`，通过 `IWorkspaces.setMode` 和已观察的 revision 保存，显示首个会话的永久锁定及操作恢复状态。并发编辑需要明确刷新；修改失败时保留已提交模式，并提供本地化恢复提示。
+
 <a id="model-experience"></a>
 ## 模型体验
 

@@ -236,6 +236,8 @@ These pages cover the sidebar host, the hero surface, and the picking backends.
 
 -----
 
+Workspace configuration is available from each Workspace menu without an execution provider. The form reads `modeConfig`, saves through `IWorkspaces.setMode` with the observed revision, and displays permanent first-Session locking and operational recovery states. Concurrent edits require an explicit refresh; a failed change retains the committed mode and reports localized recovery guidance.
+
 <a id="model-experience"></a>
 ## Model Experience
 

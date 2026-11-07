@@ -1,3 +1,4 @@
+import { registerModeUi } from './mode-ui.ts'
 import { WorkspaceFilesButton, type WorkspaceFilesInjected } from './WorkspaceFilesButton.tsx'
 import type {} from '@deepseek-ai/dsh-api-workspace-artifacts/client'
 import { IconEditOutlineRegular, IconTrashOutlineRegular, IconPinFillRegular, IconPinOutlineRegular, IconUnarchiveOutlineRegular, IconArchiveOutlineRegular, IconBranchOutlineRegular, IconCopyOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -163,6 +164,7 @@ export function apply(ctx: Context): void {
     },
   })
   ctx.effect(() => ctx.locale.register(NS, { zh, en, ja, es, fr, de, ru, pt }), 'ui-workspace: dictionaries')
+  registerModeUi(ctx, workspaces)
   const shortcutControls = createWorkspaceShortcutControls()
 
   const searchSessions: WorkspaceBrowserInjected['searchSessions'] = async (query, signal) => {
