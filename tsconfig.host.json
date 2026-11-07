@@ -8,6 +8,9 @@
     "rewriteRelativeImportExtensions": false
   },
   "include": [
+    "apps/web/tests/workspace-spreadsheet-support.ts",
+    "apps/web/tests/workspace-spreadsheet-support.spec.ts",
+    "apps/web/tests/workspace-spreadsheet.e2e.ts",
     "apps/web/tests/workspace-upload.e2e.ts",
     "apps/web/tests/workspace-artifacts.e2e.ts",
     "apps/web/tests/workspace-sandbox.e2e.ts",

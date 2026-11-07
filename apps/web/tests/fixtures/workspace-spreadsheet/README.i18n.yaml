@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write apps/web/tests/fixtures/workspace-spreadsheet/README.md
+/real-cloud-spreadsheet-acceptance:
+  en: fbef4aad932f5992
+  zh: 78a520fb1e99e117
+/real-cloud-spreadsheet-acceptance/prerequisites:
+  en: 30224a46e0aab548
+  zh: 3d5e6542531fe531
+/real-cloud-spreadsheet-acceptance/run:
+  en: 6fa3d333368a0fe5
+  zh: 8e41c368a7bb9d0d
+/real-cloud-spreadsheet-acceptance/inputs-and-assertions:
+  en: 687da6992c6f2651
+  zh: c94c994906cd9f82
+/real-cloud-spreadsheet-acceptance/evidence:
+  en: f78d46db245c2022
+  zh: 8490668176f08999
