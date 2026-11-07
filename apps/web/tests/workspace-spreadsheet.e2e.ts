@@ -15,6 +15,7 @@ import { REPO_ROOT, requireDist, writeComposerDraft } from './support.ts'
 
 const configPath = process.env.DSH_VULTR_TEST_CONFIG
 const inferenceKeyPath = process.env.DSH_VULTR_INFERENCE_KEY_FILE
+const idleTimeoutMs = 600_000
 const fixture = fileURLToPath(new URL('./fixtures/workspace-spreadsheet/', import.meta.url))
 const configuration = z.looseObject({ apiKeyFile: z.string(), apiEndpoint: z.string().default('https://api.vultr.com/v2') })
 const workspaceResult = z.object({ workspace: z.object({ workspaceId: z.string(), title: z.string() }) })
@@ -86,8 +87,8 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
     await writeFile(join(runDir, 'run.json'), JSON.stringify({ deploymentId, root, runDir,
       commit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim(),
       dirty: execFileSync('git', ['status', '--porcelain'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim() !== '',
-      provider: 'vultr', model: 'deepseek-v4.1-flash-1017', maxInstances: 2, initialIdleTimeoutMs: 3_600_000,
-      finalIdleTimeoutMs: 5000, realModel: true, realCloud: true, browser: 'isolated headless Playwright',
+      provider: 'vultr', model: 'deepseek-v4.1-flash-1017', maxInstances: 2, idleTimeoutMs,
+      sweepIntervalMs: 1000, realModel: true, realCloud: true, browser: 'isolated headless Playwright',
       cloud: { region: initial.region, plan: initial.plan, osId: initial.osId,
         requestTimeoutMs: initial.requestTimeoutMs, operationTimeoutMs: initial.operationTimeoutMs,
         helperArchiveHash: initial.helperArchiveHash, helperHash: initial.helperHash },
@@ -176,7 +177,7 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
         '--storage-root', join(home, 'storages'), '--username', username],
       { cwd: REPO_ROOT, env: { ...env, DSH_MULTIUSER_PASSWORD: password }, stdio: 'ignore' })
       await completion(provision)
-      let base = await startServer(3_600_000)
+      const base = await startServer(idleTimeoutMs)
       browser = await chromium.launch({ args: ['--no-sandbox'] })
       context = await browser.newContext({ locale: 'en-US', viewport: { width: 1440, height: 900 },
         recordVideo: { dir: join(runDir, 'videos'), size: { width: 1440, height: 900 } } })
@@ -295,6 +296,8 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
       }
       expect((await stateOf(b.workspaceId)).instanceId).not.toBe(original.instanceId)
       await record('separate-workspace-files-and-vm')
+      const isolatedSession = await currentPage.locator('[data-conversation-session]').first().getAttribute('data-conversation-session')
+      if (isolatedSession === null) throw new Error('The isolated Workspace Session is missing')
       const c = await workspace('Capacity C')
       const capacity = await panel()
       await capacity.getByRole('button', { name: 'Open sandbox', exact: true }).click()
@@ -327,19 +330,15 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
       await prompt('请使用 bash 读取工作区内的销售明细.csv、月度汇总.csv 和年度汇总.json，确认都可用且年度金额与月度汇总一致。成功后只回复：恢复后任务已验证', '恢复后任务已验证')
       await screenshot('restored-model-confirmation')
       await record('restored-files-and-real-model', restored)
-      await stopServer()
-      base = await startServer(5000)
-      await login()
-      await choose(a.title, sharedSession)
-      await prompt('请使用 bash 执行 true，成功后只回复：空闲计时已开始', '空闲计时已开始')
+      await choose(b.title, isolatedSession)
       const idle = await panel()
-      await expect.poll(async () => (await stateOf(a.workspaceId)).state, { timeout: 2_400_000, interval: 1000 }).toBe('closed')
+      await expect.poll(async () => (await stateOf(b.workspaceId)).state, { timeout: 2_400_000, interval: 1000 }).toBe('closed')
       await idle.getByRole('button', { name: 'Refresh status', exact: true }).click()
       await idle.getByRole('status').getByText('Closed', { exact: true }).waitFor()
       await screenshot('idle-reclaimed')
       await currentPage.keyboard.press('Escape')
-      expect(await download('月度汇总.csv')).toEqual(monthly)
-      await record('idle-reclaimed-and-download-preserved')
+      expect((await download('isolation.txt')).toString().trim()).toBe('WORKSPACE_ISOLATED')
+      await record('idle-reclaimed-and-download-preserved', { workspaceId: b.workspaceId, idleTimeoutMs })
       const logs: string[] = []
       for await (const path of glob(['**/*.jsonl', '**/*.jsonl.zstd'], { cwd: root })) {
         const bytes = await readFile(join(root, path))
