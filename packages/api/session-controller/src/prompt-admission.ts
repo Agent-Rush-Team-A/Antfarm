@@ -16,6 +16,11 @@ export interface SessionPromptAdmission {
    */
   prepare(callback: (agent: Agent) => Promise<void>): void
   /**
+   * Ready resources after receipt, image-model and attachment validation, before inbox insertion.
+   * @param callback - Awaited readiness for the exact recovered Agent; caller cancellation prevents insertion.
+   */
+  ready(callback: (agent: Agent) => Promise<void>): void
+  /**
    * Check and bind the final message immediately before synchronous inbox insertion.
    * @param callback - Synchronous check; throwing prevents insertion, and no await follows it.
    */

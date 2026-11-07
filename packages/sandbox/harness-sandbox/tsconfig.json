@@ -85,6 +85,9 @@
     },
     {
       "path": "../../../native/system/packages/entry"
+    },
+    {
+      "path": "../../util/values"
     }
   ]
 }

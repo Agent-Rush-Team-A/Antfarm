@@ -2756,6 +2756,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Providers share lifecycle and original-request semantics without choosing user permissions.',
     methods: [
       {
+        signature: 'admit(scope: WorkspaceFileScope): SandboxExecutionAdmission | Promise<SandboxExecutionAdmission>',
+        description: 'Capture execution before asynchronous preparation; ordinary providers need no mode coordinator.',
+        parameters: [{ name: 'scope', description: 'Original workspace registration, authority and caller cancellation.' }],
+        returns: 'A lazy selection; mode providers override this to retain shared admission and task resources.',
+      },
+      {
         signature: 'abstract open(workspaceId: WorkspaceId, workspaceDir: string): Promise<RunnerRunningSandbox>',
         description: 'Open or reuse the authorized Workspace\'s execution generation.',
         parameters: [{ name: 'workspaceId', description: 'Authorized identity.' }, { name: 'workspaceDir', description: 'Registered project path, separate from execution coordinates.' }],
@@ -2790,6 +2796,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Observe work retained by backend preparation or cleanup.',
         parameters: [{ name: '_workspaceId', description: 'Authorized identity.' }],
         returns: 'Provider-owned work that survives a cancelled caller, or persistent cleanup barriers.',
+      },
+      {
+        signature: 'barrier(_workspaceId: WorkspaceId): Extract<RunnerSandboxStatus, { state: \'closing\' | \'starting\' | \'cleanup_required\' }> | undefined',
+        description: 'Inspect a locally owned closure barrier without queuing behind that closure.',
+        parameters: [{ name: '_workspaceId', description: 'Authorized workspace.' }],
+        returns: 'Closing or cleanup-required when owned locally; omission requires a fresh provider query.',
       },
       {
         signature: 'progress(_workspaceId: WorkspaceId): SandboxProgress | undefined',
@@ -5043,6 +5055,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Full running identity for trusted execution integration.',
       },
       {
+        signature: 'async reserveForUser(userId: UserId, workspaceId: WorkspaceId, signal: AbortSignal, check?: () => void): Promise<SandboxExecutionAdmission>',
+        description: 'Count task preparation before allocating an environment and retain its original backend.',
+        parameters: [{ name: 'userId', description: 'Authenticated initiating user.' }, { name: 'workspaceId', description: 'Original native workspace.' }, { name: 'signal', description: 'Message permit lifetime, detached from HTTP cancellation after inbox insertion.' }, { name: 'check', description: 'Optional original-session authority check; omitted for workspace-only operations.' }],
+        returns: 'A lazy reservation; release after failed preparation or complete input/resource settlement.',
+      },
+      {
         signature: 'async statusForUser(userId: UserId, workspaceId: WorkspaceId, signal?: AbortSignal): Promise<RunnerSandboxStatus>',
         description: 'Observe a sandbox for an authenticated backend initiator.',
         parameters: [{ name: 'userId', description: 'Authenticated initiating user.' }, { name: 'workspaceId', description: 'Native workspace id.' }, { name: 'signal', description: 'Optional observer lifetime; abort suppresses history updates without cancelling the bounded query. Omitted queries record normally.' }],
@@ -5065,6 +5083,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Ends all commands in this container without deleting workspace files or sessions.',
         parameters: [{ name: 'userId', description: 'Authenticated initiating user.' }, { name: 'workspaceId', description: 'Native workspace id.' }, { name: 'target', description: 'Optional original execution generation; stale cleanup cannot close a newer generation.' }],
         returns: 'Confirmed container absence.',
+      },
+      {
+        signature: 'async closeForExecution(permit: SandboxExecutionPermit): Promise<RunnerClosedSandbox>',
+        description: 'Close uncertain work through its retained backend without reacquiring mode admission.',
+        parameters: [{ name: 'permit', description: 'Original authenticated turn and execution generation.' }],
+        returns: 'Confirmed closure; stale generations refuse before deleting a replacement.',
       },
     ],
   },
@@ -8613,6 +8637,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SandboxEnforcement = \'full\' | \'partial\';',
   },
   {
+    name: 'SandboxExecutionAdmission',
+    declaration: 'export interface SandboxExecutionAdmission {\n    readonly backend: Pick<SandboxExecutionBackend, \'open\' | \'close\' | \'status\' | \'execute\' | \'cancel\' | \'files\'>;\n    readonly scope: WorkspaceFileScope;\n    readonly files?: Pick<WorkspaceFileAccess, \'list\' | \'download\' | \'upload\'>;\n    readonly taskManaged: boolean;\n    ready(): Promise<RunnerRunningSandbox>;\n    retain(): Promise<() => Promise<void>>;\n    release(): Promise<void>;\n}',
+  },
+  {
+    name: 'SandboxExecutionBackend',
+    declaration: 'export abstract class SandboxExecutionBackend extends Service {\n    constructor(ctx: Context);\n    admit(scope: WorkspaceFileScope): SandboxExecutionAdmission | Promise<SandboxExecutionAdmission>;\n    abstract open(workspaceId: WorkspaceId, workspaceDir: string): Promise<RunnerRunningSandbox>;\n    abstract status(workspaceId: WorkspaceId): Promise<RunnerSandboxStatus>;\n    abstract close(workspaceId: WorkspaceId): Promise<RunnerClosedSandbox>;\n    abstract execute(workspaceId: WorkspaceId, request: RunnerExecutionRequest, signal?: AbortSignal): Promise<RunnerExecutionResult>;\n    abstract cancel(workspaceId: WorkspaceId, request: RunnerExecutionIdentity): Promise<RunnerCancellationResult>;\n    activity(_workspaceId: WorkspaceId): Pick<SandboxActivity, \'openings\' | \'executions\' | \'closing\'> | undefined;\n    barrier(_workspaceId: WorkspaceId): Extract<RunnerSandboxStatus, {\n        state: \'closing\' | \'starting\' | \'cleanup_required\';\n    }> | undefined;\n    progress(_workspaceId: WorkspaceId): SandboxProgress | undefined;\n    files(_workspaceId: WorkspaceId, _target: SandboxContainerId, _signal?: AbortSignal): Promise<WorkspaceRuntimeFiles>;\n}',
+  },
+  {
     name: 'SandboxExecutionId',
     declaration: 'export type SandboxExecutionId = Branded<\'SandboxExecutionId\'>;',
   },
@@ -8622,7 +8654,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SandboxExecutionPermit',
-    declaration: 'export interface SandboxExecutionPermit {\n    readonly userId: UserId;\n    readonly workspaceId: WorkspaceId;\n    readonly sessionId: SessionId;\n    readonly requestId: SessionRequestId;\n    readonly messageId: UserMessage[\'id\'];\n    readonly containerId: SandboxContainerId;\n    readonly version: number;\n    readonly signal: AbortSignal;\n}',
+    declaration: 'export interface SandboxExecutionPermit {\n    readonly userId: UserId;\n    readonly workspaceId: WorkspaceId;\n    readonly sessionId: SessionId;\n    readonly requestId: SessionRequestId;\n    readonly messageId: UserMessage[\'id\'];\n    readonly containerId: SandboxContainerId;\n    readonly version: number;\n    readonly signal: AbortSignal;\n    readonly resources: SandboxExecutionAdmission;\n}',
   },
   {
     name: 'SandboxExecutionPolicy',
@@ -9274,7 +9306,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionPromptAdmission',
-    declaration: 'export interface SessionPromptAdmission {\n    readonly request: SessionPromptRequest;\n    readonly source: MessageSource;\n    readonly signal: AbortSignal;\n    prepare(callback: (agent: Agent) => Promise<void>): void;\n    beforeEnqueue(callback: (agent: Agent, message: UserMessage) => undefined): void;\n}',
+    declaration: 'export interface SessionPromptAdmission {\n    readonly request: SessionPromptRequest;\n    readonly source: MessageSource;\n    readonly signal: AbortSignal;\n    prepare(callback: (agent: Agent) => Promise<void>): void;\n    ready(callback: (agent: Agent) => Promise<void>): void;\n    beforeEnqueue(callback: (agent: Agent, message: UserMessage) => undefined): void;\n}',
   },
   {
     name: 'SessionPromptRequest',
@@ -10829,6 +10861,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface WorkspaceDirectoryListing {\n    readonly path: string;\n    readonly entries: readonly WorkspaceDirectoryEntry[];\n    readonly truncated: boolean;\n}',
   },
   {
+    name: 'WorkspaceFileAccess',
+    declaration: 'export abstract class WorkspaceFileAccess extends Service {\n    constructor(ctx: Context);\n    abstract list(scope: WorkspaceFileScope, path: string, maxEntries: number): Promise<WorkspaceFileListing>;\n    abstract download(scope: WorkspaceFileScope, path: string, maxBytes: number): Promise<WorkspaceFileDownload>;\n    abstract upload(scope: WorkspaceFileScope, name: string, chunks: AsyncIterable<Uint8Array>, maxBytes: number): Promise<WorkspaceFileUpload>;\n}',
+  },
+  {
     name: 'WorkspaceFileBytes',
     declaration: 'export interface WorkspaceFileBytes<Data extends Uint8Array = Uint8Array> extends WorkspaceFileStat {\n    readonly offset: number;\n    readonly data: Data;\n    readonly eof: boolean;\n}',
   },
@@ -10958,7 +10994,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WorkspaceRuntimeFiles',
-    declaration: 'export interface WorkspaceRuntimeFiles {\n    readonly fs: FileSystem;\n    readonly root: string;\n    readonly signal: AbortSignal;\n    assertCurrent(): void;\n}',
+    declaration: 'export interface WorkspaceRuntimeFiles {\n    readonly fs: FileSystem;\n    readonly root: string;\n    readonly signal: AbortSignal;\n    readonly displayRoot?: string;\n    assertCurrent(): void;\n}',
   },
   {
     name: 'WorkspaceSessionAdmission',

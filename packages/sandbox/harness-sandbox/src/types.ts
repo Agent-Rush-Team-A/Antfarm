@@ -40,5 +40,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'workspace/sandbox-active': { readonly workspaceId: WorkspaceId; readonly state: Exclude<SandboxValue['state'], 'closed'> }
     /** Sanitized Runner failure, preserving whether a modification may have taken effect. */
     'sandbox/failed': { readonly reason: SandboxFailureReason; readonly outcomeUnknown: boolean }
+    /** Single-session environments are started and destroyed by admitted tasks. */
+    'sandbox/manual-operation-forbidden': { readonly workspaceId: WorkspaceId }
   }
 }

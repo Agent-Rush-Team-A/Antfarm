@@ -2831,6 +2831,11 @@
       "doc": "docs/subsystems/workspace.md",
       "symbol": "IWorkspaceModes",
       "source": "packages/workspace/workspace/src/mode-types.ts"
+    },
+    {
+      "doc": "docs/subsystems/sandbox.md",
+      "symbol": "SandboxExecutionAdmission",
+      "source": "packages/sandbox/harness-sandbox/src/backend.ts"
     }
   ]
 }

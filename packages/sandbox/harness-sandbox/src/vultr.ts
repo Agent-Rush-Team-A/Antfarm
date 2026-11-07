@@ -13,6 +13,7 @@ import { VultrWorkspaceController } from './vultr-controller.ts'
 import { WorkspaceSshRuntime } from './ssh-controller.ts'
 import type { RunnerExecutionIdentity, RunnerExecutionRequest } from './execution.ts'
 import type { SandboxContainerId } from './runner-client.ts'
+import { WorkspaceModeDirectoryResources, type WorkspaceModeDirectoryResourceConfig } from './mode-directory-resources.ts'
 
 export { Config } from './vultr-config.ts'
 
@@ -110,4 +111,18 @@ export default class VultrWorkspaceBackend extends SandboxExecutionBackend {
   }
   override activity(workspaceId: WorkspaceId) { return this.controller.activity(workspaceId) }
   override progress(workspaceId: WorkspaceId) { return this.controller.progress(workspaceId) }
+
+  /**
+   * Bind snapshot/cache operations to the exclusive mode resource owner.
+   * @param config - Private transition journals, copy budgets and verified project mapping.
+   * @returns Restart-safe VM file migration and source snapshot retirement.
+   */
+  modeResources(config: Omit<WorkspaceModeDirectoryResourceConfig, 'backend' | 'checkpointRoot' | 'published' | 'retired' | 'mode'>
+    & { readonly mode: 'multi-vm' }): WorkspaceModeDirectoryResources {
+    return new WorkspaceModeDirectoryResources({ ...config, backend: this,
+      checkpointRoot: (change, signal) => Promise.resolve(this.controller.modeCheckpointRoot(change, signal)),
+      published: (change, signal) => this.controller.replaceModeFiles(change, signal),
+      retired: (change, signal) => this.controller.replaceModeFiles(change, signal),
+    })
+  }
 }

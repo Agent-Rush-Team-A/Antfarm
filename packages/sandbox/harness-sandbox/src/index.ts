@@ -11,7 +11,9 @@ import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import { z } from 'zod'
 import { RunnerConfig } from './config.ts'
 import SandboxRunnerClient from './transport.ts'
-import type { SandboxExecutionBackend } from './backend.ts'
+import type { SandboxExecutionBackend, SandboxExecutionAdmission } from './backend.ts'
+import type { WorkspaceFileScope } from '@deepseek-ai/dsh-fs/workspace-access'
+import type { SandboxExecutionPermit } from './conversation.ts'
 import WorkspaceSandboxState, { type SandboxIdleActivity } from './lifecycle.ts'
 import { RunnerRequestError, RunnerResponseError, type RunnerRunningSandbox, type RunnerClosedSandbox, type RunnerSandboxStatus } from './runner-client.ts'
 import type { SandboxRequest, SandboxValue, SandboxFailureReason } from './types.ts'
@@ -191,14 +193,38 @@ export default class WorkspaceSandbox extends TypertRemoteService {
   async openForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerRunningSandbox> {
     this.authorize(userId, workspaceId, 'open')
     this.available()
-    return this.state.open(workspaceId, epoch => this.runner(async () => {
+    if (this.state.closing(workspaceId)) throw new RemoteError('sandbox/failed', reasons.sandbox_closing,
+      { reason: 'sandbox_closing', outcomeUnknown: false })
+    const resources = await this.reserveForUser(userId, workspaceId, new AbortController().signal)
+    try { this.manual(resources); return await resources.ready() }
+    finally { await resources.release() }
+  }
+
+  /**
+   * Count task preparation before allocating an environment and retain its original backend.
+   * @param userId - Authenticated initiating user.
+   * @param workspaceId - Original native workspace.
+   * @param signal - Message permit lifetime, detached from HTTP cancellation after inbox insertion.
+   * @param check - Optional original-session authority check; omitted for workspace-only operations.
+   * @returns A lazy reservation; release after failed preparation or complete input/resource settlement.
+   */
+  async reserveForUser(userId: UserId, workspaceId: WorkspaceId,
+    signal: AbortSignal, check?: () => void): Promise<SandboxExecutionAdmission> {
+    const epoch = this.state.capture(workspaceId)
+    const scope = this.scopeForUser(userId, workspaceId, 'open', AbortSignal.any([signal, epoch.signal]),
+      () => { this.state.check(workspaceId, epoch); check?.() })
+    const resources = await this.runner(() => Promise.resolve(this.client.admit(scope)))
+    try { resources.scope.admit() }
+    catch (error) { await resources.release(); throw error }
+    return { ...resources, ready: () => this.state.open(workspaceId, epoch => this.runner(async () => {
+      resources.scope.admit()
       this.state.check(workspaceId, epoch)
       const path = await this.directory(workspaceId)
-      this.authorize(userId, workspaceId, 'open')
-      this.available()
+      resources.scope.admit()
       this.state.check(workspaceId, epoch)
-      return this.client.open(workspaceId, path)
-    }))
+      if (path !== scope.project) throw new RemoteError('gateway/cancelled', 'Workspace registration changed', {})
+      return resources.ready()
+    })) }
   }
 
   /**
@@ -213,12 +239,14 @@ export default class WorkspaceSandbox extends TypertRemoteService {
     this.authorize(userId, workspaceId, 'status')
     this.available()
     if (this.state.closing(workspaceId)) return Promise.resolve({ state: 'closing' })
-    return this.state.query(workspaceId, async () => {
-      const result = await this.runner(() => this.client.status(workspaceId))
-      this.authorize(userId, workspaceId, 'status')
-      this.available()
+    const barrier = this.client.barrier(workspaceId)
+    if (barrier !== undefined) return barrier
+    return this.withAdmission(userId, workspaceId, 'status', async resources => this.state.query(workspaceId, async () => {
+      resources.scope.admit()
+      const result = await this.runner(() => resources.backend.status(workspaceId))
+      resources.scope.admit()
       return result
-    }, signal)
+    }, signal), signal)
   }
 
   /**
@@ -249,12 +277,14 @@ export default class WorkspaceSandbox extends TypertRemoteService {
     this.available()
     this.authorize(userId, workspaceId, 'close')
     if (!this.matchesIdle(workspaceId, target, idleTimeoutMs, signal)) return { state: 'skipped' }
-    const observed = await this.statusForUser(userId, workspaceId, signal)
-    this.available()
-    this.authorize(userId, workspaceId, 'close')
-    if (observed.state !== 'running' || observed.containerId !== target.containerId
-      || !this.matchesIdle(workspaceId, target, idleTimeoutMs, signal)) return { state: 'skipped' }
-    return this.closeForUser(userId, workspaceId, target)
+    return this.withAdmission(userId, workspaceId, 'close', async (resources) => {
+      if (resources.taskManaged) return { state: 'skipped' as const }
+      const observed = await this.state.query(workspaceId, () => this.runner(() => resources.backend.status(workspaceId)), signal)
+      resources.scope.admit()
+      if (observed.state !== 'running' || observed.containerId !== target.containerId
+        || !this.matchesIdle(workspaceId, target, idleTimeoutMs, signal)) return { state: 'skipped' as const }
+      return this.closeSelected(userId, workspaceId, resources.backend, target)
+    }, signal)
   }
 
   /**
@@ -265,6 +295,36 @@ export default class WorkspaceSandbox extends TypertRemoteService {
    * @returns Confirmed container absence.
    */
   async closeForUser(userId: UserId, workspaceId: WorkspaceId, target?: SandboxCloseTarget): Promise<RunnerClosedSandbox> {
+    return this.withAdmission(userId, workspaceId, 'close', (resources) => {
+      if (target === undefined) this.manual(resources)
+      return this.closeSelected(userId, workspaceId, resources.backend, target)
+    })
+  }
+
+  /**
+   * Close uncertain work through its retained backend without reacquiring mode admission.
+   * @param permit - Original authenticated turn and execution generation.
+   * @returns Confirmed closure; stale generations refuse before deleting a replacement.
+   */
+  async closeForExecution(permit: SandboxExecutionPermit): Promise<RunnerClosedSandbox> {
+    this.authorize(permit.userId, permit.workspaceId, 'close')
+    this.available()
+    const current = await this.runner(() => permit.resources.backend.status(permit.workspaceId))
+    this.authorize(permit.userId, permit.workspaceId, 'close')
+    this.available()
+    if (this.state.capture(permit.workspaceId).version !== permit.version) {
+      throw new RemoteError('gateway/cancelled', 'Original sandbox generation was revoked', {})
+    }
+    if (current.state === 'closed') return current
+    if (current.state !== 'running' || current.containerId !== permit.containerId) {
+      throw new RemoteError('gateway/cancelled', 'Original sandbox generation was replaced', {})
+    }
+    return this.closeSelected(permit.userId, permit.workspaceId, permit.resources.backend,
+      { containerId: permit.containerId, version: permit.version })
+  }
+
+  private closeSelected(userId: UserId, workspaceId: WorkspaceId,
+    backend: SandboxExecutionAdmission['backend'], target?: SandboxCloseTarget): Promise<RunnerClosedSandbox> {
     this.authorize(userId, workspaceId, 'close')
     this.available()
     if (target !== undefined && this.state.capture(workspaceId).version !== target.version) {
@@ -273,7 +333,7 @@ export default class WorkspaceSandbox extends TypertRemoteService {
     return this.state.close(workspaceId, async () => {
       this.available()
       if (target !== undefined) {
-        const current = await this.runner(() => this.client.status(workspaceId))
+        const current = await this.runner(() => backend.status(workspaceId))
         if (current.state === 'closed') return current
         if (current.state !== 'running' || current.containerId !== target.containerId) {
           throw new RemoteError('sandbox/failed', 'Original sandbox generation is unavailable', {
@@ -281,7 +341,42 @@ export default class WorkspaceSandbox extends TypertRemoteService {
           })
         }
       }
-      return this.runner(() => this.client.close(workspaceId))
+      return this.runner(() => backend.close(workspaceId))
+    })
+  }
+
+  private manual(resources: SandboxExecutionAdmission): void {
+    if (resources.taskManaged) throw new RemoteError('sandbox/manual-operation-forbidden',
+      'This workspace starts and destroys its sandbox automatically when tasks run', { workspaceId: resources.scope.workspaceId })
+  }
+
+  private scopeForUser(userId: UserId, workspaceId: WorkspaceId, operation: string,
+    signal: AbortSignal, check?: () => void): WorkspaceFileScope {
+    this.authorize(userId, workspaceId, operation)
+    this.available()
+    const workspace = this.ctx.workspaceRegistry.get(workspaceId)
+    if (workspace === undefined) this.denied(operation)
+    const project = workspace.path
+    const admit = () => {
+      check?.()
+      signal.throwIfAborted()
+      this.authorize(userId, workspaceId, operation)
+      this.available()
+      if (this.ctx.workspaceRegistry.get(workspaceId)?.path !== project) this.denied(operation)
+    }
+    admit()
+    return { workspaceId, project, signal, admit }
+  }
+
+  private withAdmission<T>(userId: UserId, workspaceId: WorkspaceId, operation: string,
+    run: (resources: SandboxExecutionAdmission) => Promise<T>, signal = new AbortController().signal): Promise<T> {
+    return this.runner(() => {
+      const use = async (resources: SandboxExecutionAdmission): Promise<T> => {
+        try { resources.scope.admit(); return await run(resources) }
+        finally { await resources.release() }
+      }
+      const resources = this.client.admit(this.scopeForUser(userId, workspaceId, operation, signal))
+      return resources instanceof Promise ? resources.then(use) : use(resources)
     })
   }
 

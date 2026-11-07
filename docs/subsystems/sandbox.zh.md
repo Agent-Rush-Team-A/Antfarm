@@ -185,11 +185,34 @@ interface ConfinedArgv {
 
 可选 `@deepseek-ai/dsh-harness-sandbox/idle` 插件发现原生所属候选，通过现有管理器串行安排检查。沙箱 Web overlay 在应用层加载它一次。它保留失败观察、沿用关闭屏障，卸载时等待自身工作收束。默认值、候选归属与失败行为见[空闲回收参考](../../packages/sandbox/harness-sandbox/README.zh.md#idle-reclamation)。
 
+`SandboxExecutionAdmission` 保留选中的后端及其已授权 `WorkspaceFileScope`。`taskManaged` 标识生命周期归属于已接纳输入及资源收尾的环境。`ready()` 返回该名额的运行代次；`retain()` 提供独立的清理释放函数，`release()` 等待已保留工作结束。调用方使用已经捕获的后端执行命令、访问文件、重取结果及清理。[模式参考](../../packages/sandbox/harness-sandbox/README.zh.md#workspace-modes)说明部署组合与切换行为。
+
+```ts type-equiv
+/** One admitted selection, retained through preparation, inbox work and resource cleanup. */
+interface SandboxExecutionAdmission {
+  readonly backend: Pick<SandboxExecutionBackend, 'open' | 'close' | 'status' | 'execute' | 'cancel' | 'files'>
+  readonly scope: WorkspaceFileScope
+  /** Mode facades include their captured binary provider; ordinary execution-only providers omit it. */
+  readonly files?: Pick<WorkspaceFileAccess, 'list' | 'download' | 'upload'>
+  /** Refuse user and idle lifecycle controls when task completion owns this environment. */
+  readonly taskManaged: boolean
+  /** Prepare the retained generation only after prompt and attachment validation. */
+  ready(): Promise<RunnerRunningSandbox>
+  /** Retain independent command/file cleanup; release it even when execution fails. */
+  retain(): Promise<() => Promise<void>>
+  /** Idempotent; release after the owning input or operation actually settles. */
+  release(): Promise<void>
+}
+
+```
+
 ## Workspace 远程文件
 
 [Workspace SSH 后端](../../packages/sandbox/harness-sandbox/README.zh.md#workspace-ssh) 提供与 Bash 相同运行时代次的文件系统。受信任调用方须实施原用户与轮次权限及路径约束，在每次操作前复核 `assertCurrent()` 并传递访问取消信号。连接关闭或中断会撤销该能力；本机 Runner 不会代为访问宿主文件。
 
 [Workspace 文本入口](../../packages/sandbox/harness-sandbox/README.zh.md#workspace-text-tools)将这些检查应用于原生 read/write/edit。它保留原生结果渲染和可选的已观察版本策略，将路径限制在捕获的远程根目录中，并按 Workspace 和代次区分观察标识。helper 关闭会等待已接纳文件请求；取消不回滚已经提交的写入。[Vultr 后端](../../packages/sandbox/harness-sandbox/README.zh.md#workspace-vultr)还通过 `ctx.workspaceFileAccess` 提供同代网页传输与已完成只读副本。
+
+显式 Docker 提供方从经过验证的持久绑定目录提供原生文本文件。`WorkspaceRuntimeFiles.displayRoot` 可提供模型显示根目录，不改变实际根目录或授权。Docker 使用 `/workspace`；省略时保留文件系统提供方的显示路径。
 
 ```ts type-equiv
 /** Files and directory of one original execution generation, never the Harness project directory. */
@@ -197,6 +220,8 @@ interface WorkspaceRuntimeFiles {
   readonly fs: FileSystem
   readonly root: string
   readonly signal: AbortSignal
+  /** Optional model-visible root; omission retains the filesystem provider's own display paths. */
+  readonly displayRoot?: string
   /** Reject access after closure, disconnect or generation replacement. */
   assertCurrent(): void
 }
@@ -341,6 +366,13 @@ Providers share lifecycle and original-request semantics without choosing user p
 
 ```ts cordis-catalog
 /**
+ * Capture execution before asynchronous preparation; ordinary providers need no mode coordinator.
+ * @param scope - Original workspace registration, authority and caller cancellation.
+ * @returns A lazy selection; mode providers override this to retain shared admission and task resources.
+ */
+admit(scope: WorkspaceFileScope): SandboxExecutionAdmission | Promise<SandboxExecutionAdmission>
+
+/**
  * Open or reuse the authorized Workspace's execution generation.
  * @param workspaceId - Authorized identity.
  * @param workspaceDir - Registered project path, separate from execution coordinates.
@@ -385,6 +417,13 @@ abstract cancel(workspaceId: WorkspaceId, request: RunnerExecutionIdentity): Pro
  * @returns Provider-owned work that survives a cancelled caller, or persistent cleanup barriers.
  */
 activity(_workspaceId: WorkspaceId): Pick<SandboxActivity, 'openings' | 'executions' | 'closing'> | undefined
+
+/**
+ * Inspect a locally owned closure barrier without queuing behind that closure.
+ * @param _workspaceId - Authorized workspace.
+ * @returns Closing or cleanup-required when owned locally; omission requires a fresh provider query.
+ */
+barrier(_workspaceId: WorkspaceId): Extract<RunnerSandboxStatus, { state: 'closing' | 'starting' | 'cleanup_required' }> | undefined
 
 /**
  * Observe deployment progress without exposing cloud identities.
@@ -444,6 +483,16 @@ Rechecks native ownership and directory records on every operation; owns no cont
 async openForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerRunningSandbox>
 
 /**
+ * Count task preparation before allocating an environment and retain its original backend.
+ * @param userId - Authenticated initiating user.
+ * @param workspaceId - Original native workspace.
+ * @param signal - Message permit lifetime, detached from HTTP cancellation after inbox insertion.
+ * @param check - Optional original-session authority check; omitted for workspace-only operations.
+ * @returns A lazy reservation; release after failed preparation or complete input/resource settlement.
+ */
+async reserveForUser(userId: UserId, workspaceId: WorkspaceId, signal: AbortSignal, check?: () => void): Promise<SandboxExecutionAdmission>
+
+/**
  * Observe a sandbox for an authenticated backend initiator.
  * @param userId - Authenticated initiating user.
  * @param workspaceId - Native workspace id.
@@ -480,6 +529,13 @@ async closeIfIdleForUser( userId: UserId, workspaceId: WorkspaceId, target: Sand
  * @returns Confirmed container absence.
  */
 async closeForUser(userId: UserId, workspaceId: WorkspaceId, target?: SandboxCloseTarget): Promise<RunnerClosedSandbox>
+
+/**
+ * Close uncertain work through its retained backend without reacquiring mode admission.
+ * @param permit - Original authenticated turn and execution generation.
+ * @returns Confirmed closure; stale generations refuse before deleting a replacement.
+ */
+async closeForExecution(permit: SandboxExecutionPermit): Promise<RunnerClosedSandbox>
 ```
 
 Types: [UserId](typert.zh.md) · [WorkspaceId](workspace.zh.md)

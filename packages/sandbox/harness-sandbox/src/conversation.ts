@@ -11,6 +11,7 @@ import type {} from '@deepseek-ai/dsh-api-multiuser'
 import type {} from './index.ts'
 import type { SandboxPermit } from './permits.ts'
 import type { SandboxContainerId } from './runner-client.ts'
+import type { SandboxExecutionAdmission } from './backend.ts'
 
 /** Trusted original message and container for one active turn; callers cannot select another generation. */
 export interface SandboxExecutionPermit {
@@ -22,6 +23,7 @@ export interface SandboxExecutionPermit {
   readonly containerId: SandboxContainerId
   readonly version: number
   readonly signal: AbortSignal
+  readonly resources: SandboxExecutionAdmission
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -73,13 +75,15 @@ export default class SandboxConversation extends Service {
   forTurn(agent: Agent, turn: number): SandboxExecutionPermit {
     const permit = this.ctx.workspaceSandboxState.permits.forTurn(agent, turn)
     this.check(permit)
-    if (permit.agent !== agent || permit.messageId === undefined || permit.containerId === undefined) {
+    if (permit.agent !== agent || permit.messageId === undefined || permit.containerId === undefined || permit.resources === undefined) {
       throw new RemoteError('gateway/cancelled', 'Sandbox execution permission is unavailable', {})
     }
+    permit.resources.scope.admit()
     return {
       userId: permit.userId, workspaceId: permit.workspaceId, sessionId: permit.sessionId,
       requestId: permit.requestId, messageId: permit.messageId, containerId: permit.containerId,
-      version: permit.epoch.version, signal: AbortSignal.any([permit.controller.signal, permit.epoch.signal]),
+      version: permit.epoch.version, resources: permit.resources,
+      signal: AbortSignal.any([permit.controller.signal, permit.epoch.signal, permit.resources.scope.signal]),
     }
   }
 
@@ -96,12 +100,19 @@ export default class SandboxConversation extends Service {
       requestId: admission.request.requestId, epoch: state.capture(workspace.id), owner: this.owner,
     }, admission.signal, async (permit) => {
       this.check(permit)
-      admission.prepare(async (agent) => {
+      const manager = this.ctx.get('workspaceSandbox')
+      if (manager === undefined) throw new RemoteError('sandbox/failed', 'Sandbox management is unavailable', { reason: 'runner_unavailable', outcomeUnknown: false })
+      const resources = await manager.reserveForUser(permit.userId, permit.workspaceId,
+        permit.controller.signal, () => { this.check(permit) })
+      state.permits.bindResources(permit, resources)
+      admission.prepare((agent) => {
         this.check(permit)
         permit.agent = agent
-        const manager = this.ctx.get('workspaceSandbox')
-        if (manager === undefined) throw new RemoteError('sandbox/failed', 'Sandbox management is unavailable', { reason: 'runner_unavailable', outcomeUnknown: false })
-        const running = await manager.openForUser(permit.userId, permit.workspaceId)
+        return Promise.resolve()
+      })
+      admission.ready(async () => {
+        this.check(permit)
+        const running = await resources.ready()
         this.check(permit)
         permit.containerId = running.containerId
       })

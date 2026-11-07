@@ -61,7 +61,9 @@ export default class WorkspaceSandboxState extends Service {
   /** @param ctx - Application lifetime owning reload-independent cancellation facts. */
   constructor(ctx: Context) {
     super(ctx, 'workspaceSandboxState')
-    this.permits = new SandboxPermits((id) => { this.changed(id) })
+    this.permits = new SandboxPermits((id) => { this.changed(id) }, (id, error) => {
+      ctx.logger.warn('workspace-sandbox: cleanup failed for workspace %s; dependent work remains blocked: %o', id, error)
+    })
     ctx.on('workspace/before-delete', async (id, next) => {
       const removed = await next()
       if (removed) this.workspaces.delete(id)

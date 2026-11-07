@@ -1734,7 +1734,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-harness-sandbox`
 
 - `inject`: `multiuser` · `remoteAccess` · `typert` · `workspaceRegistry`
-- `source`: [`packages/sandbox/harness-sandbox/src/index.ts:46`](../packages/sandbox/harness-sandbox/src/index.ts)
+- `source`: [`packages/sandbox/harness-sandbox/src/index.ts:48`](../packages/sandbox/harness-sandbox/src/index.ts)
 
 ```ts config-catalog
 /** Registered project root and deployment-selected local Runner or separately loaded backend. */

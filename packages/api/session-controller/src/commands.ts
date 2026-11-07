@@ -179,7 +179,7 @@ export class SessionCommandController {
       const created = await this.agents.createSession({
         ...admission === undefined
           ? request.sessionId === undefined ? {} : { sessionId: request.sessionId }
-          : { sessionId: admission.sessionId, preserveIdentity: admission.single, reserveIdentity: admission.reserve,
+          : { sessionId: admission.sessionId, preserveIdentity: admission.single, reserveIdentity: id => admission.reserve(id),
             reuseOnly: admission.reuseOnly },
         signal: admission?.signal ?? signal,
         cwd,
@@ -399,17 +399,19 @@ export class SessionCommandController {
   async prompt(request: SessionPromptRequest, source: MessageSource, signal?: AbortSignal): Promise<SessionPromptValue> {
     const caller = signal ?? new AbortController().signal
     const preparations: Array<(agent: Agent) => Promise<void>> = []
+    const readiness: Array<(agent: Agent) => Promise<void>> = []
     const checks: Array<(agent: Agent, message: UserMessage) => undefined> = []
     const admission: SessionPromptAdmission = {
       request, source, signal: caller,
       prepare: (callback) => { preparations.push(callback) },
+      ready: (callback) => { readiness.push(callback) },
       beforeEnqueue: (callback) => { checks.push(callback) },
     }
     try {
       caller.throwIfAborted()
       this.assertPromptReady(request.sessionId)
       return await this.ctx.waterfall('session/prompt-admission', admission,
-        () => this.admitPrompt(request, source, caller, preparations, checks))
+        () => this.admitPrompt(request, source, caller, preparations, readiness, checks))
     } catch (error) {
       if (caller.aborted) throw new RemoteError('gateway/cancelled', 'Prompt admission was cancelled', {})
       throw error
@@ -419,6 +421,7 @@ export class SessionCommandController {
   private async admitPrompt(
     request: SessionPromptRequest, source: MessageSource, signal: AbortSignal,
     preparations: readonly ((agent: Agent) => Promise<void>)[],
+    readiness: readonly ((agent: Agent) => Promise<void>)[],
     checks: readonly ((agent: Agent, message: UserMessage) => undefined)[],
   ): Promise<SessionPromptValue> {
     const agent = await this.resolveAgent(request.sessionId)
@@ -451,6 +454,10 @@ export class SessionCommandController {
           }
         }
         const content = await this.ctx.attachments.admitPromptContent(admission.content)
+        for (const ready of readiness) {
+          signal.throwIfAborted()
+          await ready(agent)
+        }
         const message: UserMessage = createUserMessage({ content, source })
         if (this.ctx.agents.get(agent.id) !== agent) {
           throw new RemoteError(
@@ -617,7 +624,7 @@ export class SessionCommandController {
 
   private rejectCreation(error: unknown): never {
     if (remoteErrorOf(error) !== undefined) throw error
-    if (error instanceof WorkspaceModeError) throw new RemoteError(error.code, error.code, error.details)
+    if (error instanceof WorkspaceModeError) throw new RemoteError(error.code, error.message, error.details)
     if (error instanceof ApiSessionPresetConflict) {
       throw new RemoteError('agent-preset/conflict', error.message, {
         sessionId: error.sessionId,
