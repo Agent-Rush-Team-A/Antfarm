@@ -24,6 +24,15 @@ pnpm run start:web --patch apps/cli/config/examples/harness-sandbox.patch.yml --
 
 Antfarm 默认 Web 入口提供账号登录和工作区文件服务，overlay 增加沙箱管理，以及已认证用户向所属工作区会话发送消息时的自动准备。准备失败会拒绝消息。其 standard preset 只暴露前台 Runner Bash；宿主文件工具与终端交接仍被拒绝。有 Docker 权限的 Runner 仍独立于 Web。缺少必需配置时启动失败。直接使用 `pnpm dsh web` 时，需在此 overlay 之前加载 `apps/cli/config/antfarm-web.patch.yml`。
 
+<a id="use-the-web-controls"></a>
+## 使用网页操作
+
+启用 overlay 后，从工作区操作菜单选择 **工作区沙箱**，或点击对话输入栏的盾牌按钮。两个入口打开该工作区的同一面板；打开面板只查询状态。
+
+点击 **开启沙箱** 启动沙箱，面板先显示 **正在开启…**，确认成功后显示 **运行中**。点击 **关闭沙箱**，再点击 **确认关闭** 停止沙箱；面板先显示 **正在关闭…**，确认移除后显示 **已关闭**。取消确认或关闭面板会保持沙箱运行。关闭沙箱保留文件和对话，但会终止正在处理和等待的任务。
+
+两个名额都占用时，面板提示 **沙箱已满，请关闭一个或稍后重试**。关闭一个运行中的沙箱，再重试失败的开启操作。刷新状态不会重试开启或关闭。查询失败时标明最近观察到的状态，并禁用修改操作，直到查询成功；操作结果未知时禁止开启，需要管理员处理。连接或工作区权限丢失时关闭面板；恢复访问后重新打开。
+
 <a id="call-the-management-methods"></a>
 ## 调用管理方法
 
@@ -46,4 +55,4 @@ Connection 使用普通 Typert 请求封装、登录 cookie 和 Host/Origin 检�
 <a id="continue-the-integrations"></a>
 ## 继续接入
 
-可选 overlay 准备消息并将 Bash 转发给 Runner。模型看到 `/workspace`、命令输出与退出码，不接收沙箱管理参数。输出使用 Runner 的有界尾部；模型无法访问宿主溢出文件，因此禁用宿主结果溢出存储。[接入交接](../../../packages/sandbox/harness-sandbox/README.zh.md#integration-handoff)说明授权内部方法、活动查询和浏览器 API。空闲回收属 #8，浏览器控件属 #9；其他工具须分别完成隔离。
+可选 overlay 准备消息并将 Bash 转发给 Runner。模型看到 `/workspace`、命令输出与退出码，不接收沙箱管理参数。输出使用 Runner 的有界尾部；模型无法访问宿主溢出文件，因此禁用宿主结果溢出存储。[接入交接](../../../packages/sandbox/harness-sandbox/README.zh.md#integration-handoff)说明授权内部方法、活动查询和浏览器 API。空闲回收属 #8；其他工具须分别完成隔离。
