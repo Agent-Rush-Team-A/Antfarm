@@ -13,7 +13,8 @@ import { RunnerConfig } from './config.ts'
 import SandboxRunnerClient from './transport.ts'
 import type { SandboxExecutionBackend } from './backend.ts'
 import WorkspaceSandboxState from './lifecycle.ts'
-import { RunnerRequestError, RunnerResponseError, type RunnerRunningSandbox, type RunnerClosedSandbox, type RunnerSandboxStatus } from './runner-client.ts'
+import { RunnerRequestError, RunnerResponseError, type RunnerRunningSandbox, type RunnerClosedSandbox,
+  type RunnerSandboxStatus } from './runner-client.ts'
 import type { SandboxRequest, SandboxValue, SandboxFailureReason, SandboxActivity } from './types.ts'
 
 export type * from './types.ts'
@@ -29,7 +30,8 @@ export interface SandboxCloseTarget {
   readonly containerId: import('./runner-client.ts').SandboxContainerId
   readonly version: number
 }
-export type { RunnerCancellationResult, RunnerExecutionFailure, RunnerExecutionIdentity, RunnerExecutionRequest, RunnerExecutionResult, RunnerExecutionId } from './execution.ts'
+export type { RunnerCancellationResult, RunnerExecutionFailure, RunnerExecutionIdentity, RunnerExecutionRequest,
+  RunnerExecutionResult, RunnerExecutionId } from './execution.ts'
 
 /** Registered project root and deployment-selected local Runner or separately loaded backend. */
 export type Config = {
@@ -53,6 +55,8 @@ export const Config: Schema<Config> = Schema.intersect([Schema.union([
 
 const requestSchema = z.strictObject({ workspaceId: z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/u) })
 const reasons = {
+  cloud_open_failed: 'Cloud workspace could not start; query status before recovery',
+  cloud_save_failed: 'Cloud workspace could not finish saving; the original disk is retained until preservation is confirmed',
   sandbox_not_ready: 'Sandbox service is starting',
   sandbox_capacity: 'Sandbox capacity is full',
   sandbox_closing: 'Sandbox is closing; query its status before opening',
@@ -85,11 +89,15 @@ export default class WorkspaceSandbox extends TypertRemoteService {
   private accepting = false
   private readonly owner = Symbol('workspace-sandbox')
 
-  /** @param ctx - Native multiuser Harness context. @param config - Trusted deployment configuration. */
+  /**
+   * @param ctx - Native multiuser Harness context.
+   * @param config - Trusted deployment configuration.
+   */
   constructor(ctx: Context, config: Config) {
     super(ctx, 'workspaceSandbox')
     const settings = Config(config)
-    if (!isAbsolute(settings.workspaceRoot) || settings.workspaceRoot.includes('\0')) throw new Error('workspaceRoot must be an absolute directory')
+    if (!isAbsolute(settings.workspaceRoot)
+      || settings.workspaceRoot.includes('\0')) throw new Error('workspaceRoot must be an absolute directory')
     this.root = resolve(settings.workspaceRoot)
     this.transportFiber = settings.backend === 'provided' ? undefined : ctx.plugin(SandboxRunnerClient, settings)
     ctx.workspaceRegistry.registerDeletionGuard('harness-sandbox', WorkspaceSandbox.guardDeletion)
@@ -135,7 +143,8 @@ export default class WorkspaceSandbox extends TypertRemoteService {
   async open(request: SandboxRequest): Promise<SandboxValue> {
     const id = this.parse(request)
     const result = await this.openForUser(this.caller('open'), id)
-    return { workspaceId: id, state: result.state }
+    const progress = this.client.progress(id)
+    return { workspaceId: id, state: result.state, ...progress === undefined ? {} : { progress } }
   }
 
   /**
@@ -147,7 +156,8 @@ export default class WorkspaceSandbox extends TypertRemoteService {
   async status(request: SandboxRequest): Promise<SandboxValue> {
     const id = this.parse(request)
     const result = await this.statusForUser(this.caller('status'), id)
-    return { workspaceId: id, state: result.state }
+    const progress = this.client.progress(id)
+    return { workspaceId: id, state: result.state, ...progress === undefined ? {} : { progress } }
   }
 
   /**
@@ -159,7 +169,8 @@ export default class WorkspaceSandbox extends TypertRemoteService {
   async close(request: SandboxRequest): Promise<SandboxValue> {
     const id = this.parse(request)
     const result = await this.closeForUser(this.caller('close'), id)
-    return { workspaceId: id, state: result.state }
+    const progress = this.client.progress(id)
+    return { workspaceId: id, state: result.state, ...progress === undefined ? {} : { progress } }
   }
 
   /**
@@ -203,7 +214,14 @@ export default class WorkspaceSandbox extends TypertRemoteService {
   activityForUser(userId: UserId, workspaceId: WorkspaceId): SandboxActivity {
     this.authorize(userId, workspaceId, 'status')
     this.available()
-    return this.state.activity(workspaceId)
+    const local = this.state.activity(workspaceId)
+    const provider = this.client.activity(workspaceId)
+    if (provider === undefined) return local
+    const openings = local.openings + provider.openings
+    const executions = local.executions + provider.executions
+    const closing = local.closing || provider.closing
+    return { requests: local.requests, openings, executions, closing, busy: local.requests > 0 || openings > 0
+      || executions > 0 || closing }
   }
 
   /**
@@ -247,7 +265,8 @@ export default class WorkspaceSandbox extends TypertRemoteService {
   }
 
   private denied(operation: string): never {
-    throw new RemoteError('remote-access/denied', 'Workspace is unavailable', { action: `workspaceSandbox/${operation}`, reason: 'not-found' })
+    throw new RemoteError('remote-access/denied', 'Workspace is unavailable',
+      { action: `workspaceSandbox/${operation}`, reason: 'not-found' })
   }
 
   private authorize(userId: UserId, workspaceId: WorkspaceId, operation: string): void {

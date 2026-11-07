@@ -149,7 +149,8 @@ export default class WorkspaceSandboxState extends Service {
         if (remote?.code === 'sandbox/failed' && remote.details.outcomeUnknown) state.uncertain = true
         throw error
       }
-      if (state.uncertain) this.unavailable('sandbox_outcome_unknown', true)
+      if (state.uncertain && result.reconciled !== true) this.unavailable('sandbox_outcome_unknown', true)
+      if (result.reconciled === true) state.uncertain = false
       state.closing = false
       return result
     }).finally(() => { delete state.close })
