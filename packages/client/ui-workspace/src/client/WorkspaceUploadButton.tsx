@@ -6,6 +6,8 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 
 /** Upload action supplied by the optional Host capability. */
 export interface WorkspaceUploadInjected {
+  /** Keep the upload action readable in the task workbench. */
+  showLabel?: boolean
   /** Upload the selected file and report its outcome through the shared toast. */
   uploadFile(this: void, workspaceId: WorkspaceId, file: File, signal: AbortSignal): Promise<void>
 }
@@ -23,7 +25,7 @@ export function WorkspaceUploadButton(props: Props) {
   return workspaceId === undefined ? null : <UploadAction key={workspaceId} {...props} workspaceId={workspaceId} />
 }
 
-function UploadAction({ workspaceId, useWorkspaceAccess, uploadFile, t }: Props & { workspaceId: WorkspaceId }) {
+function UploadAction({ workspaceId, useWorkspaceAccess, uploadFile, showLabel, t }: Props & { workspaceId: WorkspaceId }) {
   const allowed = useWorkspaceAccess(workspaceId, 'workspaceUpload/limits')
   const input = useRef<HTMLInputElement>(null)
   const operation = useRef<AbortController>()
@@ -36,9 +38,10 @@ function UploadAction({ workspaceId, useWorkspaceAccess, uploadFile, t }: Props 
   const label = t(pending ? 'upload.pending' : 'upload.action')
   return <>
     <Tooltip label={label} side="top" portal>
-      <Button variant="toolbar" size="sm" aria-label={label} aria-busy={pending}
+      <Button variant={showLabel ? 'outline' : 'toolbar'} size="sm" aria-label={label} aria-busy={pending}
         disabled={pending} onClick={() => input.current?.click()}>
         <IconProjectAddOutlineRegular size={18} />
+        {showLabel ? label : null}
       </Button>
     </Tooltip>
     <input ref={input} type="file" hidden aria-label={t('upload.action')} onChange={(event) => {

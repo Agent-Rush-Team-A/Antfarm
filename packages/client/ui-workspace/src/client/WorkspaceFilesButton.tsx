@@ -10,6 +10,8 @@ import { fileFailureKey } from './file-failures.ts'
 
 /** Narrow file operations; notices are owned by the application's toast host. */
 export interface WorkspaceFilesInjected {
+  /** Keep the file action readable in the task workbench. */
+  showLabel?: boolean
   /** Read bounded metadata through the optional browser provider. */
   listFiles: WorkspaceArtifactFiles['listFiles']
   /** Download complete bytes and report acceptance or refusal through the global toast. */
@@ -29,16 +31,17 @@ export function WorkspaceFilesButton(props: Props) {
   return workspaceId === undefined ? null : <FilesAction key={workspaceId} {...props} workspaceId={workspaceId} />
 }
 
-function FilesAction({ workspaceId, useWorkspaceAccess, listFiles, downloadFile, t }: Props & { workspaceId: WorkspaceId }) {
+function FilesAction({ workspaceId, useWorkspaceAccess, listFiles, downloadFile, showLabel, t }: Props & { workspaceId: WorkspaceId }) {
   const allowed = useWorkspaceAccess(workspaceId, 'workspaceArtifacts/list')
   const [open, setOpen] = useState(false)
   const [path, setPath] = useState('')
   if (!allowed) return null
   return <>
     <Tooltip label={t('files.action')} side="top" portal>
-      <Button variant="toolbar" size="sm" aria-label={t('files.action')}
+      <Button variant={showLabel ? 'outline' : 'toolbar'} size="sm" aria-label={t('files.action')}
         onClick={() => { setPath(''); setOpen(true) }}>
         <IconFolderOpenOutlineRegular size={18} />
+        {showLabel ? t('files.action') : null}
       </Button>
     </Tooltip>
     <Modal open={open} onClose={() => { setOpen(false) }} closeLabel={t('close')} title={t('files.action')}>
@@ -52,9 +55,10 @@ type DirectoryProps = Pick<Props, 'listFiles' | 'downloadFile' | 't'> & {
   workspaceId: WorkspaceId
   path: string
   navigate(this: void, path: string): void
+  refreshToken?: string
 }
 
-function DirectoryPanel({ workspaceId, path, navigate, listFiles, downloadFile, t }: DirectoryProps) {
+export function DirectoryPanel({ workspaceId, path, navigate, listFiles, downloadFile, t, refreshToken }: DirectoryProps) {
   const [listing, setListing] = useState<WorkspaceArtifactListing>()
   const [failure, setFailure] = useState<WorkspaceArtifactFailureReason>()
   const [refresh, setRefresh] = useState(0)
@@ -72,7 +76,7 @@ function DirectoryPanel({ workspaceId, path, navigate, listFiles, downloadFile, 
       else setFailure(result.error.reason)
     })
     return () => { controller.abort() }
-  }, [workspaceId, path, listFiles, refresh])
+  }, [workspaceId, path, listFiles, refresh, refreshToken])
   useEffect(() => () => { download.current?.abort() }, [])
   return <div className={css.panel}>
     <div className={css.toolbar}>

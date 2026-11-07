@@ -1,0 +1,8 @@
+.panel { border: 1px solid var(--dsw-alias-border-l3); border-radius: 12px; padding: 16px; background: var(--dsw-alias-bg-layer-2); margin-bottom: 26px; }
+.heading { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.heading > svg { color: var(--dsw-alias-brand-primary); }
+.heading > button { margin-left: auto; }
+.panel p { display: flex; align-items: center; gap: 7px; font-size: 13px; margin: 12px 0 9px; }
+.panel small { display: block; font-size: 12px; color: var(--dsw-alias-label-secondary); line-height: 1.7; }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--dsw-alias-label-secondary); }
+.dot[data-running] { background: var(--dsw-alias-brand-primary); }

@@ -135,6 +135,8 @@ export interface SessionRowTrailingOwnerProps {
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
+    /** Environment status supplied by an isolated provider inside the workspace file panel. */
+    'workspace.files.environment': { kind: 'single'; scope: 'session'; owner: { workspaceId: WorkspaceId; mode: WorkspaceView['modeConfig']['mode'] } }
     /** Directory-flow hole under the conversation empty-state picker (declared by the WorkspacePicker entry). */
     'conversation.hero.workspace.directoryFlow': { kind: 'single'; scope: 'root'; owner: DirectoryFlowOwnerProps }
     /** Directory-flow hole under the sidebar browsing region (declared by the WorkspaceBrowser entry). */

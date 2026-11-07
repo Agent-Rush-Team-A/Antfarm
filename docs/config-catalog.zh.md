@@ -345,7 +345,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-api-user-credentials`
 
 - `inject`: `storageDomain` · `multiuser`
-- `source`: [`packages/api/user-credentials/src/index.ts:23`](../packages/api/user-credentials/src/index.ts)
+- `source`: [`packages/api/user-credentials/src/index.ts:24`](../packages/api/user-credentials/src/index.ts)
 
 ```ts config-catalog
 /** Host deployment values; no secret is stored in plugin configuration. */
@@ -362,6 +362,8 @@ export interface Config {
   inferenceBindings?: InferenceBinding[]
   /** Allow HTTP only for explicitly bound loopback test providers. @default false */
   allowLoopbackHttp?: boolean
+  /** Private deployment key used only for passwordless visitor inference. */
+  guestInferenceKeyFile?: string
 }
 
 /** Explicit deployment binding; credential names remain scoped to each account. */
@@ -619,6 +621,25 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-client-hmr -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-client-locale -->
+<a id="deepseek-aidsh-client-locale"></a>
+
+## `@deepseek-ai/dsh-client-locale`
+
+- `refs`: `Volatile` (`@deepseek-ai/cordis`)
+- `source`: [`packages/client/locale/src/index.ts:18`](../packages/client/locale/src/index.ts)
+
+```ts config-catalog
+/** Runtime preferences projected to the browser. */
+export interface Config {
+  /** Explicit locale; omission follows the browser. */
+  preference: Volatile<string | undefined>
+  /** Opt-in browser preference entry for deployments that deny Host settings writes. */
+  browserPreferenceKey?: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-client-locale -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-client-product-analytics -->
 <a id="deepseek-aidsh-client-product-analytics"></a>
 
@@ -785,11 +806,13 @@ export interface Config {
 ## `@deepseek-ai/dsh-client-ui-theme`
 
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/client/ui-theme/src/index.ts:20`](../packages/client/ui-theme/src/index.ts)
+- `source`: [`packages/client/ui-theme/src/index.ts:21`](../packages/client/ui-theme/src/index.ts)
 
 ```ts config-catalog
 /** Runtime preferences projected to the browser. */
 export interface Config {
+  /** Deployment-owned product palette. @default default */
+  palette?: 'default' | 'antfarm'
   /** Browser palette preference. */
   preference: Volatile<ThemePreference>
   /** Browser font size in pixels. */
@@ -5128,7 +5151,6 @@ export interface Config {
 | `@deepseek-ai/dsh-authorization` | `credentials` | [`packages/credentials/authorization/src/index.ts`](../packages/credentials/authorization/src/index.ts) |
 | `@deepseek-ai/dsh-browser-use` | — | [`packages/browser-use/browser-use/src/index.ts`](../packages/browser-use/browser-use/src/index.ts) |
 | `@deepseek-ai/dsh-client-file-upload` | `agents` · `attachments` · `commands` · `connection` | [`packages/client/file-upload/src/index.ts`](../packages/client/file-upload/src/index.ts) |
-| `@deepseek-ai/dsh-client-locale` | — | [`packages/client/locale/src/index.ts`](../packages/client/locale/src/index.ts) |
 | `@deepseek-ai/dsh-client-modules` | `loader` | [`packages/client/modules/src/index.ts`](../packages/client/modules/src/index.ts) |
 | `@deepseek-ai/dsh-client-resources` | — | [`packages/client/resources/src/index.ts`](../packages/client/resources/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-action-cards` | — | [`packages/experimental/client-ui-action-cards/src/index.ts`](../packages/experimental/client-ui-action-cards/src/index.ts) |

@@ -1,7 +1,8 @@
 /** Personal credential management; secrets remain in the Host and never become model tools. */
 import { randomUUID } from 'node:crypto'
+import { constants } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
-import { mkdir, realpath } from 'node:fs/promises'
+import { mkdir, open, realpath } from 'node:fs/promises'
 import { Context, Service } from '@deepseek-ai/cordis'
 import schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
@@ -33,6 +34,8 @@ export interface Config {
   inferenceBindings?: InferenceBinding[]
   /** Allow HTTP only for explicitly bound loopback test providers. @default false */
   allowLoopbackHttp?: boolean
+  /** Private deployment key used only for passwordless visitor inference. */
+  guestInferenceKeyFile?: string
 }
 
 /** Validated deployment configuration. */
@@ -45,6 +48,7 @@ export const Config: schema<Config> = schema.object({
     provider: schema.string().required(), baseURL: schema.string().required(), credentialName: schema.string().required(),
   })).default([]),
   allowLoopbackHttp: schema.boolean().default(false),
+  guestInferenceKeyFile: schema.string().default(''),
 })
 
 const createSchema = z.object({ name: z.string().trim().min(1).max(128), value: z.string().min(1) }).strict()
@@ -67,6 +71,7 @@ export class UserCredentials extends TypertRemoteService {
   private readonly config: Required<Config>
   private operations: Promise<void> = Promise.resolve()
   private closed = false
+  private guestKey: Buffer | undefined
 
   /** @param ctx - Host context. @param config - explicit key file and account limits. */
   constructor(ctx: Context, config: Config) {
@@ -87,7 +92,7 @@ export class UserCredentials extends TypertRemoteService {
       this.closed = true
       await this.operations
       // Initialization can fail before either resource is acquired.
-      try { await this.domain?.close() } finally { key?.fill(0) }
+      try { await this.domain?.close() } finally { key?.fill(0); this.guestKey?.fill(0) }
     }, 'user-credentials: key lifetime')
     this.domain = await this.ctx.storageDomain.open(userCredentialsDomain)
     this.table = this.domain.table('credentials')
@@ -120,6 +125,15 @@ export class UserCredentials extends TypertRemoteService {
       throw new Error('Cannot load personal credential key; restore the original private 32-byte key or provision one for an empty store.')
     }
     this.key = key
+    if (this.config.guestInferenceKeyFile !== '') {
+      if (!isAbsolute(this.config.guestInferenceKeyFile)) throw new Error('Visitor inference key path must be absolute.')
+      const path = await realpath(this.config.guestInferenceKeyFile)
+      const within = relative(await realpath(this.ctx.multiuser.workspaceRoot), path)
+      if (within === '' || (within !== '..' && !within.startsWith(`..${sep}`) && !isAbsolute(within))) {
+        throw new Error('Visitor inference key must be outside workspace mounts.')
+      }
+      this.guestKey = await loadGuestInferenceKey(this.config.guestInferenceKeyFile, this.config.maxCredentialBytes)
+    }
     // Validate existing ciphertext before exposing a store with the wrong master key.
     for (const [, record] of this.table.entries()) {
       try {
@@ -133,6 +147,9 @@ export class UserCredentials extends TypertRemoteService {
       const records = [...this.table.entries()].map(([, record]) => record)
         .filter(record => record.ownerUserId === userId && record.name === name)
       if (records.length > 1) throw new Error('Personal inference credential name is ambiguous.')
+      if (records.length === 0 && this.ctx.multiuser.isGuest(userId) && this.guestKey !== undefined) {
+        return Buffer.from(this.guestKey.toString('utf8').trim(), 'utf8')
+      }
       const record = records[0]
       return record === undefined ? undefined : decryptCredential(this.key, record)
     })
@@ -282,6 +299,37 @@ export class UserCredentials extends TypertRemoteService {
     })
     this.operations = result.then(() => undefined, () => undefined)
     return result
+  }
+}
+
+/** Read a bounded visitor secret from a private regular file without following a final symlink. */
+async function loadGuestInferenceKey(path: string, maxBytes: number): Promise<Buffer> {
+  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+  let value: Buffer | undefined
+  try {
+    try {
+      const stat = await handle.stat()
+      if (!stat.isFile() || stat.size === 0 || stat.size > maxBytes
+        || (process.platform !== 'win32' && (stat.mode & 0o077) !== 0)) {
+        throw new Error('Visitor inference key must be a private regular file within the deployment byte limit.')
+      }
+      value = Buffer.alloc(stat.size + 1)
+      let offset = 0
+      while (offset < value.length) {
+        const { bytesRead } = await handle.read(value, offset, value.length - offset, offset)
+        if (bytesRead === 0) break
+        offset += bytesRead
+      }
+      if (offset !== stat.size || value.subarray(0, offset).toString('utf8').trim() === '') {
+        throw new Error('Visitor inference key is empty or changed while being read.')
+      }
+      return value.subarray(0, offset)
+    } finally {
+      await handle.close()
+    }
+  } catch (error) {
+    value?.fill(0)
+    throw error
   }
 }
 

@@ -14,6 +14,7 @@ import {
 // (client bundle purity gate).
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { parseLocaleBootstrap, type LocaleBootstrap, type LocaleBridge } from './bootstrap.ts'
+import { parseBrowserLocaleBootstrap, readBrowserLocalePreference, type BrowserLocaleBootstrap } from '../browser-preference.ts'
 // Type-only: pulls the SlotRegistry service merge (ctx.slots).
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import {
@@ -183,16 +184,19 @@ export class LocaleRuntime {
    * @param host - durable preference scope owned by the providing plugin;
    * absent compositions (standalone dictionary registries) stay process-local.
    * @param bootstrap - native initialization; absent in ordinary browsers.
+   * @param browser - Opt-in browser persistence; overrides Host preferences for this deployment.
    */
-  constructor(ctx: ClientContext, host?: ConfigForm<LocaleSettings>, private readonly bootstrap?: LocaleBootstrap) {
+  constructor(ctx: ClientContext, host?: ConfigForm<LocaleSettings>, private readonly bootstrap?: LocaleBootstrap,
+    private readonly browser?: BrowserLocaleBootstrap) {
     this.ctx = ctx
-    this.host = host
+    this.host = browser === undefined ? host : undefined
     for (const locale of BUILT_IN_LOCALES) this.catalog.set(localeKey(locale.id), locale)
     const locales = this.localeList()
     this.provisional = resolveInitialLocale(locales, bootstrap?.languages)
-    this.preference = bootstrap?.preference ?? undefined
+    this.preference = browser === undefined ? bootstrap?.preference ?? undefined
+      : readBrowserLocalePreference(browser) ?? browser.preference ?? undefined
     this.snapshot = Object.freeze({ active: this.resolveActive(), locales, revision: 0 })
-    if (host !== undefined) {
+    if (host !== undefined && browser === undefined) {
       ctx.effect(() => host.subscribe(() => { this.adopt(host) }), 'locale: settings scope adoption')
       this.adopt(host)
     }
@@ -258,7 +262,10 @@ export class LocaleRuntime {
     if (match === undefined) throw new Error(`locale "${id}" is not registered`)
     this.preference = match.id
     if (this.snapshot.active !== match.id) this.publish(match.id, true)
-    void this.host?.set(LOCALE_PREFERENCE_FIELD, match.id)
+    if (this.browser !== undefined && typeof window !== 'undefined') {
+      try { window.localStorage.setItem(this.browser.storageKey, match.id) }
+      catch (_error) { /* Disabled browser storage leaves this page's selection usable. */ }
+    } else void this.host?.set(LOCALE_PREFERENCE_FIELD, match.id)
   }
 
   /**
@@ -579,13 +586,33 @@ export async function apply(ctx: ClientContext): Promise<void> {
     bootstrap = parseLocaleBootstrap(value)
   }
   const host = ctx.configForms.get<LocaleSettings>(LOCALE_SETTINGS_NAMESPACE)
-  const locale = new LocaleRuntime(ctx, host, bootstrap)
+  const browserValue: unknown = Reflect.get(globalThis, '__DSH_BROWSER_LOCALE__')
+  const browser = browserValue === undefined ? undefined : parseBrowserLocaleBootstrap(browserValue)
+  const locale = new LocaleRuntime(ctx, host, bootstrap, browser)
   for (const [id, label] of [['ja', '日本語'], ['es', 'Español'], ['fr', 'Français'], ['de', 'Deutsch'], ['ru', 'Русский'], ['pt', 'Português']] as const) {
     ctx.effect(() => locale.addLanguage({ id, label, fallback: 'en' }), `locale: ${id} language`)
   }
   ctx.effect(() => locale.register(COMMON_NS, { zh, en, ja, es, fr, de, ru, pt }), 'locale: common dictionaries')
   ctx.effect(() => locale.register(SETTINGS_NS, { zh: settingsZh, en: settingsEn, ja: settingsJa, es: settingsEs, fr: settingsFr, de: settingsDe, ru: settingsRu, pt: settingsPt }), 'locale: settings dictionaries')
   ctx.provide('locale', locale)
+  if (browser !== undefined && typeof window !== 'undefined') {
+    ctx.effect(() => {
+      const select = (event: Event): void => {
+        const id: unknown = event instanceof CustomEvent ? event.detail : undefined
+        if (typeof id === 'string' && locale.getLocale().locales.some(item => item.id === id)) locale.setLocale(id)
+      }
+      const storage = (event: StorageEvent): void => {
+        if (event.key !== browser.storageKey || event.newValue === null) return
+        if (locale.getLocale().locales.some(item => item.id === event.newValue)) locale.setLocale(event.newValue)
+      }
+      window.addEventListener('dsh:locale-preference', select)
+      window.addEventListener('storage', storage)
+      return () => {
+        window.removeEventListener('dsh:locale-preference', select)
+        window.removeEventListener('storage', storage)
+      }
+    }, 'locale: browser preference controls')
+  }
   if (bridge !== undefined) {
     ctx.on('locale/change', (snapshot) => { bridge.onChange(snapshot.active) })
     bridge.onChange(locale.getSnapshot().active)

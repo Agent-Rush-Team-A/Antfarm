@@ -272,3 +272,5 @@ Workspace 与 Session 悬浮卡片会复制对应行被截断的值：激活 Wor
 无。
 
 </details>
+
+可选的 Antfarm 工作台通过现有主面板展示任务入口，调用工作区上传 API 准备示例文件，并在现有右侧栏保留工作区文件页。隔离执行提供方通过 `workspace.files.environment` 插槽展示环境状态。可选游客工作台 overlay 使用 `apps/cli/config/examples/antfarm-workbench-boot.mjs` 从 Web 启动阶段提供已验证的 `workbench`、`initiallyExpanded` 与 `defaultPage` 界面设置。默认组合保留现有视图。示例提示按当前英文或中文语言生成报告与回复。

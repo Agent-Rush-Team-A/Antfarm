@@ -551,6 +551,20 @@ provisionUser(username: string, password: string): Promise<MultiuserUser>
 disableUser(userId: UserId): Promise<boolean>
 
 /**
+ * Identify an account provisioned through the visitor entry.
+ * @param userId - Authenticated account identifier.
+ * @returns Whether the account was provisioned for a visitor.
+ */
+isGuest(userId: UserId): boolean
+
+/**
+ * Create a private visitor identity and issue its bounded login without exposing a password.
+ * @param rateKey - address sharing the ordinary sign-in attempt budget.
+ * @returns a visitor login, or a refusal when guest access or capacity is unavailable.
+ */
+loginGuest(rateKey: string): Promise<LoginOutcome>
+
+/**
  * Validate one account password and issue a persistent login.
  * @param username - submitted account name.
  * @param password - submitted password.

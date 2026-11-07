@@ -12,7 +12,7 @@ import type {} from '@deepseek-ai/dsh-api-remote-access'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-storage-domain'
 import type { UserId, PeerScope } from '@deepseek-ai/dsh-typert-protocol'
-import type {} from '@deepseek-ai/dsh-host-webserver'
+import { renderIndexInjections, type IndexInjection } from '@deepseek-ai/dsh-host-webserver'
 import type { ToolDefinition, ToolExecution } from '@deepseek-ai/dsh-tools'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { WorkspaceId, workspaceRecord, type Workspace } from '@deepseek-ai/dsh-workspace'
@@ -34,6 +34,12 @@ export interface Config {
   readonly loginAttemptWindowMs?: number
   /** How often expired login records are revoked, in milliseconds. @default 30000 */
   readonly sessionSweepIntervalMs?: number
+  /** Offer passwordless, individually owned visitor accounts. @default false */
+  readonly guestAccess?: boolean
+  /** Maximum visitor accounts that have not been disabled. @default 100 */
+  readonly guestAccountLimit?: number
+  /** Visitor login lifetime in minutes. @default 120 */
+  readonly guestLoginMaxAgeMinutes?: number
 }
 
 /** Validated deployment values used by the service. */
@@ -42,6 +48,9 @@ export interface ResolvedConfig extends Config {
   readonly loginAttemptLimit: number
   readonly loginAttemptWindowMs: number
   readonly sessionSweepIntervalMs: number
+  readonly guestAccess: boolean
+  readonly guestAccountLimit: number
+  readonly guestLoginMaxAgeMinutes: number
 }
 
 /** Stable Cordis plugin name. */
@@ -62,7 +71,7 @@ type AdmissionHeaders = Headers | Readonly<Record<string, string | readonly stri
 /** Result of one login attempt. */
 export type LoginOutcome =
   | { readonly ok: true; readonly token: string; readonly expiresAt: number; readonly user: MultiuserUser }
-  | { readonly ok: false; readonly reason: 'invalid' | 'disabled' | 'rate-limited'; readonly retryAfterMs?: number }
+  | { readonly ok: false; readonly reason: 'invalid' | 'disabled' | 'guest-capacity' | 'rate-limited'; readonly retryAfterMs?: number }
 
 /** One issued login before it is written to storage. */
 interface IssuedLogin {
@@ -78,15 +87,18 @@ export interface AuthenticatedLogin {
 }
 
 /** Validates all multiuser deployment values before initialization. */
-export const CONFIG_SCHEMA = z.object({
+export const Config = z.object({
   workspaceRoot: z.string().required(),
   loginMaxAgeDays: z.natural().min(1).default(7),
   loginAttemptLimit: z.natural().min(1).default(10),
   loginAttemptWindowMs: z.natural().min(1).default(60_000),
   sessionSweepIntervalMs: z.natural().min(1).default(30_000),
+  guestAccess: z.boolean().default(false),
+  guestAccountLimit: z.natural().min(1).default(100),
+  guestLoginMaxAgeMinutes: z.natural().min(1).default(120),
 })
 
-export { CONFIG_SCHEMA as Config }
+export { Config as CONFIG_SCHEMA }
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -126,7 +138,7 @@ export class MultiuserService extends Service implements ConnectionAdmissionProv
    */
   constructor(ctx: Context, config: Config) {
     super(ctx, 'multiuser')
-    this.config = CONFIG_SCHEMA(config)
+    this.config = Config(config)
     if (!isAbsolute(this.config.workspaceRoot)) {
       throw new Error(`multiuser: workspaceRoot must be absolute, got ${JSON.stringify(this.config.workspaceRoot)}`)
     }
@@ -184,6 +196,7 @@ export class MultiuserService extends Service implements ConnectionAdmissionProv
         value: {
           refreshIntervalMs: this.config.sessionSweepIntervalMs,
           authenticated: user !== undefined,
+          guestAccess: this.config.guestAccess,
           ...(user === undefined ? {} : { user }),
         },
       })
@@ -234,7 +247,7 @@ export class MultiuserService extends Service implements ConnectionAdmissionProv
     return this.enqueue(() => this.provisionUserNow(username, password))
   }
 
-  private async provisionUserNow(username: string, password: string): Promise<MultiuserUser> {
+  private async provisionUserNow(username: string, password: string, guest = false): Promise<MultiuserUser> {
     const normalized = normalizeUsername(username)
     if (normalized === undefined) throw new Error('multiuser: username must match [a-z0-9][a-z0-9._-]{0,63}')
     if (password.length === 0 || password.length > MAX_PASSWORD_LENGTH) {
@@ -247,6 +260,7 @@ export class MultiuserService extends Service implements ConnectionAdmissionProv
       usernameNormalized: normalized,
       password: await hashPassword(password),
       createdAt: new Date().toISOString(),
+      ...(guest ? { guest: true as const } : {}),
     }
     await this.usersTable.put(user.id, user)
     this.indexUser(user)
@@ -277,6 +291,41 @@ export class MultiuserService extends Service implements ConnectionAdmissionProv
   }
 
   // ── Login lifecycle ─────────────────────────────────────────────────────
+
+  /**
+   * Identify an account provisioned through the visitor entry.
+   * @param userId - Authenticated account identifier.
+   * @returns Whether the account was provisioned for a visitor.
+   */
+  isGuest(userId: UserId): boolean {
+    return this.users.get(String(userId))?.guest === true
+  }
+
+  /**
+   * Create a private visitor identity and issue its bounded login without exposing a password.
+   * @param rateKey - address sharing the ordinary sign-in attempt budget.
+   * @returns a visitor login, or a refusal when guest access or capacity is unavailable.
+   */
+  loginGuest(rateKey: string): Promise<LoginOutcome> {
+    if (!this.config.guestAccess) return Promise.resolve({ ok: false, reason: 'disabled' })
+    const now = Date.now()
+    const limit = this.attempts.get(rateKey)
+    if (limit !== undefined && limit.resetAt > now && limit.count >= this.config.loginAttemptLimit) {
+      return Promise.resolve({ ok: false, reason: 'rate-limited', retryAfterMs: limit.resetAt - now })
+    }
+    this.recordAttempt(rateKey, now)
+    return this.enqueue(async () => {
+      if ([...this.users.values()].filter(user =>
+        user.guest === true && user.disabledAt === undefined).length >= this.config.guestAccountLimit) {
+        return { ok: false, reason: 'guest-capacity' }
+      }
+      const account = await this.provisionUserNow(`guest-${randomUUID()}`, randomUUID(), true)
+      const guest = this.users.get(String(account.userId))
+      if (guest === undefined) throw new Error('multiuser: visitor provisioning did not publish its account')
+      const issued = await this.issueLogin(guest, Date.now())
+      return { ok: true, token: issued.token, expiresAt: issued.expiresAt, user: publicUser(guest) }
+    })
+  }
 
   /**
    * Validate one account password and issue a persistent login.
@@ -499,7 +548,9 @@ export class MultiuserService extends Service implements ConnectionAdmissionProv
       tokenHash: digest,
       userId: user.id,
       createdAt: new Date(now).toISOString(),
-      expiresAt: new Date(now + this.config.loginMaxAgeDays * DAY_MILLISECONDS).toISOString(),
+      expiresAt: new Date(now + (user.guest === true
+        ? this.config.guestLoginMaxAgeMinutes * 60_000
+        : this.config.loginMaxAgeDays * DAY_MILLISECONDS)).toISOString(),
     }
     await this.loginsTable.put(record.id, record)
     this.indexLogin(record)
@@ -703,6 +754,31 @@ export class MultiuserService extends Service implements ConnectionAdmissionProv
       sendJson(res, 200, { user: outcome.user } satisfies LoginValue)
     })
 
+    route('/auth/guest', async (req, res) => {
+      if (!this.config.guestAccess) { sendJson(res, 404, { error: 'not-found' }); return }
+      if (req.method !== 'POST') { methodNotAllowed(res, 'POST'); return }
+      if (!isJson(req)) { sendJson(res, 415, { error: 'content-type must be application/json' }); return }
+      const body = await readBoundedBody(req)
+      if (body === null) { sendJson(res, 413, { error: 'body too large' }); return }
+      if (body.trim() !== '{}') { sendJson(res, 400, { error: 'invalid-request' }); return }
+      const current = this.authenticateToken(cookieValue(req.headers, COOKIE_NAME))
+      if (current?.user.guest === true) {
+        sendJson(res, 200, { user: current.user } satisfies LoginValue)
+        return
+      }
+      const outcome = await this.loginGuest(req.socket.remoteAddress ?? 'unknown')
+      if (!outcome.ok) {
+        if (outcome.reason === 'rate-limited') {
+          res.setHeader('retry-after', String(Math.ceil((outcome.retryAfterMs ?? 1000) / 1000)))
+          sendJson(res, 429, { error: 'rate-limited' })
+        } else sendJson(res, 503, { error: outcome.reason === 'guest-capacity' ? 'guest-capacity' : 'guest-unavailable' })
+        return
+      }
+      const secure = this.ctx.get('webServer')?.protocol === 'https:'
+      res.setHeader('set-cookie', sessionCookie(outcome.token, outcome.expiresAt, secure))
+      sendJson(res, 200, { user: outcome.user } satisfies LoginValue)
+    })
+
     route('/auth/logout', async (req, res) => {
       if (req.method !== 'POST') {
         methodNotAllowed(res, 'POST')
@@ -734,14 +810,22 @@ export class MultiuserService extends Service implements ConnectionAdmissionProv
       sendJson(res, 200, { user: authenticated.user } satisfies LoginValue)
     })
 
-    route('/auth/sign-in', (req, res) => {
+    route('/auth/sign-in', async (req, res) => {
       if (req.method !== 'GET') { methodNotAllowed(res, 'GET'); return }
+      const peer = this.ctx.connection.createPeer({ principal: { kind: 'anonymous' } })
+      let rows: IndexInjection[]
+      try {
+        rows = this.ctx.webServer.collectIndexInjections(peer).filter(row =>
+          row.kind === 'style' || row.kind === 'script' || row.kind === 'global')
+      } finally {
+        await peer.dispose()
+      }
+      rows.push({ kind: 'script-src', placement: 'body', src: 'client.js' })
       res.statusCode = 200
       res.setHeader('content-type', 'text/html; charset=utf-8')
       res.setHeader('cache-control', 'no-store')
       res.setHeader('x-content-type-options', 'nosniff')
-      res.end('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-        + `<style>${MULTIUSER_CLIENT_STYLE}</style></head><body><script src="client.js"></script></body></html>`)
+      res.end(renderIndexInjections('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body></body></html>', rows))
     })
 
     route('/auth/client.js', (req, res) => {
@@ -770,7 +854,8 @@ function normalizedTitle(title: string | undefined): string {
 }
 
 function publicUser(user: UserRecord): MultiuserUser {
-  return { userId: brandString<UserId>(user.id), username: user.username }
+  return { userId: brandString<UserId>(user.id), username: user.username,
+    ...(user.guest === true ? { guest: true as const } : {}) }
 }
 
 function sendJson(res: ServerResponse, status: number, payload: unknown): void {

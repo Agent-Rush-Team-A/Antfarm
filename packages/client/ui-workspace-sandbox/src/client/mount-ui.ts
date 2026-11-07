@@ -12,6 +12,7 @@ import type { SandboxModel } from './model.ts'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type { IWorkspaces } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { failureKey } from './failure-key.ts'
+import { InlineEnvironment } from './InlineEnvironment.tsx'
 import { sandboxAllowed, sandboxPermission, sandboxModeAllows } from './access.ts'
 import type { UiWorkspace } from '@deepseek-ai/dsh-client-ui-workspace/client'
 
@@ -70,6 +71,9 @@ export function mountUi(ctx: Context, model: SandboxModel): void {
   }), 'workspace sandbox: menu entry')
   ctx.slots.inject('conversation.input.left', () => ctx.slots.register({ name: 'conversation.input.left',
     id: 'workspace.sandbox', order: 220, locale: 'workspaceSandbox', inject: () => actions }, SandboxLauncher))
+  ctx.slots.inject('workspace.files.environment', () => ctx.slots.register({
+    name: 'workspace.files.environment', locale: 'workspaceSandbox', inject: () => actions,
+  }, InlineEnvironment))
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'workspace.sandbox',
     locale: 'workspaceSandbox', inject: (): SandboxOverlayInjected => ({ ...actions, hooks: { selection } }) }, SandboxOverlay))
 }

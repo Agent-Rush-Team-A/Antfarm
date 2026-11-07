@@ -22,6 +22,8 @@ export interface UserRecord {
   readonly password: PasswordDigest
   readonly createdAt: string
   readonly disabledAt?: string | undefined
+  /** Deployment-created visitor account with no user-supplied password. */
+  readonly guest?: true | undefined
 }
 
 /** One browser login; only the token digest is stored. */
@@ -58,6 +60,7 @@ const userSchema = z.object({
   password: passwordDigestSchema,
   createdAt: z.iso.datetime(),
   disabledAt: z.iso.datetime().optional(),
+  guest: z.literal(true).optional(),
 })
 
 const loginSessionSchema = z.object({

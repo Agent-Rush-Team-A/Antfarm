@@ -28,7 +28,10 @@ The right Sidebar: where the docking kit meets this product. It holds one dockin
 
 -----
 
+The optional workbench Web bootstrap settings `initiallyExpanded` and `defaultPage` select the initial panel for a new Session. Existing saved layouts remain authoritative. Initial expansion applies at widths of 768px or greater; smaller screens retain the collapsed panel. A configured default page must already have a registered tab type.
+
 <a id="what-lives-here-and-what-does-not"></a>
+
 ## What lives here, and what does not
 
 The layout itself — the split tree, its operations, the drag gestures, the floating panels — belongs to `@deepseek-ai/dsh-client-ui-dockkit` and stays host-agnostic. This package supplies everything that kit refuses to know: the product's copy, what a tab's `kind` means, which tab a fresh pane is seeded with, where the surface is mounted, and how other plugins reach it.

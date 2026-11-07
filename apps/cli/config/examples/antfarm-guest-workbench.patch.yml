@@ -1,0 +1,30 @@
+# Optional visitor workbench; apply after antfarm-web and harness-docker-modes.
+- id: multiuser
+  config:
+    workspaceRoot: !!js process.env.DSH_MULTIUSER_WORKSPACE_ROOT ?? process.getBuiltinModule('node:path').join(ctx.profileContext.home, 'workspaces')
+    guestAccess: true
+    guestAccountLimit: 100
+    guestLoginMaxAgeMinutes: 120
+- id: user-credentials
+  config:
+    encryptionKeyFile: !!js process.env.DSH_USER_CREDENTIALS_KEY_FILE ?? process.getBuiltinModule('node:path').join(ctx.profileContext.home, 'secrets', 'user-credentials.key')
+    initializeKeyIfEmpty: !!js "!process.env.DSH_USER_CREDENTIALS_KEY_FILE"
+    inferenceBindings:
+      - provider: vultr
+        baseURL: https://api.vultrinference.com/v1
+        credentialName: Vultr API Key
+    guestInferenceKeyFile: !!js "process.env.DSH_GUEST_INFERENCE_KEY_FILE || (() => { throw new Error('Set DSH_GUEST_INFERENCE_KEY_FILE to a private inference key file.') })()"
+- id: locale
+  config:
+    preference: en
+    browserPreferenceKey: dsh.locale.preference
+- id: ui-theme
+  config:
+    palette: antfarm
+- insert:
+    - id: antfarm-workbench
+      name: ./antfarm-workbench-boot.mjs
+      config:
+        workbench: true
+        initiallyExpanded: true
+        defaultPage: workspace-files

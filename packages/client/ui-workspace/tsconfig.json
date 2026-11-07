@@ -91,6 +91,9 @@
     },
     {
       "path": "../../api/workspace-artifacts/tsconfig.client.json"
+    },
+    {
+      "path": "../ui-sidebar-right"
     }
   ]
 }

@@ -51,7 +51,9 @@ import { GUIDE_ID, guideDefinition } from './tabs/guide/definition.ts'
 import { createGuidePins } from './tabs/guide/guide-pins.ts'
 import { guideTabInfoFactory, tabInfoFactory } from './tab-info.ts'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
-import { defaultSeed } from './contract/seed.ts'
+import { defaultSeed, pageAddress } from './contract/seed.ts'
+import { Config } from '../config.ts'
+export { Config } from '../config.ts'
 
 export type { SidebarRightTarget } from './focus.ts'
 export type { RightbarSeatProps, SidebarRightInjected, SidebarRightPresentation } from './shell/SidebarRight.tsx'
@@ -104,7 +106,9 @@ declare module '@deepseek-ai/cordis' {
  * uses.
  * @param ctx - client root context carrying the slot registry, the frame's face, and copy.
  */
-export function apply(ctx: ClientContext): void {
+export function apply(ctx: ClientContext, config: Config = Config({})): void {
+  const presentation = Reflect.get(globalThis, '__DSH_ANTFARM_WORKBENCH__')
+  if (presentation !== undefined) config = Config(presentation)
   // The registry and the face it backs are built here, at apply's top level,
   // and never inside an effect. A registry other packages register into cannot
   // have an effect-internal scope as its host: `register()` adds an effect to
@@ -198,7 +202,12 @@ export function apply(ctx: ClientContext): void {
   if (typeof document !== 'undefined') ctx.effect(() => observeSidebarFocus(document), 'ui-sidebar-right: focus')
 
   ctx.effect(() => {
-    const handle = createSidebarRightStore(() => defaultSeed(tabs))
+    const handle = createSidebarRightStore(() => {
+      if (config.defaultPage === undefined) return defaultSeed(tabs)
+      const definition = tabs.get(config.defaultPage)
+      if (definition === undefined) throw new Error(`Default sidebar page is not registered: ${config.defaultPage}`)
+      return { kind: definition.kind, title: definition.title(pageAddress(definition.kind)) }
+    })
     // Each Session Context generation owns one Store. Background tab actions
     // use the latest adoption for that Session.
     const adoptions = new Map<SessionId, () => void>()
@@ -208,6 +217,8 @@ export function apply(ctx: ClientContext): void {
         const instance = handle.create(scopeKey)
         if (scopeKey !== undefined) {
           const sessionId = scopeKey as SessionId
+          if (config.initiallyExpanded && instance.getSnapshot().bySession[sessionId] === undefined
+            && (typeof matchMedia !== 'function' || matchMedia('(min-width:768px)').matches)) instance.actions.setExpanded(sessionId, true)
           adoptions.get(sessionId)?.()
           adoptions.set(sessionId, adopt(sessionId, instance))
         }

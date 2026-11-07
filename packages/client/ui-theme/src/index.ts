@@ -8,6 +8,7 @@ import z from '@deepseek-ai/schemastery'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { bootThemeInjections } from './boot-theme.ts'
+import { ANTFARM_PALETTE } from './antfarm-palette.ts'
 import { DEFAULT_PREFERENCE, FONT_SIZE_SPECS, fontSizeSchema, THEME_PREFERENCES } from './theme-settings.ts'
 
 export {
@@ -18,6 +19,8 @@ export {
 
 /** Runtime preferences projected to the browser. */
 export interface Config {
+  /** Deployment-owned product palette. @default default */
+  palette?: 'default' | 'antfarm'
   /** Browser palette preference. */
   preference: Volatile<ThemePreference>
   /** Browser font size in pixels. */
@@ -36,6 +39,7 @@ export interface Config {
 
 /** Live theme and typography preferences. */
 export const Config = z.object({
+  palette: z.union(['default', 'antfarm']).default('default'),
   preference: z.union([...THEME_PREFERENCES]).default(DEFAULT_PREFERENCE).volatile(),
   fontSize: fontSizeSchema(FONT_SIZE_SPECS.text).volatile(),
   codeFontSize: fontSizeSchema(FONT_SIZE_SPECS.code).volatile(),
@@ -52,6 +56,7 @@ export const Config = z.object({
 export function apply(ctx: Context, config: Config): void {
   ctx.inject(['settings'], (child) => { child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)) })
   ctx.on('webserver/index-inject', (table) => {
+    if (config.palette === 'antfarm') table.push({ kind: 'style', text: ANTFARM_PALETTE })
     table.push(...bootThemeInjections(config.preference.get(), {
       text: config.fontSize.get(),
       code: config.codeFontSize.get(),

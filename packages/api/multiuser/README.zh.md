@@ -39,12 +39,13 @@ kind: "package-reference"
 | 路由 | 方法 | 行为 |
 | --- | --- | --- |
 | `/auth/login` | POST | 有界 JSON 登录，校验来源并限流；设置 HttpOnly Cookie。 |
+| `/auth/guest` | POST | 启用时创建独立游客登录，或复用当前有效游客登录。 |
 | `/auth/logout` | POST | 撤销当前登录、销毁其 Peer、清除 Cookie；幂等。 |
 | `/auth/me` | GET | 返回当前账号，未登录返回 401。 |
 | `/auth/client.js` | GET | 登录页与账号徽标辅助脚本。 |
-| `/auth/sign-in` | GET | 公开登录页，不加载应用或私有启动状态。 |
+| `/auth/sign-in` | GET | 公开登录页包含匿名界面启动配置，不加载应用模块或私有账号状态。 |
 
-未登录的首页请求重定向到相对于首页 URL 的公开 `auth/sign-in` 页面。脚本地址、登录/退出请求和账号刷新均保留部署路径前缀；浏览器从账号脚本 URL 推导应用根目录。已登录页面显示账号和退出入口。登录状态变化会刷新其他标签页，切换账号会在启动应用前清除浏览器持久化的应用视图。退出失败时显示可重试的错误。活动 Peer 在登录到期时结束；认证响应和个性化首页均不允许缓存。
+未登录的首页请求重定向到相对于首页 URL 的公开 `auth/sign-in` 页面。脚本地址、登录/退出请求和账号刷新均保留部署路径前缀；浏览器从账号脚本 URL 推导应用根目录。已登录页面显示账号和退出入口。登录状态变化会刷新其他标签页，切换账号会在启动应用前清除浏览器持久化的应用视图。配置浏览器本地语言偏好后，登录页和账号控件提供英文与中文，切换语言保留表单值，并跟随应用文档语言。公开登录页复用应用的 Host 主题启动配置，包括系统深色模式。退出失败时显示可重试的错误。活动 Peer 在登录到期时结束；认证响应和个性化首页均不允许缓存。
 
 <a id="remote-access-policy"></a>
 ## Remote 访问策略
@@ -83,7 +84,10 @@ pnpm exec tsx scripts/multiuser-provision.ts --storage-root "$DSH_HOME/storages"
 
 进程内等价步骤是 `MultiuserService.provisionUser(username, password)`。已有用户不会被覆盖，启动时也不会重置密码。禁用账号会写入 `disabledAt` 并撤销它持有的全部登录。
 
+通过 `guestAccess: true` 启用游客访问。`POST /auth/guest` 接收 `{}`，创建独立游客账号并签发 HttpOnly 登录 Cookie，无需向浏览器提供密码；已认证游客复用当前身份与过期时间。新游客账号共用按地址计数的登录限额。`guestAccountLimit` 默认限制 100 个未禁用账号，`guestLoginMaxAgeMinutes` 默认 120。容量耗尽返回 `503` 与 `guest-capacity`；管理员可提高配置上限，或通过 `MultiuserService.disableUser()` 禁用不再使用的游客来释放名额，文件和归属不会删除或转移。退出或过期本身不释放名额。每位游客只能访问自己的工作区与会话；游客角色不提供个人密钥管理与工作区删除权限。
+
 <a id="workspace-creation"></a>
+
 ## 工作区创建
 
 普通用户的 `workspace/create` 只携带可选 `title`；服务在 `workspaceRoot` 下分配不可预测目录，登记工作区，再提交归属行。归属提交失败会撤销登记并移除新建的空目录。没有归属行的工作区对所有用户不可见。
