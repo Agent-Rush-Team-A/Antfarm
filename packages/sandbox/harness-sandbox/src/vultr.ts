@@ -63,22 +63,38 @@ export default class VultrWorkspaceBackend extends SandboxExecutionBackend {
   async [Service.init](): Promise<void> {
     const store = new CloudWorkspaceStore(this.settings.stateRoot)
     await store.initialize()
-    this.ctx.effect(() => () => store.close())
+    let controller: VultrWorkspaceController | undefined = undefined
+    let stopped = false
+    const accepting = (): void => { if (stopped) throw new Error('Cloud provider stopped during initialization') }
+    try {
+      this.ctx.effect(() => async () => {
+        stopped = true
+        if (controller === undefined) await store.close()
+        else await controller.dispose()
+      })
+    } catch (error) {
+      // Disposal during lock acquisition can reject effect registration.
+      await store.close()
+      throw error
+    }
+    accepting()
     const provisioning = new VultrSshProvisioning(this.settings)
     await provisioning.validate()
+    accepting()
     this.settings.apiKeyFile = await realpath(this.settings.apiKeyFile)
     this.settings.sshKeyFile = await realpath(this.settings.sshKeyFile)
     const key = (await readFile(this.settings.apiKeyFile, 'utf8')).trim()
     if (key.length === 0 || /[\r\n]/u.test(key)) throw new Error('Vultr API credential is empty or malformed')
+    accepting()
     const api = new VultrApi(key, this.settings.apiEndpoint.replace(/\/$/u, ''), this.settings.requestTimeoutMs,
       this.settings.maxInventoryPages, this.settings.maxApiResponseBytes)
     const runtime = new WorkspaceSshRuntime(this.ctx, { bindings: {}, maxExecutions: this.settings.maxExecutions,
       maxOutputBytes: this.settings.maxOutputBytes, graceMs: this.settings.graceMs })
-    this.controller = new VultrWorkspaceController(this.settings, api, store, runtime, provisioning, (id, failure) => {
+    this.controller = controller = new VultrWorkspaceController(this.settings, api, store, runtime, provisioning, (id, failure) => {
       this.ctx.logger.warn('workspace-vultr: workspace %s failed during %s; dependent work is blocked, and existing cloud disks are retained. Query status and retry closure after checking the cloud operation.', id, failure)
     })
-    this.ctx.effect(() => () => this.controller.dispose())
     await this.controller.initialize()
+    accepting()
     await this.ctx.plugin(CloudFileAccess, this.controller)
   }
 

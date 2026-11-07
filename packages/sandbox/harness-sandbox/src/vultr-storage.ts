@@ -111,18 +111,6 @@ export class CloudWorkspaceStore {
   }
 
   /**
-   * Prepare an empty file view for a Workspace that has not opened a VM.
-   * @param id - Original workspace.
-   * @returns A private empty read-only copy before any VM has been created.
-   */
-  async emptyCopy(id: CloudRecord['workspaceId']): Promise<string> {
-    const copy = 'copy-' + randomUUID()
-    await mkdir(join(this.root, id), { recursive: true, mode: 0o700 })
-    await mkdir(this.copyPath(id, copy), { mode: 0o700 })
-    return copy
-  }
-
-  /**
    * Import pre-migration registered files once; interrupted matching uploads can be resumed.
    * @param record - Original new workspace, not a restored snapshot.
    * @param files - Verified new VM's binary service.

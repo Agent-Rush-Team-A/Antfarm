@@ -76,11 +76,11 @@ SSH 关闭只释放 helper 及其受管理进程，不关闭或删除 VM。[Vult
 
 可选 [Vultr overlay](../../../apps/cli/config/examples/harness-vultr.patch.yml) 通过 `DSH_VULTR_CONFIG_JSON` 中的部署 JSON 选用 `@deepseek-ai/dsh-harness-sandbox/vultr`，使用方式见[部署指南](../../../docs/user/guide/workspace-vultr.zh.md)。Runner 协调保留在 Harness，每个活跃 Workspace 获得一台独立 VM。私有管理凭据、地区、套餐、镜像和 helper 产物由部署配置选择。首次开启只导入一次登记文件；快照恢复保留执行环境。SSH 和 helper 完整性检查通过后才接纳任务；远程失败不选择宿主执行。
 
-云资源所有者在私有 `stateRoot` 下保存带版本的元数据，并持有独占内核锁。并发调用共用准备操作；重启先核对已记录标签、VM 标识和快照描述，再分配实例。未获确认的创建不重放，归属不明或缺失的资源会阻止依赖工作。提供方卸载收束连接与请求，并保留云磁盘供后续核对。浏览器安全的 `SandboxValue.progress` 提供阶段和脱敏失败分类，不含 VM 标识或路径。
+云资源所有者在私有 `stateRoot` 下保存带版本的元数据，并持有独占内核锁。并发调用共用准备操作；重启先核对已记录标签、VM 标识和快照描述，再分配实例。未获确认的创建不重放，归属不明或缺失的资源会阻止依赖工作。提供方卸载拒绝新工作，等待已接纳请求和 SSH 清理结束后再释放锁，并保留云磁盘供后续核对。启动失败也会在清理后释放所有权。浏览器安全的 `SandboxValue.progress` 提供阶段和脱敏失败分类，不含 VM 标识或路径。
 
 关闭撤销原代次、停止命令并等待 helper 确认写入已收束。生成完整受限文件副本，确认 helper 清理，刷新 VM 磁盘并确认停机后才创建快照。完整快照与副本持久记录成功后才允许删除 VM。保存失败保留源磁盘。关闭中替换失效连接，须由云所有者先确认原 VM 已停机。显式云资源核对可解除管理器的未知修改屏障；本地 Runner 原有的保守行为保持不变。
 
-提供方提供 `ctx.workspaceFileAccess`，上传与产物 API 通过 `storage: provided` 选用。关闭后的列表和下载使用私有只读副本；上传或执行恢复 VM 并更新代次。副本文件从不在 Harness 上执行。`maxInstances`、轮询与期限设置、`maxSavedBytes`、`maxSavedFiles` 约束资源使用。容量计入待完成创建和本部署的孤立实例。完整的新保存替换旧快照；快照存储仍会计费。Vultr overlay 启用共用空闲插件和网页控件；本后端不另加计时器。
+提供方提供 `ctx.workspaceFileAccess`，上传与产物 API 通过 `storage: provided` 选用。关闭后的列表和下载使用私有只读副本；从未开启的 Workspace 提供空视图，不写入生命周期元数据。上传或执行恢复 VM 并更新代次。副本文件从不在 Harness 上执行。`maxInstances`、轮询与期限设置、`maxSavedBytes`、`maxSavedFiles` 约束资源使用。容量计入待完成创建、结果未知的创建和本部署的孤立实例；结果未知的创建在重启后仍保留配额，直到原 VM 经核对并回收。完整的新保存替换旧快照；快照存储仍会计费。Vultr overlay 启用共用空闲插件和网页控件；本后端不另加计时器。
 
 `/vultr` 入口接受以下部署配置。凭据文件和 `stateRoot` 必须位于所有登记项目之外。首次创建和快照恢复均通过 cloud-init 安装固定的主机密钥；就绪检查确认当前分配标签后才安装 helper。
 

@@ -6,7 +6,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import type { WorkspaceFileScope, WorkspaceFileListing, WorkspaceFileUpload,
   WorkspaceFileDownload } from '@deepseek-ai/dsh-fs/workspace-access'
-import { listArtifacts, openArtifact, streamArtifact, ArtifactFailure } from '@deepseek-ai/dsh-fs-local/workspace-artifacts'
+import { listArtifacts, openArtifact, streamArtifact, artifactComponents, ArtifactFailure } from '@deepseek-ai/dsh-fs-local/workspace-artifacts'
 import { SshWorkspaceFiles } from '@deepseek-ai/dsh-ssh/workspace-files'
 import type { SandboxProgress, SandboxActivity } from './types.ts'
 import type { WorkspaceSshRuntime } from './ssh-controller.ts'
@@ -35,6 +35,7 @@ export class VultrWorkspaceController {
   private orphans = 0
   private readonly orphanWorkspaces = new Set<WorkspaceId>()
   private unassignedOrphan = false
+  private stopping: Promise<void> | undefined
 
   /**
    * @param settings - Deployment budgets.
@@ -46,12 +47,17 @@ export class VultrWorkspaceController {
    */
   constructor(private readonly settings: ResolvedConfig, private readonly api: VultrApi, private readonly store: CloudWorkspaceStore,
     private readonly runtime: Pick<WorkspaceSshRuntime,
-      'bind' | 'open' | 'status' | 'close' | 'pause' | 'files' | 'execute' | 'cancel' | 'binary' | 'releaseStopped'>,
+      'bind' | 'open' | 'status' | 'close' | 'pause' | 'files' | 'execute' | 'cancel' | 'binary' | 'releaseStopped' | 'dispose'>,
     private readonly provisioning: VultrProvisioning, private readonly report: (id: WorkspaceId,
       failure: CloudRecord['failure']) => void) {}
 
   /** Reconcile recorded resources after restart without creating or deleting anything. */
   async initialize(): Promise<void> {
+    this.lifetime.signal.throwIfAborted()
+    return this.track(this.reconcile())
+  }
+
+  private async reconcile(): Promise<void> {
     const records = await this.store.load()
     const instances = await this.api.instances(this.lifetime.signal)
     for (const record of records) {
@@ -96,7 +102,7 @@ export class VultrWorkspaceController {
   }
 
   /**
-   * Share one allocation or restoration operation for the authorized Workspace.
+   * Share one allocation or restoration operation; unknown creations retain capacity until reclaimed.
    * @param id - Authorized workspace.
    * @param project - Original registered directory.
    * @returns Shared creation/connection result.
@@ -110,7 +116,8 @@ export class VultrWorkspaceController {
     if (slot.record.state === 'running') return this.track(this.runtime.open(id, project))
     if (slot.record.instanceId === undefined) {
       const occupied = [...this.slots.values()].filter(candidate => candidate !== slot
-        && (candidate.record.instanceId !== undefined || candidate.record.state === 'starting')).length
+        && (candidate.record.instanceId !== undefined || candidate.record.state === 'starting'
+          || candidate.record.mutation === 'create')).length
       if (occupied + this.orphans >= this.settings.maxInstances) return Promise.reject(new RunnerResponseError('sandbox_capacity', 429, false))
       slot.record = { ...slot.record, state: 'starting', phase: slot.record.snapshotId === undefined ? 'creating' : 'restoring' }
     }
@@ -179,6 +186,11 @@ export class VultrWorkspaceController {
    * @returns A fresh connection observation and persistent cloud phase.
    */
   async status(id: WorkspaceId): Promise<RunnerSandboxStatus> {
+    this.lifetime.signal.throwIfAborted()
+    return this.track(this.observeStatus(id))
+  }
+
+  private async observeStatus(id: WorkspaceId): Promise<RunnerSandboxStatus> {
     const slot = this.slots.get(id)
     if (this.unassignedOrphan || this.orphanWorkspaces.has(id)) return { state: 'cleanup_required' }
     if (slot === undefined || slot.record.state === 'closed') return { state: 'closed', reconciled: true }
@@ -227,6 +239,7 @@ export class VultrWorkspaceController {
    * @returns Closed only after a completed snapshot and confirmed VM absence.
    */
   close(id: WorkspaceId): Promise<RunnerClosedSandbox> {
+    if (this.lifetime.signal.aborted) return Promise.reject(new Error('Cloud provider stopped'))
     const slot = this.slots.get(id)
     if (this.unassignedOrphan || this.orphanWorkspaces.has(id)) return Promise.reject(new RunnerResponseError('sandbox_cleanup_required', 503, true))
     if (slot === undefined || slot.record.state === 'closed') return Promise.resolve({ state: 'closed', reconciled: true })
@@ -390,7 +403,7 @@ export class VultrWorkspaceController {
    * @returns Original cancellation receipt.
    */
   async cancel(id: WorkspaceId, request: RunnerExecutionIdentity): Promise<RunnerCancellationResult> { this.current(id,
-    request.expectedContainerId); return this.runtime.cancel(id, request) }
+    request.expectedContainerId); return this.track(this.runtime.cancel(id, request)) }
   /**
    * Capture remote files without switching generation or selecting host execution.
    * @param id - Original workspace.
@@ -399,10 +412,10 @@ export class VultrWorkspaceController {
    * @returns Generation-bound remote text files.
    */
   files(id: WorkspaceId, target: SandboxContainerId, signal?: AbortSignal): Promise<WorkspaceRuntimeFiles> { this.current(id,
-    target); return this.runtime.files(id, target, signal) }
+    target); return this.track(this.runtime.files(id, target, signal)) }
 
   /**
-   * Read bounded metadata from a live VM or its completed private copy.
+   * Read bounded metadata from a live VM, its completed copy, or an unpersisted empty unopened view.
    * @param scope - Original authority.
    * @param path - Directory.
    * @param maxEntries - Inspection bound.
@@ -410,9 +423,12 @@ export class VultrWorkspaceController {
    */
   list(scope: WorkspaceFileScope, path: string, maxEntries: number): Promise<WorkspaceFileListing> {
     return this.trackFile(scope.workspaceId, (async () => {
+      const parts = artifactComponents(path)
       const view = await this.fileView(scope, false)
-      const result = typeof view.files === 'string' ? await listArtifacts(view.files, path, maxEntries,
-        view.signal) : await view.files.list(path, maxEntries, view.signal)
+      if (view.files === undefined && parts.length > 0) throw new ArtifactFailure('not-found')
+      const result = view.files === undefined ? { entries: [], truncated: false }
+        : typeof view.files === 'string' ? await listArtifacts(view.files, path, maxEntries,
+          view.signal) : await view.files.list(path, maxEntries, view.signal)
       view.admit(); return result
     })())
   }
@@ -425,7 +441,9 @@ export class VultrWorkspaceController {
    */
   async download(scope: WorkspaceFileScope, path: string, maxBytes: number): Promise<WorkspaceFileDownload> {
     const opening = (async () => {
+      if (artifactComponents(path).length === 0) throw new ArtifactFailure('not-regular')
       const view = await this.fileView(scope, false)
+      if (view.files === undefined) throw new ArtifactFailure('not-found')
       if (typeof view.files !== 'string') return view.files.download(path, maxBytes, view.signal, view.admit)
       const file = await openArtifact(view.files, path, false, view.signal)
       try {
@@ -450,12 +468,13 @@ export class VultrWorkspaceController {
   upload(scope: WorkspaceFileScope, name: string, chunks: AsyncIterable<Uint8Array>, maxBytes: number): Promise<WorkspaceFileUpload> {
     return this.trackFile(scope.workspaceId, (async () => {
       const view = await this.fileView(scope, true)
-      if (typeof view.files === 'string') throw new Error('Read-only copies cannot accept uploads')
+      if (view.files === undefined || typeof view.files === 'string') throw new Error('Read-only copies cannot accept uploads')
       return view.files.upload(name, chunks, maxBytes, view.signal, view.admit)
     })())
   }
 
   private async fileView(scope: WorkspaceFileScope, write: boolean) {
+    this.lifetime.signal.throwIfAborted()
     scope.signal.throwIfAborted(); scope.admit()
     const slot = this.slot(scope.workspaceId, scope.project)
     const captured = slot.revocation.signal
@@ -463,14 +482,8 @@ export class VultrWorkspaceController {
     const admit = (): void => { signal.throwIfAborted(); scope.admit() }
     if (!write && slot.record.state === 'closed') {
       admit()
-      if (slot.record.cache === undefined) {
-        const copy = await this.store.emptyCopy(slot.record.workspaceId)
-        await this.commit(slot, { ...slot.record, cache: copy })
-        admit()
-      }
       const cache = slot.record.cache
-      if (cache === undefined) throw new ArtifactFailure('not-found')
-      return { files: this.store.copyPath(scope.workspaceId, cache), signal, admit }
+      return { files: cache === undefined ? undefined : this.store.copyPath(scope.workspaceId, cache), signal, admit }
     }
     const running = await this.observeOpening(this.open(scope.workspaceId, scope.project), signal)
     admit()
@@ -560,12 +573,19 @@ export class VultrWorkspaceController {
     void result.then(() => captured.delete(result), () => captured.delete(result))
     return this.track(result)
   }
-  /** Revoke and drain local operations on reload; preserve VM and snapshot resources for restart reconciliation. */
-  async dispose(): Promise<void> {
+  /** Revoke and drain local operations and SSH before releasing state ownership; preserve cloud disks for reconciliation. */
+  dispose(): Promise<void> {
+    if (this.stopping !== undefined) return this.stopping
     this.lifetime.abort(new Error('Cloud provider stopped'))
     for (const slot of this.slots.values()) slot.revocation.abort(this.lifetime.signal.reason)
+    this.stopping = this.drain()
+    return this.stopping
+  }
+
+  private async drain(): Promise<void> {
     await Promise.allSettled([...this.slots.keys()].map(id => this.runtime.pause(id)))
     while (this.pending.size > 0) await Promise.allSettled([...this.pending])
-    await this.store.close()
+    try { await this.runtime.dispose() }
+    finally { await this.store.close() }
   }
 }

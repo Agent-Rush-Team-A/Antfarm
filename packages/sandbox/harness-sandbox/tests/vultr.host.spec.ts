@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto'
-import { mkdtemp, mkdir, rm, readFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, test, vi } from 'vitest'
@@ -25,6 +25,7 @@ const controllers: VultrWorkspaceController[] = []
 afterEach(async () => {
   await Promise.all(controllers.splice(0).map(controller => controller.dispose()))
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
+  vi.restoreAllMocks()
 })
 
 function cloud() {
@@ -88,7 +89,7 @@ function cloud() {
     return Response.json({ snapshot })
   }
   return { instances, snapshots, requests, transport, createdSnapshot, createdInstance,
-    setCreateLost: () => { createReplyLost = true }, setSnapshotLost: () => { snapshotReplyLost = true },
+    setCreateLost: (value = true) => { createReplyLost = value }, setSnapshotLost: () => { snapshotReplyLost = true },
     pendingSnapshots: () => { complete = false },
     completeSnapshots: () => { for (const snapshot of snapshots.values()) snapshot.status = 'complete' } }
 }
@@ -101,8 +102,9 @@ function sshRuntime() {
       schema: z.ZodType<T>) => schema.parse(method === 'workspace.list' ? { entries: [], truncated: false } : null) },
   }
   const runtime: Pick<WorkspaceSshRuntime,
-    'bind' | 'open' | 'status' | 'close' | 'pause' | 'files' | 'execute' | 'cancel' | 'binary' | 'releaseStopped'> = {
+    'bind' | 'open' | 'status' | 'close' | 'pause' | 'files' | 'execute' | 'cancel' | 'binary' | 'releaseStopped' | 'dispose'> = {
     bind: vi.fn(),
+    dispose: vi.fn(async () => { worlds.clear() }),
     releaseStopped: vi.fn(async (id: WorkspaceId) => { worlds.delete(id) }),
     open: vi.fn(async (id: WorkspaceId) => {
       let world = worlds.get(id)
@@ -211,12 +213,17 @@ linuxTest('lost snapshot acknowledgement retains source and recovers the origina
 
 linuxTest('lost instance acknowledgement never retries allocation and closure reconciles its original label', async () => {
   const f = await setup()
+  f.settings.maxInstances = 1
   f.external.setCreateLost()
   await expect(f.controller.open(f.a, f.projectA)).rejects.toMatchObject({ code: 'cloud_open_failed', outcomeUnknown: true })
   await expect(f.controller.open(f.a, f.projectA)).rejects.toMatchObject({ code: 'sandbox_cleanup_required' })
   expect(f.external.instances.size).toBe(1)
+  await expect(f.controller.open(f.b, f.projectB)).rejects.toMatchObject({ code: 'sandbox_capacity' })
   expect(await f.controller.close(f.a)).toMatchObject({ state: 'closed', reconciled: true })
   expect(f.external.requests.filter(request => request.method === 'POST' && request.path === '/instances')).toHaveLength(1)
+  f.external.setCreateLost(false)
+  await f.controller.open(f.b, f.projectB)
+  expect(f.external.instances.size).toBe(1)
 })
 
 linuxTest('Harness restart reconnects its recorded VM without allocation or deletion and invalidates original execution receipts', async () => {
@@ -231,15 +238,94 @@ linuxTest('Harness restart reconnects its recorded VM without allocation or dele
   expect(() => restarted.controller.files(f.a, original.containerId)).toThrow()
 })
 
-linuxTest('closed file listing uses only the private read-only copy and does not allocate a VM', async () => {
+linuxTest('unopened file access returns an empty view without persisting a cloud record', async () => {
   const f = await setup()
   const scope = { workspaceId: f.a, project: f.projectA, signal: new AbortController().signal, admit: vi.fn() }
   expect(await f.controller.list(scope, '', 100)).toEqual({ entries: [], truncated: false })
   expect(f.external.instances.size).toBe(0)
   expect(f.runtime.files).not.toHaveBeenCalled()
-  const record = JSON.parse(await readFile(join(f.settings.stateRoot, f.a, 'state.json'), 'utf8')) as { cache: string }
-  expect(record.cache).toMatch(/^copy-/u)
+  expect(await f.store.load()).toEqual([])
+  await expect(f.controller.list(scope, 'missing', 100)).rejects.toMatchObject({ reason: 'not-found' })
+  await expect(f.controller.list(scope, '../escape', 100)).rejects.toMatchObject({ reason: 'invalid-path' })
+  await expect(f.controller.download(scope, '', 10)).rejects.toMatchObject({ reason: 'not-regular' })
   await expect(f.controller.download(scope, 'missing', 10)).rejects.toMatchObject({ reason: 'not-found' })
+})
+
+linuxTest.each([
+  { operation: 'list', cycle: false }, { operation: 'download', cycle: false },
+  { operation: 'list', cycle: true }, { operation: 'download', cycle: true },
+] as const)('initial $operation cannot overwrite the VM record after opening (close/reopen: $cycle)', async ({ operation, cycle }) => {
+  const f = await setup()
+  const save = f.store.save.bind(f.store)
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  vi.spyOn(f.store, 'save').mockImplementation(async (record) => {
+    if (record.state === 'closed' && record.cache !== undefined && record.snapshotId === undefined) {
+      entered.resolve(undefined)
+      await release.promise
+    }
+    return save(record)
+  })
+  const scope = { workspaceId: f.a, project: f.projectA, signal: new AbortController().signal, admit() {} }
+  const reading = (operation === 'list' ? f.controller.list(scope, '', 20)
+    : f.controller.download(scope, 'missing', 20)).then(() => undefined, () => undefined)
+  // A read that writes metadata is held at publication; an empty view can finish without writing.
+  await Promise.race([entered.promise, reading])
+  let running: RunnerRunningSandbox
+  try {
+    running = await f.controller.open(f.a, f.projectA)
+    if (cycle) { await f.controller.close(f.a); running = await f.controller.open(f.a, f.projectA) }
+  } finally { release.resolve(undefined); await reading }
+  expect(await f.controller.status(f.a)).toEqual(running)
+  expect((await f.store.load())[0]).toMatchObject({ state: 'running', instanceId: [...f.external.instances.keys()][0] })
+  const creates = f.external.requests.filter(request => request.method === 'POST' && request.path === '/instances').length
+  expect(await f.controller.open(f.a, f.projectA)).toEqual(running)
+  expect(f.external.requests.filter(request => request.method === 'POST' && request.path === '/instances')).toHaveLength(creates)
+  expect(f.external.instances.size).toBe(1)
+})
+
+linuxTest('a pending status observation keeps state ownership until it finishes during disposal', async () => {
+  const f = await setup()
+  await f.controller.open(f.a, f.projectA)
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const pausing = Promise.withResolvers<undefined>()
+  vi.spyOn(f.runtime, 'status').mockImplementation(async () => {
+    entered.resolve(undefined); await release.promise; return { state: 'closed' }
+  })
+  vi.spyOn(f.runtime, 'pause').mockImplementation(async () => { pausing.resolve(undefined); return undefined })
+  const observing = f.controller.status(f.a)
+  await entered.promise
+  const closing = f.controller.dispose()
+  await pausing.promise
+  const other = new CloudWorkspaceStore(f.settings.stateRoot)
+  try {
+    await expect(other.initialize()).rejects.toThrow('Another Harness owns')
+    expect(f.runtime.dispose).not.toHaveBeenCalled()
+  } finally { release.resolve(undefined); await observing; await closing; await other.close() }
+  await other.initialize()
+  await other.close()
+  const save = vi.spyOn(f.store, 'save')
+  await expect(f.controller.status(f.a)).rejects.toThrow('Cloud provider stopped')
+  await expect(f.controller.close(f.a)).rejects.toThrow('Cloud provider stopped')
+  expect(save).not.toHaveBeenCalled()
+})
+
+linuxTest('an unconfirmed creation retains capacity across restart until its original VM is reclaimed', async () => {
+  const f = await setup()
+  f.external.setCreateLost()
+  await expect(f.controller.open(f.a, f.projectA)).rejects.toMatchObject({ outcomeUnknown: true })
+  await f.controller.dispose()
+  const hidden = [...f.external.instances.values()]
+  f.external.instances.clear()
+  const restarted = await setup(f)
+  restarted.settings.maxInstances = 1
+  await expect(restarted.controller.open(restarted.b, restarted.projectB)).rejects.toMatchObject({ code: 'sandbox_capacity' })
+  for (const instance of hidden) f.external.instances.set(instance.id, instance)
+  await restarted.controller.close(restarted.a)
+  f.external.setCreateLost(false)
+  await restarted.controller.open(restarted.b, restarted.projectB)
+  expect(f.external.instances.size).toBe(1)
 })
 
 linuxTest('a second Harness cannot mutate the same stateRoot until the first owner drains and releases its kernel lock', async () => {

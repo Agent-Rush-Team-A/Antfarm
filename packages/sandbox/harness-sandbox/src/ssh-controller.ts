@@ -46,6 +46,7 @@ export class WorkspaceSshRuntime {
   private readonly bindings = new Map<WorkspaceId, WorkspaceSshBinding>()
   private readonly generations = new Map<WorkspaceId, Generation>()
   private disposed = false
+  private disposal: Promise<void> | undefined
 
   /**
    * @param ctx - Provider owner.
@@ -68,13 +69,20 @@ export class WorkspaceSshRuntime {
     }
     if (!posix.isAbsolute(this.settings.bash)
       || this.settings.bash.includes('\0')) throw new Error('Remote Bash must be an absolute executable path')
-    ctx.effect(() => async () => {
-      this.disposed = true
-      const results = await Promise.allSettled([...this.generations.keys()].map(id => this.close(id)))
-      const errors: unknown[] = []
-      for (const result of results) if (result.status === 'rejected') errors.push(result.reason)
-      if (errors.length > 0) throw new AggregateError(errors, 'Workspace SSH provider cleanup is unconfirmed')
-    })
+  }
+
+  /** Stop admission and join all original generations; the enclosing provider owns this disposal. */
+  dispose(): Promise<void> {
+    this.disposed = true
+    this.disposal ??= this.drain()
+    return this.disposal
+  }
+
+  private async drain(): Promise<void> {
+    const results = await Promise.allSettled([...this.generations.keys()].map(id => this.close(id)))
+    const errors: unknown[] = []
+    for (const result of results) if (result.status === 'rejected') errors.push(result.reason)
+    if (errors.length > 0) throw new AggregateError(errors, 'Workspace SSH provider cleanup is unconfirmed')
   }
 
   /**

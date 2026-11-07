@@ -15,7 +15,11 @@ export default class WorkspaceSshBackend extends SandboxExecutionBackend {
    * @param ctx - Provider owner.
    * @param config - Fixed deployment coordinates.
    */
-  constructor(ctx: Context, config: Config) { super(ctx); this.runtime = new WorkspaceSshRuntime(ctx, config) }
+  constructor(ctx: Context, config: Config) {
+    super(ctx)
+    this.runtime = new WorkspaceSshRuntime(ctx, config)
+    ctx.effect(() => () => this.runtime.dispose())
+  }
   override open(workspaceId: WorkspaceId, workspaceDir: string) { return this.runtime.open(workspaceId, workspaceDir) }
   override status(workspaceId: WorkspaceId) { return this.runtime.status(workspaceId) }
   override close(workspaceId: WorkspaceId) { return this.runtime.close(workspaceId) }
