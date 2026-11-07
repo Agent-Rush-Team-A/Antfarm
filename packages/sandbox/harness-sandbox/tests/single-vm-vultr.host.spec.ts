@@ -20,8 +20,9 @@ const stale = brandString<SandboxContainerId>('0'.repeat(64))
 const settings = { deploymentId: 'test', region: 'nrt', plan: 'vc2-1c-1gb', osId: 2284, volumeId,
   maxInstances: 1, operationTimeoutMs: 10_000, pollIntervalMs: 1 }
 
-type Fault = 'region' | 'attachment' | 'wrong-instance' | 'mount' | 'permission' | 'handshake' | 'create-hidden' | 'create-rejected'
-  | 'attach-rejected' | 'attachment-timeout' | 'detach-timeout' | 'detach-applied' | 'delete-timeout' | 'delete-applied'
+type Fault = 'region' | 'attachment' | 'wrong-instance' | 'guest-readiness' | 'mount' | 'permission' | 'handshake' | 'create-hidden'
+  | 'create-rejected' | 'create-limited' | 'attach-rejected' | 'attach-limited' | 'attachment-timeout'
+  | 'detach-timeout' | 'detach-applied' | 'delete-timeout' | 'delete-applied'
 
 function fixture(fault?: Fault) {
   const disk = new Map<WorkspaceId, string>()
@@ -56,6 +57,7 @@ function fixture(fault?: Fault) {
     if (path === '/instances' && method === 'POST') {
       expect(record()).toMatchObject({ phase: 'creating', attachment: { state: 'not-requested' } })
       if (fault === 'create-rejected') return new Response(null, { status: 400 })
+      if (fault === 'create-limited') return new Response(null, { status: 429 })
       const body = z.object({ label: z.string(), tags: z.array(z.string()), region: z.literal('nrt'), plan: z.literal('vc2-1c-1gb'),
         os_id: z.literal(2284), user_data: z.string() }).parse(JSON.parse(z.string().parse(options?.body)))
       expect(Buffer.from(body.user_data, 'base64').toString()).toBe('cloud-init')
@@ -90,6 +92,7 @@ function fixture(fault?: Fault) {
         expect(instance?.enable_memorybacking).toBe('shared')
         expect(options?.body).toBeUndefined()
         if (fault === 'attach-rejected') return new Response(null, { status: 422 })
+        if (fault === 'attach-limited') return new Response(null, { status: 429 })
         if (fault === 'attachment-timeout') return loseResponse()
         attached = true
       }
@@ -107,13 +110,17 @@ function fixture(fault?: Fault) {
   const api = new VultrApi('fixture', 'https://fixture.invalid/v2', 75, 1, 4096, transport)
   const directory = { root: '/volume/workspaces/ws-2de1', volumePath: '/workspaces/ws-2de1', uid: 11001, gid: 11001, assertCurrent: vi.fn() }
   const bootstrap = vi.fn(() => Promise.resolve('cloud-init'))
-  const connect = vi.fn((_record: SingleVmAllocation, vm: VultrInstance, location: typeof directory, tag: number) => {
-    expect(record()).toMatchObject({ phase: 'mounting', instanceId: vm.id, attachment: { state: 'attached', mountTag: 113849250 } })
+  const connect = vi.fn(async (_record: SingleVmAllocation, vm: VultrInstance, location: typeof directory, tag: number,
+    _signal: AbortSignal, beforeMount: () => Promise<void>) => {
+    expect(record()).toMatchObject({ phase: 'attaching', instanceId: vm.id, attachment: { state: 'attached', mountTag: 113849250 } })
     expect(location).toBe(directory)
     expect(tag).toBe(113849250)
-    if (fault === 'mount') return Promise.reject(new Error('Wrong guest volume path'))
-    if (fault === 'permission') return Promise.reject(new Error('Task write probe denied'))
-    return Promise.resolve({ host: 'fixture', launch: { kind: 'executable' as const }, helper: '/helper', helperHash: 'a'.repeat(64), workspace: '/workspace' })
+    if (fault === 'guest-readiness') throw new Error('Guest readiness marker missing')
+    await beforeMount()
+    expect(record().phase).toBe('mounting')
+    if (fault === 'mount') throw new Error('Wrong guest volume path')
+    if (fault === 'permission') throw new Error('Task write probe denied')
+    return { host: 'fixture', launch: { kind: 'executable' as const }, helper: '/helper', helperHash: 'a'.repeat(64), workspace: '/workspace' }
   })
   const retire = vi.fn(async () => { requests.push('SSH retire') })
   const entered = Promise.withResolvers<undefined>()
@@ -196,6 +203,7 @@ test('rejects an out-of-region volume before creating an allocation record or re
 
 test.each([
   ['wrong-instance', 'booting', 'not-requested', true], ['attachment', 'attaching', 'requested', true],
+  ['guest-readiness', 'attaching', 'attached', false],
   ['mount', 'mounting', 'attached', false], ['permission', 'mounting', 'attached', false], ['handshake', 'handshake', 'attached', false],
   ['attachment-timeout', 'attaching', 'requested', true],
 ] as const)('handles %s startup failure without accepting commands', async (fault, phase, attachment, retained) => {
@@ -208,6 +216,12 @@ test.each([
   expect(() => { void backend.files(workspaceId, stale) }).toThrow('sandbox_workspace_conflict')
   if (phase !== 'handshake') expect(f.runtime.open).not.toHaveBeenCalled()
   expect(f.requests.includes('DELETE /instances/' + instanceId)).toBe(!retained)
+  if (fault === 'guest-readiness') {
+    expect(f.retire).not.toHaveBeenCalled()
+    expect(f.requests.filter(value => value.startsWith('DELETE '))).toEqual([
+      'DELETE /vfs/' + volumeId + '/attachments/' + instanceId, 'DELETE /instances/' + instanceId,
+    ])
+  }
   if (fault === 'attachment-timeout') {
     f.revealAttachment()
     await backend.recoverTask(workspaceId)
@@ -290,7 +304,7 @@ test('task settlement fences a disconnected helper, waits for guest cleanup, and
   await backend.dispose()
 })
 
-test.each(['create-rejected', 'attach-rejected', 'permission'] as const)('a confirmed %s failure allows the next task without restarting', async (fault) => {
+test.each(['create-rejected', 'create-limited', 'attach-rejected', 'attach-limited', 'permission'] as const)('a confirmed %s failure allows the next task without restarting', async (fault) => {
   const f = fixture(fault)
   const backend = f.make()
   await backend.initialize()
@@ -298,6 +312,7 @@ test.each(['create-rejected', 'attach-rejected', 'permission'] as const)('a conf
   const signal = new AbortController().signal
   await expect(lifecycle.acquire(signal)).rejects.toMatchObject({ code: 'cloud_open_failed', outcomeUnknown: false })
   expect(lifecycle.status()).toBe('closed')
+  if (fault === 'attach-limited') expect(f.requests).toContain('DELETE /instances/' + instanceId)
   f.setFault()
   const fresh = await lifecycle.acquire(signal)
   await fresh.release()

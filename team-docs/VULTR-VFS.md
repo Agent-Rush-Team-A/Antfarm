@@ -40,11 +40,11 @@ findmnt -rn --mountpoint /srv/antfarm/vfs -o TARGET,SOURCE,FSTYPE,FSROOT
 
 管理员用[挂载检查脚本](vfs/check-mount.sh)核对整卷与绑定挂载，并验证实际任务账号可读写后，从可信安装目录调用[受限 helper 启动脚本](vfs/run-workspace-helper.sh)。参数依次为绑定的任务 UID/GID、已验证的 `/workspace` 路径和已安装 helper 的绝对路径。脚本以该任务身份启动 helper，Bash 子进程继承同一身份和权限限制。文本工具的新文件以 `0660` 发布，替换保留原权限。Bash 创建的私有文件仍由所有者发布。
 
-单会话分配提供方从部署配置取得卷 UUID，并从 `vfsScriptsRoot` 读取上述两个脚本。该目录、管理密钥、helper 归档和分配记录位于所有工作区挂载之外。执行 VM 镜像需提供 OpenSSH、`sudo`、util-linux 的 `setpriv` 和 `flock`、procps 的 `pgrep`，以及 `virtiofs` 支持。管理连接负责挂载和安装，并在任务账号的 home 目录下准备仅该账号可写的本机 helper 缓存。任务用户的 SSH 密钥只允许启动固定 helper，并允许其 Unix 套接字转发。[OpenSSH 密钥选项](https://man.openbsd.org/sshd.8#AUTHORIZED_KEYS_FILE_FORMAT)
+单会话分配提供方从部署配置取得卷 UUID，并从 `vfsScriptsRoot` 读取上述两个脚本。该目录、管理密钥、helper 归档和分配记录位于所有工作区挂载之外。执行 VM 镜像需提供 OpenSSH、`sudo`、util-linux 的 `setpriv` 和 `flock`、procps 的 `pgrep` 和 `pkill`，以及 `virtiofs` 支持。管理连接负责挂载和安装，并在任务账号的 home 目录下准备仅该账号可写的本机 helper 缓存。任务用户的 SSH 密钥只允许启动固定 helper，并允许其 Unix 套接字转发。[OpenSSH 密钥选项](https://man.openbsd.org/sshd.8#AUTHORIZED_KEYS_FILE_FORMAT)
 
 ## 回收执行 VM
 
-单会话 VM 等已排队的输入、命令和写入收尾后，由任务生命周期回收原代次。管理员在原 VM 上禁止 helper 再启动，确认任务用户的进程退出，同步文件系统，再依次卸载 `/workspace` 和卷根。提供方按卷 ID 和实例 ID 解除连接，确认连接消失后删除实例，再确认实例和连接均已消失。下一台 VM 使用同一卷和登记目录。[Vultr 卷连接管理](https://docs.vultr.com/products/storage/file-system/management/attach-instances)
+单会话 VM 等已排队的输入、命令和写入收尾后，由任务生命周期回收原代次。管理员在原 VM 上禁止 helper 再启动，终止该 VM 专用任务 UID 的遗留进程并确认退出，同步文件系统，再依次卸载 `/workspace` 和卷根。如果 SSH 就绪检查或 helper 安装在发送挂载命令前失败，提供方可直接开始云端清理。提供方按卷 ID 和实例 ID 解除连接，确认连接消失后删除实例，再确认实例和连接均已消失。下一台 VM 使用同一卷和登记目录。[Vultr 卷连接管理](https://docs.vultr.com/products/storage/file-system/management/attach-instances)
 
 Harness 启动时串行核对保留的记录，后续任务也可触发核对。创建未获应答时用原唯一标签查找实例。卷连接、删除或写入结果仍不明确时，保留原阶段和容量，状态显示 `cleanup_required`。核对时仅操作符合原标签和资源 ID 的实例与连接。
 

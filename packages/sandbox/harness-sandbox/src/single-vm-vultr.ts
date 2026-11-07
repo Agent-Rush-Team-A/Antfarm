@@ -42,7 +42,7 @@ type Runtime = Pick<WorkspaceSshRuntime, 'bind' | 'open' | 'status' | 'execute' 
 type Records = Pick<CloudWorkspaceRecords<SingleVmAllocation>, 'load' | 'save' | 'remove' | 'outside' | 'close'>
 
 function rejectedMutation(error: unknown): boolean {
-  return error instanceof VultrApiError && [400, 401, 403, 422].includes(error.status)
+  return error instanceof VultrApiError && [400, 401, 403, 422, 429].includes(error.status)
 }
 
 interface Slot {
@@ -185,9 +185,10 @@ export class SingleVmVultrBackend {
         throw error
       }
       const mountTag = await this.waitAttachment(attaching, created.id, signal)
-      const mounting = { ...attaching, phase: 'mounting', attachment: { state: 'attached', mountTag } } satisfies SingleVmAllocation
-      await this.save(slot, mounting)
-      const connection = await this.provisioning.connect(mounting, ready, directory, mountTag, signal)
+      const attached = { ...attaching, attachment: { state: 'attached', mountTag } } satisfies SingleVmAllocation
+      await this.save(slot, attached)
+      const mounting = { ...attached, phase: 'mounting' } satisfies SingleVmAllocation
+      const connection = await this.provisioning.connect(attached, ready, directory, mountTag, signal, () => this.save(slot, mounting))
       directory.assertCurrent()
       if (connection.workspace !== mounting.remoteRoot) throw new Error('Single VM helper has a different workspace root')
       await this.save(slot, { ...mounting, phase: 'handshake' })

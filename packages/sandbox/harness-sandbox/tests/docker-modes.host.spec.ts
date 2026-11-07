@@ -11,6 +11,27 @@ import * as DockerModes from '../src/docker-modes.ts'
 import { fixture } from './fixtures/management.ts'
 
 describe.runIf(process.platform === 'linux')('Docker mode directory publication', () => {
+  test('rejects a default single-session VM before starting cloud providers', async () => {
+    const f = await fixture(1000, false, 1000, 1000, 'single-vm')
+    await f.sandboxFiber.dispose()
+    const vm = {
+      apiKeyFile: join(f.home, 'api-key'), sshKeyFile: join(f.home, 'ssh-key'), stateRoot: join(f.home, 'cloud-state'),
+      helperArchive: join(f.home, 'helper.tar.gz'), helperArchiveHash: 'a'.repeat(64), helperHash: 'b'.repeat(64),
+      deploymentId: 'test', region: 'nrt', plan: 'vc2-1c-1gb', osId: 2284,
+    }
+    const mountPoint = join(f.home, 'vfs')
+    await expect(DockerModes.apply(f.ctx, {
+      socketPath: f.socketPath, workspaceRoot: f.workspaceRoot, stateRoot: join(f.home, 'mode-state'), maxFiles: 100, maxBytes: 4096,
+      vultr: {
+        multi: vm,
+        single: { ...vm, volumeId: randomUUID(), vfsScriptsRoot: join(f.home, 'scripts') },
+        vfs: { mountPoint, mountTag: '113849250', workspaceRoot: join(mountPoint, 'workspaces'),
+          stateRoot: join(f.home, 'identities'), taskIds: [11001] },
+      },
+    })).rejects.toThrow('Vultr VFS requires workspace.defaultMode other than single-vm')
+    expect(f.calls).toEqual([])
+  })
+
   test('recovery restores a missing published root while binary access refuses it', async () => {
     const f = await fixture(1000, false, 1000, 1000, 'multi-docker')
     await f.sandboxFiber.dispose()

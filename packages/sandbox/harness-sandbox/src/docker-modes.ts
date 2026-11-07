@@ -63,12 +63,16 @@ export const inject = ['workspaceRegistry']
  */
 export async function apply(ctx: Context, config: Config): Promise<void> {
   const settings = Config(config)
+  const registry = ctx.workspaceRegistry
+  const cloud = settings.vultr
+  if (cloud != null && registry.config.defaultMode === 'single-vm') {
+    throw new Error('Vultr VFS requires workspace.defaultMode other than single-vm. Switch to single-vm before creating the first Session.')
+  }
   if (!isAbsolute(settings.stateRoot)) throw new Error('Docker mode stateRoot must be absolute')
   const root = resolve(settings.workspaceRoot)
   if (await realpath(root) !== root || !(await lstat(root)).isDirectory()) {
     throw new Error('Docker mode workspaceRoot must be a canonical directory')
   }
-  const registry = ctx.workspaceRegistry
   const directory = async (workspaceId: WorkspaceId, project: string, signal: AbortSignal,
     admit: () => void, allowMissing = false): Promise<WorkspaceModeDirectory> => {
     const workspace = registry.get(workspaceId)
@@ -112,7 +116,6 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         modes: registry.modes, targets, runtime: new WorkspaceModeRuntimeAdapter(resources),
       })
     }
-    const cloud = settings.vultr
     if (cloud == null) { await publish(owner); return }
 
     const workspaces = new SingleVmWorkspaces({ ...cloud.vfs, projectRoot: root }, id => registry.get(id))

@@ -49,9 +49,11 @@ export interface VultrVfsProvisioning {
    * @param directory - Registered VFS path and task identity.
    * @param mountTag - Tag observed for the original attachment.
    * @param signal - Preparation deadline.
+   * @param beforeMount - Persist possible guest mounts after SSH readiness and helper installation, before issuing the mount command.
    * @returns Pinned SSH coordinates for the installed restricted helper.
    */
-  connect(record: BootTarget, instance: VultrInstance, directory: TaskDirectory, mountTag: number, signal: AbortSignal): Promise<SshConfig>
+  connect(record: BootTarget, instance: VultrInstance, directory: TaskDirectory, mountTag: number, signal: AbortSignal,
+    beforeMount: () => Promise<void>): Promise<SshConfig>
   /**
    * Fence helper startup, confirm task processes exited, and synchronize and unmount the original guest.
    * @param record - Original allocation, including its bootstrap marker.
@@ -115,8 +117,14 @@ export class VultrSshProvisioning implements VultrProvisioning {
   forVfs(scripts: VultrVfsScripts): VultrVfsProvisioning {
     return {
       bootstrap: async (record, directory, signal) => this.bootstrapGuest(record, signal, this.taskId(directory)),
-      connect: async (record, instance, directory, mountTag, signal) =>
-        this.connectGuest(record, instance, signal, this.mountWorkspace(directory, mountTag, scripts)),
+      connect: async (record, instance, directory, mountTag, signal, beforeMount) => {
+        const command = this.mountWorkspace(directory, mountTag, scripts)
+        return this.connectGuest(record, instance, signal, async (configFile) => {
+          signal.throwIfAborted()
+          await beforeMount()
+          await executeFile('ssh', ['-F', configFile, admin, command], { signal, maxBuffer: 64 * 1024 })
+        })
+      },
       retire: async (record, instance, signal) => {
         const configFile = await this.pinnedGuest(record, instance, signal)
         await executeFile('ssh', ['-F', configFile, admin, this.retireVfs()], { signal, maxBuffer: 64 * 1024 })
@@ -195,7 +203,8 @@ export class VultrSshProvisioning implements VultrProvisioning {
     return configFile
   }
 
-  private async connectGuest(record: BootTarget, instance: VultrInstance, signal: AbortSignal, prepare?: string): Promise<SshConfig> {
+  private async connectGuest(record: BootTarget, instance: VultrInstance, signal: AbortSignal,
+    prepare?: (configFile: string) => Promise<void>): Promise<SshConfig> {
     const configFile = await this.pinnedGuest(record, instance, signal)
     const remoteArchive = '/tmp/antfarm-helper-' + this.settings.helperArchiveHash + '.tar.gz'
     await executeFile('scp', ['-F', configFile, this.settings.helperArchive, admin + ':' + remoteArchive], { signal, maxBuffer: 64 * 1024 })
@@ -208,7 +217,7 @@ export class VultrSshProvisioning implements VultrProvisioning {
     ].join('\n')
     await executeFile('ssh', ['-F', configFile, admin, command], { signal, maxBuffer: 64 * 1024 })
     const helper = install + '/dsh-ssh-helper'
-    if (prepare !== undefined) await executeFile('ssh', ['-F', configFile, admin, prepare], { signal, maxBuffer: 64 * 1024 })
+    await prepare?.(configFile)
     return { host, configFile, launch: { kind: 'executable' }, helper, helperHash: this.settings.helperHash,
       workspace: record.remoteRoot, requestTimeoutMs: this.settings.requestTimeoutMs }
   }
@@ -279,12 +288,18 @@ export class VultrSshProvisioning implements VultrProvisioning {
   private retireVfs(): string {
     const settle = [
       'set -eu',
-      'rm -f -- ' + quote(guestLaunch),
       'uid=$(id -u workspace-exec)',
+      'test "$uid" -gt 0',
+      'exec 9>>' + quote(guestHelperLock),
       'while true; do',
-      '  if /usr/bin/pgrep -u "$uid" >/dev/null; then sleep 1',
-      '  else test "$?" -eq 1; break; fi',
+      '  if /usr/bin/flock -xn 9; then',
+      '    if /usr/bin/pgrep -u "$uid" >/dev/null; then :',
+      '    else test "$?" -eq 1; break; fi',
+      '  else test "$?" -eq 1; fi',
+      '  /usr/bin/pkill -KILL -u "$uid" || test "$?" -eq 1',
+      '  sleep 1',
       'done',
+      'rm -f -- ' + quote(guestLaunch),
       'vfs_mounts() { awk ' + quote('$5 == "' + guestWorkspace + '" || $5 == "' + vfsRoot + '" { print $5 }') + ' /proc/self/mountinfo; }',
       'mounts=$(vfs_mounts)',
       'if printf "%s\\n" "$mounts" | grep -Fxq ' + quote(guestWorkspace) + '; then',
@@ -301,8 +316,7 @@ export class VultrSshProvisioning implements VultrProvisioning {
     return [
       'set -eu',
       'touch -- ' + quote(guestFence),
-      '/usr/bin/timeout --kill-after=5s ' + String(Math.ceil(this.settings.operationTimeoutMs / 1000)) + 's /usr/bin/flock -x '
-        + quote(guestHelperLock) + ' /bin/sh -c ' + quote(settle),
+      '/usr/bin/timeout --kill-after=5s ' + String(Math.ceil(this.settings.operationTimeoutMs / 1000)) + 's /bin/sh -c ' + quote(settle),
     ].join('\n')
   }
 }

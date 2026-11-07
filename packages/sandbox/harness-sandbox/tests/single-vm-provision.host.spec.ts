@@ -63,7 +63,9 @@ test('bootstrap assigns the stable identity and separates admin commands from th
 test('waits for the current marker and probes exact mounts under the assigned task before returning SSH coordinates', async () => {
   const f = await setup()
   child.exec.mockRejectedValueOnce(new Error('Guest marker is stale')).mockResolvedValue({ stdout: '' })
-  const connection = await f.provisioning.connect(f.record, f.instance, f.directory, 113849250, AbortSignal.timeout(1000))
+  const beforeMount = vi.fn(async () => { expect(child.exec).toHaveBeenCalledTimes(4) })
+  const connection = await f.provisioning.connect(f.record, f.instance, f.directory, 113849250, AbortSignal.timeout(1000), beforeMount)
+  expect(beforeMount).toHaveBeenCalledOnce()
   const calls = child.exec.mock.calls
   expect(calls.map(([program]) => program)).toEqual(['ssh', 'ssh', 'scp', 'ssh', 'ssh'])
   expect(calls[0]?.[1].at(-1)).toBe('test "$(cat /var/lib/antfarm-workspace-ready)" = \'unique-new-label\'')
@@ -95,24 +97,35 @@ test('a stale marker at the deadline never permits helper installation or mounti
     deadline.abort(new Error('Old readiness marker'))
     return Promise.reject(new Error('Old readiness marker'))
   })
-  await expect(f.provisioning.connect(f.record, f.instance, f.directory, 113849250, deadline.signal)).rejects.toThrow('Old readiness marker')
+  const beforeMount = vi.fn(async () => {})
+  await expect(f.provisioning.connect(f.record, f.instance, f.directory, 113849250, deadline.signal, beforeMount)).rejects.toThrow('Old readiness marker')
+  expect(beforeMount).not.toHaveBeenCalled()
   expect(child.exec.mock.calls.map(([program]) => program)).toEqual(['ssh'])
+})
+
+test('mounting waits for the allocation record to persist', async () => {
+  const f = await setup()
+  child.exec.mockResolvedValue({ stdout: '' })
+  await expect(f.provisioning.connect(f.record, f.instance, f.directory, 113849250, AbortSignal.timeout(1000), async () => {
+    throw new Error('Allocation record failed to persist')
+  })).rejects.toThrow('Allocation record failed to persist')
+  expect(child.exec.mock.calls.map(([program]) => program)).toEqual(['ssh', 'scp', 'ssh'])
 })
 
 test('refuses invalid directory coordinates and preserves a failed task probe', async () => {
   const f = await setup()
   child.exec.mockResolvedValue({ stdout: '' })
   await expect(f.provisioning.connect(f.record, f.instance, { ...f.directory, volumePath: '/workspaces/../escape' },
-    113849250, AbortSignal.timeout(1000))).rejects.toThrow('Invalid native VFS workspace path')
+    113849250, AbortSignal.timeout(1000), async () => {})).rejects.toThrow('Invalid native VFS workspace path')
   expect(child.exec).not.toHaveBeenCalled()
   child.exec.mockReset()
   child.exec.mockResolvedValueOnce({ stdout: '' }).mockResolvedValueOnce({ stdout: '' }).mockResolvedValueOnce({ stdout: '' })
     .mockRejectedValueOnce(new Error('Task permission probe failed'))
-  await expect(f.provisioning.connect(f.record, f.instance, f.directory, 113849250, AbortSignal.timeout(1000)))
+  await expect(f.provisioning.connect(f.record, f.instance, f.directory, 113849250, AbortSignal.timeout(1000), async () => {}))
     .rejects.toThrow('Task permission probe failed')
 })
 
-test('guest retirement fences the original helper and syncs before unmounting in order', async () => {
+test('guest retirement fences the helper and drains the task UID before syncing and unmounting', async () => {
   const f = await setup()
   child.exec.mockResolvedValue({ stdout: '' })
   await f.provisioning.retire(f.record, f.instance, AbortSignal.timeout(1000))
@@ -121,7 +134,8 @@ test('guest retirement fences the original helper and syncs before unmounting in
   expect(calls[0]?.[1].at(-1)).toContain(f.record.label)
   const retire = calls[1]?.[1].at(-1) ?? ''
   const steps = [
-    'touch --', '/usr/bin/flock -x', 'rm -f --', '/usr/bin/pgrep -u', '/proc/self/mountinfo',
+    'touch --', '/usr/bin/timeout', 'id -u workspace-exec', '/usr/bin/flock -xn 9', '/usr/bin/pgrep -u "$uid"',
+    '/usr/bin/pkill -KILL -u "$uid"', 'rm -f --', '/proc/self/mountinfo',
     '/bin/sync -f', 'umount --', '/bin/sync -f', 'umount --',
   ]
   let cursor = 0
