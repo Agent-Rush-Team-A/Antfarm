@@ -56,6 +56,10 @@
     "./files": {
       "types": "./lib/types/files.d.ts",
       "default": "./lib/files.js"
+    },
+    "./vultr": {
+      "types": "./lib/types/vultr.d.ts",
+      "default": "./lib/vultr.js"
     }
   },
   "files": [
@@ -73,7 +77,8 @@
     "lib/typert.remote-client.d.ts",
     "lib/backend.js",
     "lib/ssh.js",
-    "lib/files.js"
+    "lib/files.js",
+    "lib/vultr.js"
   ],
   "license": "MIT",
   "peerDependencies": {
@@ -102,7 +107,9 @@
     "@deepseek-ai/dsh-subprocess-ssh": "workspace:*",
     "@deepseek-ai/dsh-sandbox-policy": "workspace:*",
     "@deepseek-ai/dsh-session-projection": "workspace:*",
-    "@deepseek-ai/dsh-tool-fs": "workspace:*"
+    "@deepseek-ai/dsh-tool-fs": "workspace:*",
+    "@deepseek-ai/dsh-fs-local": "workspace:*",
+    "@deepseek-ai/node-addon-system": "workspace:~"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-tools": "workspace:*",

@@ -40,6 +40,7 @@ Install an [SSH helper executable archive](../ssh-helper-runtime/README.md), or 
 | Field | Default | Meaning |
 |---|---|---|
 | `host` | required | Existing OpenSSH host alias |
+| `configFile` | omitted | Absolute private OpenSSH configuration used for every master and forwarding command |
 | `launch` | required | `{ kind: "executable" }`, or `{ kind: "node-script", node: "/absolute/node" }` |
 | `helper`, `workspace` | required | Absolute remote helper entry and default workspace |
 | `helperHash` | required | Lowercase SHA-256 of the installed helper entry |
@@ -50,6 +51,10 @@ Install an [SSH helper executable archive](../ssh-helper-runtime/README.md), or 
 | `leaseMs` | `30000` | Helper heartbeat lease, from 3000 to 600000 ms |
 
 Pass the verified `ctx.ssh.ptcLaunch` as the `launch` configuration of [`NodePtcRuntime`](../../ptc-runtime/ptc-runtime-node/README.md). Executable deployments include their worker. Script deployments require both bootstrap fields for PTC; filesystem and Bash use may omit them. The getter refuses an unconfigured script bootstrap. The client rejects mismatched protocol versions, runtime kinds and helper digests before readiness.
+
+### Workspace binary files
+
+The `./workspace-files` entry provides bounded listings and streamed binary upload/download inside the handshake workspace. Paths remain relative, symlinks are refused through directory descriptors, uploads publish an exclusive leaf, and reads retain the initial descriptor and byte extent. Transfers use bounded 64 KiB chunks and close remote handles after cancellation. Before cloud preservation, `workspace.quiesce` rejects new writes and process starts, revokes upload publication, stops managed processes and waits for accepted effects; read access remains available for the final copy.
 
 -----
 

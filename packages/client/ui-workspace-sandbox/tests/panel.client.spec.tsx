@@ -81,6 +81,17 @@ test('shows actionable capacity guidance in Chinese', () => {
   expect(screen.getByRole('alert').textContent).toBe('沙箱已满，请关闭一个或稍后重试')
 })
 
+test.each([
+  { reason: 'cloud_open_failed', operation: 'open', state: 'closed', message: '云工作区启动失败，请刷新状态后重试' },
+  { reason: 'cloud_save_failed', operation: 'close', state: 'cleanup_required',
+    message: '云工作区未能安全关闭，请刷新状态并联系管理员，确认后再重新开启' },
+] as const)('shows cloud recovery guidance for $reason', ({ reason, operation, state, message }) => {
+  const f = fixture({ ...closed, state, failure: { reason, operation, outcomeUnknown: false } }, zh)
+  expect(screen.getByRole('alert').textContent).toBe(message)
+  fireEvent.click(screen.getByRole('button', { name: zh.refresh }))
+  expect(f.props.refresh).toHaveBeenCalledWith(id)
+})
+
 test('an unknown opening result cannot be presented as closed or allow another opening', () => {
   const f = fixture({ ...closed, failure: { reason: 'runner_outcome_unknown', operation: 'open', outcomeUnknown: true } })
   expect(screen.getByRole('status').textContent).toBe(en.unconfirmed)

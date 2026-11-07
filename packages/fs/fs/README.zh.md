@@ -37,6 +37,11 @@ kind: "package-reference"
 
 `watch(target, changed, signal)` 报告单个文件或目录直接子项的失效通知。观察就绪后，它返回调用方必须等待完成的异步关闭函数。signal 取消初始化；不支持监听的提供方直接拒绝，不使用轮询。
 
+<a id="workspace-binary-access"></a>
+### 工作区二进制访问
+
+`./workspace-access` 入口为已授权 HTTP 文件调用方定义 `WorkspaceFileAccess`，服务名为 `ctx.workspaceFileAccess`。提供方获得原 Workspace 标识、登记项目路径、取消信号和权限复核函数，返回受限列表、流式上传的独占发布结果，或带有资源收束的固定下载流。该服务不替换 `ctx.fs`，不选择用户，也不注册模型工具。部署通过上传与产物 API 显式选用；提供方缺失时拒绝启动。
+
 -----
 
 <a id="understand-the-implementation"></a>

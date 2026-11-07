@@ -95,6 +95,11 @@ const PEER_REQUIRED_HOST_EXPORTS = {
   '@deepseek-ai/dsh-experimental-worktree': ['generatedWorktreeName'],
   // The forge panel matches ctx.fs failures with `instanceof FsError`.
   '@deepseek-ai/dsh-fs': ['FsError'],
+  // API and cloud storage recognize these failures by instanceof and must share their defining package.
+  '@deepseek-ai/dsh-fs-local/workspace-artifacts': [
+    'ArtifactFailure', 'artifactComponents', 'artifactFailure', 'listArtifacts', 'openArtifact', 'streamArtifact',
+  ],
+  '@deepseek-ai/dsh-fs-local/workspace-upload': ['storeWorkspaceUpload', 'UploadFailure', 'validateUploadName'],
   '@deepseek-ai/dsh-scope': ['carrierKeyOf', 'createScope', 'scopeOf', 'scopeTarget'],
   // appendPluginRecord writes through the Session class's private log; pluginRecordOf is stateless.
   '@deepseek-ai/dsh-session': ['SESSION_FORMAT_VERSION', 'appendPluginRecord', 'pluginRecordOf'],

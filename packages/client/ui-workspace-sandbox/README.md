@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-View sandbox status and start or stop a workspace's sandbox from the browser. Enable this package with Harness management and an independently deployed Runner. An open panel polls status every two seconds by default; only explicit user actions open or close a sandbox.
+View sandbox status and start or stop a workspace's sandbox from the browser. Enable this package with Harness management and a local Runner or the Vultr backend. An open panel polls status every two seconds by default; only explicit user actions open or close a sandbox.
 
 ## Table of Contents
 
@@ -25,11 +25,13 @@ View sandbox status and start or stop a workspace's sandbox from the browser. En
 <a id="use-this-package"></a>
 ## Use this package
 
-The Web bundle includes this plugin disabled by default. Enable it through the [Harness sandbox overlay](../../../apps/cli/config/examples/harness-sandbox.patch.yml). The independent Runner and canonical workspace root are deployment prerequisites. `pollIntervalMs` is the delay after a completed status query; its default is 2000 milliseconds.
+The Web bundle includes this plugin disabled by default. Enable it through the [Runner overlay](../../../apps/cli/config/examples/harness-sandbox.patch.yml) or [Vultr overlay](../../../apps/cli/config/examples/harness-vultr.patch.yml), with that backend’s deployment prerequisites and canonical workspace root. `pollIntervalMs` is the delay after a completed status query; its default is 2000 milliseconds.
 
 The workspace menu and conversation input action open the same panel for the selected workspace. It displays current state, prevents repeated pending operations, refreshes explicitly and asks for confirmation before closing. Dismissing the panel leaves the sandbox running.
 
 Capacity exhaustion asks the user to close a sandbox or retry later. Unknown operation results disable new mutations; a failed status query marks the last observed state as stale. Workspace access revocation removes the panel and menu entry, and connection replacement or plugin disposal suppresses delayed feedback.
+
+Cloud startup failures request a status refresh before retrying; unsafe closure failures request administrator assistance before reopening.
 
 | Field | Default | Meaning |
 | --- | --- | --- |

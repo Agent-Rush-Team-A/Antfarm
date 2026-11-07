@@ -4,6 +4,7 @@ import type { FileSystem } from '@deepseek-ai/dsh-fs'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import { RunnerResponseError } from './runner-client.ts'
 import type { RunnerClosedSandbox, RunnerRunningSandbox, RunnerSandboxStatus, SandboxContainerId } from './runner-client.ts'
+import type { SandboxProgress, SandboxActivity } from './types.ts'
 import type { RunnerCancellationResult, RunnerExecutionIdentity, RunnerExecutionRequest, RunnerExecutionResult } from './execution.ts'
 
 /** Files and directory of one original execution generation, never the Harness project directory. */
@@ -61,6 +62,20 @@ export abstract class SandboxExecutionBackend extends Service {
    * @returns Cancellation receipt, not cleanup confirmation.
    */
   abstract cancel(workspaceId: WorkspaceId, request: RunnerExecutionIdentity): Promise<RunnerCancellationResult>
+
+  /**
+   * Observe work retained by backend preparation or cleanup.
+   * @param _workspaceId - Authorized identity.
+   * @returns Provider-owned work that survives a cancelled caller, or persistent cleanup barriers.
+   */
+  activity(_workspaceId: WorkspaceId): Pick<SandboxActivity, 'openings' | 'executions' | 'closing'> | undefined { return undefined }
+
+  /**
+   * Observe deployment progress without exposing cloud identities.
+   * @param _workspaceId - Authorized identity.
+   * @returns Optional provider-specific cloud progress without deployment coordinates.
+   */
+  progress(_workspaceId: WorkspaceId): SandboxProgress | undefined { return undefined }
 
   /**
    * Access files only in the captured execution generation; unsupported backends refuse rather than using host files.

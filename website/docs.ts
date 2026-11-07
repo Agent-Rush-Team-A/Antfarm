@@ -147,6 +147,14 @@ const homeAndGuide = pairedPages([
     order: 7,
   },
   {
+    source: 'docs/user/guide/workspace-vultr.md',
+    route: 'guide/workspace-vultr.md',
+    label: { root: 'Vultr 工作区 VM', en: 'Vultr workspace VMs' },
+    sidebar: { root: 'zh-guide', en: 'en-guide' },
+    section: { root: '入门', en: 'Guide' },
+    order: 8,
+  },
+  {
     source: 'docs/user/guide/public-deployments.md',
     route: 'guide/public-deployments.md',
     label: { root: '公开部署', en: 'Public deployments' },

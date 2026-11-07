@@ -1,0 +1,92 @@
+# Optional on-demand Vultr Workspace VMs over the default Antfarm Web composition.
+# Configure private deployment files and a verified standalone helper archive before launch.
+- id: ui-workspace-sandbox
+  disabled: false
+- insert:
+    - id: workspace-vultr-backend
+      name: '@deepseek-ai/dsh-harness-sandbox/vultr'
+      config: !!js JSON.parse(process.env.DSH_VULTR_CONFIG_JSON)
+    - id: workspace-sandbox
+      name: '@deepseek-ai/dsh-harness-sandbox'
+      inject: [sandboxRunnerClient]
+      config:
+        backend: provided
+        workspaceRoot: !!js process.env.DSH_MULTIUSER_WORKSPACE_ROOT
+    - id: sandbox-conversation
+      name: '@deepseek-ai/dsh-harness-sandbox/conversation'
+    - id: sandbox-idle
+      name: '@deepseek-ai/dsh-harness-sandbox/idle'
+      config:
+        idleTimeoutMs: 1800000
+        sweepIntervalMs: 10000
+
+- id: working-directory
+  config:
+    modelDirectory: /workspace
+- id: harness-dev-context
+  disabled: true
+- id: deliverable-file-references
+  disabled: true
+- id: sandbox-policy
+  config:
+    mode: workspace-write
+    modelContext: false
+- id: spill-policy
+  disabled: true
+
+# Native execution and one isolated preset; no host-tool or indirect dispatch entry.
+- id: tool-executor-native
+  disabled: false
+- id: tool-executor-ptc
+  disabled: true
+- id: preset-standard
+  config:
+    id: standard
+    order: 1
+    plugins:
+      - id: persona
+        name: '@deepseek-ai/dsh-persona'
+        config:
+          prefix: You are a coding agent powered by the {{model}} model.
+      - id: sandbox-bash
+        name: '@deepseek-ai/dsh-harness-sandbox/bash'
+      - id: sandbox-files
+        name: '@deepseek-ai/dsh-harness-sandbox/files'
+- id: preset-ptc
+  disabled: true
+- id: preset-cordis
+  disabled: true
+- id: preset-minimal
+  disabled: true
+- id: tool-working-directory
+  disabled: true
+- id: tool-agent-team
+  disabled: true
+- id: mcp-manager
+  disabled: true
+- id: mcp-resources
+  disabled: true
+- id: tool-bash
+  disabled: true
+- id: tool-pwsh
+  disabled: true
+- id: tool-fs
+  disabled: true
+- id: tool-fs-search
+  disabled: true
+- id: tool-jobs
+  disabled: true
+- id: terminal-controller
+  disabled: true
+- id: open-in-app
+  disabled: true
+
+# Explicit remote file selection, with no host fallback.
+- id: workspace-upload
+  inject: [workspaceFileAccess]
+  config:
+    storage: provided
+- id: workspace-artifacts
+  inject: [workspaceFileAccess]
+  config:
+    storage: provided

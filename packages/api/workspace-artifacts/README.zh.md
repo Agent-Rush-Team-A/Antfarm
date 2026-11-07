@@ -38,6 +38,10 @@ kind: "package-reference"
 
 路径使用 `/` 分隔原始组成部分。绝对路径、盘符前缀、`.` 或 `..`、中间空组成部分、反斜杠、控制字节、超过 255 个 UTF-8 字节的组成部分以及超过 4095 个 UTF-8 字节的路径均被拒绝。列表省略符号链接和特殊文件，下载也拒绝这些文件。
 
+### 远程工作区存储
+
+设置 `storage: provided` 并注入 `workspaceFileAccess`，即可使用[云工作区提供方](../../sandbox/harness-sandbox/README.zh.md#workspace-vultr)。提供方缺失时拒绝启动，远程错误不回退到登记的宿主目录。上传发布或下载收束之前，请求持续保留原工作区权限与取消信号。设置 `storage: local` 时，继续提供原有基于描述符的本地行为。
+
 -----
 
 <a id="understand-the-implementation"></a>

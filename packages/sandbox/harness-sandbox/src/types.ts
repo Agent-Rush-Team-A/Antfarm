@@ -11,6 +11,13 @@ export interface SandboxRequest {
 export interface SandboxValue {
   readonly workspaceId: WorkspaceId
   readonly state: 'closed' | 'starting' | 'running' | 'closing' | 'cleanup_required'
+  readonly progress?: SandboxProgress
+}
+
+/** Provider progress, without VM ids, endpoints or keys. */
+export interface SandboxProgress {
+  readonly phase: 'closed' | 'creating' | 'connecting' | 'running' | 'restoring' | 'saving_files' | 'stopping' | 'saving_snapshot' | 'deleting' | 'failed'
+  readonly failure?: 'create' | 'connect' | 'save' | 'restore' | 'delete' | 'resource_missing' | 'ownership' | 'interrupted'
 }
 
 /** Local work that an idle-reclamation consumer must allow to settle before closing. */
@@ -25,7 +32,7 @@ export interface SandboxActivity {
 /** Stable management failures; unknown modifications retain the local closing barrier and require maintenance. */
 export type SandboxFailureReason = 'sandbox_not_ready' | 'sandbox_capacity' | 'sandbox_closing' | 'sandbox_cleanup_required'
   | 'sandbox_workspace_conflict' | 'sandbox_name_conflict' | 'sandbox_outcome_unknown' | 'invalid_workspace_directory'
-  | 'docker_unavailable' | 'runner_unavailable' | 'runner_outcome_unknown'
+  | 'docker_unavailable' | 'runner_unavailable' | 'runner_outcome_unknown' | 'cloud_open_failed' | 'cloud_save_failed'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {

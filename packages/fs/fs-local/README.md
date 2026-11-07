@@ -58,6 +58,10 @@ Read, listing, and mutation failures are typed `FsError`s with stable codes — 
 
 Chokidar observes one file or a directory's direct entries through OS events, without polling or recursive watching. Files use a filtered parent-directory watch, so readiness also covers creation of an initially missing file. File watches cover in-place writes, atomic replacement, deletion, and same-path recreation while the parent directory remains.
 
+### Workspace binary storage
+
+The `./workspace-upload` and `./workspace-artifacts` entries expose Linux descriptor-anchored workspace storage shared by local HTTP consumers and the SSH helper. They preserve exclusive publication, byte limits, relative-path validation, symlink refusal, and cancellation cleanup. Download streams retain their opened file descriptor through settlement. A transferred directory descriptor may supply a trusted staging parent for remote nested uploads; it remains owned by the storage operation through failure cleanup.
+
 -----
 
 <a id="understand-the-implementation"></a>

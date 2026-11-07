@@ -28,6 +28,8 @@ export interface RunnerRunningSandbox {
 /** Confirmed absence of the workspace container. */
 export interface RunnerClosedSandbox {
   readonly state: 'closed'
+  /** Cloud provider has reconciled all original mutation identities and confirmed their absence after preservation. */
+  readonly reconciled?: true
 }
 /** This query's observation, never a cached or guessed state. */
 export type RunnerSandboxStatus = RunnerRunningSandbox | RunnerClosedSandbox | { readonly state: 'starting' | 'closing' | 'cleanup_required' }

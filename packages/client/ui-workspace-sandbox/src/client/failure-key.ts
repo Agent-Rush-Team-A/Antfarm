@@ -3,6 +3,8 @@ import type { SandboxFailure } from './model.ts'
 import type { SandboxCopyKey } from './locales.ts'
 
 const keys = {
+  cloud_open_failed: 'cloudOpenFailed',
+  cloud_save_failed: 'cloudSaveFailed',
   sandbox_capacity: 'capacity',
   sandbox_closing: 'waitClosing',
   sandbox_cleanup_required: 'cleanupNote',

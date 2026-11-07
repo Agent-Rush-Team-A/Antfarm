@@ -211,7 +211,8 @@ export default class WorkspaceSandboxState extends Service {
         if (remote?.code === 'sandbox/failed' && remote.details.outcomeUnknown) state.uncertain = true
         throw error
       }
-      if (state.uncertain) this.unavailable('sandbox_outcome_unknown', true)
+      if (state.uncertain && result.reconciled !== true) this.unavailable('sandbox_outcome_unknown', true)
+      if (result.reconciled === true) state.uncertain = false
       state.closing = false
       this.record(id, result)
       return result
@@ -221,12 +222,14 @@ export default class WorkspaceSandboxState extends Service {
   }
 
   /**
-   * Retain command activity until cancellation, result retrieval and cleanup finish.
+   * Retain command or file activity until cancellation, result retrieval and cleanup finish.
+   * A closed observation is invalidated because file access can restore a remote workspace.
    * @param id - Authorized execution workspace.
    * @returns One release callback owned by the admitted execution.
    */
   beginExecution(id: WorkspaceId): () => void {
     const state = this.state(id)
+    if (state.sandbox.state === 'closed') this.unobserve(id)
     state.executions++
     this.changed(id)
     let released = false

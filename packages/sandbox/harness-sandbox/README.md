@@ -1,5 +1,5 @@
 ---
-description: "Authorize native workspace operations through a local Runner or fixed SSH instances."
+description: "Authorize workspace execution through local Docker, fixed SSH or independent Vultr VMs."
 kind: "package-reference"
 ---
 
@@ -48,7 +48,7 @@ The composition must also load native multiuser, Workspace Registry, Typert and 
 | `cancelTimeoutMs` | Total cancel deadline, default 15,000 ms; independent of an aborted exec wait. |
 | `maxExecResponseBytes` | Maximum complete exec response body, default 1 MiB, including JSON escaping. |
 
-The three Typert methods are `workspaceSandbox/open`, `workspaceSandbox/status`, and `workspaceSandbox/close`, carried by Connection POST `/api/<method>`. Their sole business argument is `request: { workspaceId }`. Use the existing login cookie and Connection Host/Origin checks. Extra fields, owner principals and calls without a user invocation are rejected. Results contain only `{ workspaceId, state }`; container identities and deployment paths never appear in management results.
+The three Typert methods are `workspaceSandbox/open`, `workspaceSandbox/status`, and `workspaceSandbox/close`, carried by Connection POST `/api/<method>`. Their sole business argument is `request: { workspaceId }`. Use the existing login cookie and Connection Host/Origin checks. Extra fields, owner principals and calls without a user invocation are rejected. Results contain `{ workspaceId, state }` with optional cloud `progress`; container identities and deployment paths never appear in management results.
 
 Each call checks native ownership and the same Workspace Registry id. Opening also validates the saved path as an existing non-symlink direct child of the trusted root, then rechecks ownership before contacting the Runner. Queries and closure remain available when the registered directory is missing or moved. Unknown workspaces and cross-user access follow the native `remote-access/denied` policy; invalid business input uses `gateway/bad-request`.
 
@@ -69,7 +69,43 @@ Repeated opens share the same generation. Execution ids retain original requests
 
 `files(workspaceId, containerId, signal)` returns the captured generation's filesystem, remote root, abort signal and `assertCurrent()`. Trusted consumers retain original user/turn authority, recheck it and the lease before each operation, pass the lease signal, and enforce their path policy. The backend does not register model tools. The local Runner refuses file capability requests instead of accessing host files.
 
-SSH close releases the helper and its managed processes; it does not power off or delete the VM. Cloud allocation, snapshots, idle VM reclamation and Web upload/download adaptation belong to cloud migration. Bindings and execution receipts are process-local; endpoint isolation depends on correctly prepared distinct VMs and SSH aliases, not merely distinct `instanceId` strings. Shared-host SSH tests validate dispatch and directory separation, not VM isolation.
+SSH close releases the helper and its managed processes; it does not power off or delete the VM. The [Vultr backend](#workspace-vultr) supplies cloud allocation, snapshot preservation and Web transfers separately; idle timing remains a consumer policy. Bindings and execution receipts are process-local; endpoint isolation depends on correctly prepared distinct VMs and SSH aliases, not merely distinct `instanceId` strings. Shared-host SSH tests validate dispatch and directory separation, not VM isolation.
+
+<a id="workspace-vultr"></a>
+### Vultr Workspace VMs
+
+The optional [Vultr overlay](../../../apps/cli/config/examples/harness-vultr.patch.yml) selects `@deepseek-ai/dsh-harness-sandbox/vultr` with deployment JSON in `DSH_VULTR_CONFIG_JSON`; use the [deployment guide](../../../docs/user/guide/workspace-vultr.md). It keeps Runner coordination on Harness and assigns one bare VM per active Workspace. Private control credentials, region, plan, image and helper artifact are deployment choices. The first open imports registered files once; restored snapshots retain the execution environment. SSH and helper integrity must pass before work is accepted. Remote failure never selects host execution.
+
+The cloud owner persists versioned metadata under private `stateRoot` and holds an exclusive kernel lock. Concurrent callers share preparation; restart reconciles recorded labels, VM ids and snapshot descriptions before allocating. An unacknowledged creation is never replayed, and ambiguous or missing resources block dependent work. Provider unload rejects new work, drains accepted requests and SSH cleanup, then releases the lock while retaining cloud disks for reconciliation. Startup failure also releases ownership after cleanup. Browser-safe `SandboxValue.progress` exposes phases and sanitized failure categories, without VM ids or paths.
+
+Closure revokes the original generation, stops commands and waits for the helper's write-quiescence acknowledgement. It produces a complete bounded file copy, confirms helper cleanup, flushes the guest disk and confirms stopped power state before snapshotting. Only a complete, durably recorded snapshot and copy authorize VM deletion. Save failure retains the source. A failed connection can be replaced during closure only after the cloud owner confirms the original VM is stopped. Explicit cloud reconciliation may clear the manager's unknown-mutation barrier; the local Runner's earlier conservative semantics remain unchanged.
+
+The provider supplies `ctx.workspaceFileAccess`; upload and artifact APIs select it with `storage: provided`. Closed listings and downloads use the private read-only copy; an unopened Workspace has an empty view without writing lifecycle metadata. Uploads or execution restore a VM and renew its generation. A copied file is never executed on Harness. `maxInstances`, polling and deadline settings, `maxSavedBytes` and `maxSavedFiles` bound resource usage. Capacity counts pending creation, unknown creation outcomes and owned orphan instances; unknown creation keeps its reservation across restart until the original VM is reconciled and reclaimed. A complete new save replaces superseded snapshots; snapshot storage remains billable. The Vultr overlay enables the shared idle plugin and Web controls; this backend adds no separate timer.
+
+The `/vultr` entry accepts these deployment settings. Keep credential files and `stateRoot` outside every registered project. Creation and snapshot restoration both install the pinned host key through cloud-init; readiness checks the current allocation label before installing the helper.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `apiKeyFile` | Required | Absolute private Vultr management-key file. |
+| `stateRoot` | Required | Absolute private durable directory owned by one Harness. |
+| `deploymentId` | Required | Stable 1–32 character identifier using letters, digits, `_` or `-`. |
+| `region`, `plan`, `osId` | Required | Vultr region, plan and positive OS image id for initial creation. |
+| `sshKeyFile` | Required | Absolute private client-key file; public key is derived locally. |
+| `helperArchive` | Required | Absolute verified standalone-helper archive path. |
+| `helperArchiveHash`, `helperHash` | Required | SHA-256 of the archive and its executable. |
+| `remoteRoot` | `/workspace` | Absolute writable VM directory; keep it stable across restarts. |
+| `apiEndpoint` | `https://api.vultr.com/v2` | HTTPS management endpoint; HTTP is permitted only for loopback tests. |
+| `maxInstances` | `2` | Maximum simultaneous live or pending owned VMs, including orphans. |
+| `requestTimeoutMs` | `30000` | Per-request API and helper deadline. |
+| `operationTimeoutMs` | `1800000` | Total opening or preservation deadline. |
+| `pollIntervalMs` | `3000` | Cloud and SSH readiness polling interval. |
+| `maxInventoryPages` | `100` | Maximum pages per complete cloud inventory. |
+| `maxApiResponseBytes` | `4194304` | Maximum complete management response body. |
+| `maxSavedBytes` | `1073741824` | Aggregate bytes for initial import or one completed file copy. |
+| `maxSavedFiles` | `100000` | Aggregate regular-file and directory entries per import or copy. |
+| `maxExecutions` | `1024` | Maximum retained execution records per generation. |
+| `maxOutputBytes` | `65536` | Retained command-output byte limit. |
+| `graceMs` | `5000` | Managed-process termination grace period. |
 
 <a id="workspace-text-tools"></a>
 ### Workspace text tools
@@ -106,7 +142,7 @@ Verified process cleanup preserves the container and other commands. Unconfirmed
 
 `activityForUser(userId, workspaceId)` returns internal `SandboxIdleActivity`, extending `SandboxActivity` with activity `revision`, closing `version`, `idleSince` and `sandbox`. Requests cover preparation, queued input and model work through turn settlement; executions cover cancellation, retrieval and cleanup even after permission revocation. Actual registration and settlement synchronously change the revision, independently of the closing version. Repeated releases and duplicate input do not create another activity change. Management unavailability throws rather than reporting idle; deletion protects outstanding work and uncertain closure.
 
-`sandbox` distinguishes confirmed `running` with its full container identity, confirmed `closed`, and `unconfirmed`. `idleSince` is a process-local `performance.now()` timestamp, set only after the last work settles while a reliably observed container is running. Successful opening or a current status observation establishes the generation; repeated status polling does not refresh the start. Failed queries, non-running states, generation changes and management unavailability invalidate the old interval; late observations cannot overwrite new activity or a newer observation. Queries during an outstanding PUT do not establish its final state. Conversation reload preserves settled idle history; manager reload requires a fresh observation, and a process restart does not reuse timestamps. These fields stay in trusted backend results, outside browser values.
+`sandbox` distinguishes confirmed `running` with its full container identity, confirmed `closed`, and `unconfirmed`. `idleSince` is a process-local `performance.now()` timestamp, set only after the last work settles while a reliably observed container is running. Successful opening or a current status observation establishes the generation; repeated status polling does not refresh the start. Failed queries, non-running states, generation changes and management unavailability invalidate the old interval; late observations cannot overwrite new activity or a newer observation. Queries during an outstanding PUT do not establish its final state. Conversation reload preserves settled idle history; manager reload requires a fresh observation, and a process restart does not reuse timestamps. Provider-owned preparation, execution and cleanup also invalidate idle history; both close eligibility checks include that work. File activity after a closed observation re-enters discovery because an upload can restore a VM. A fresh running observation starts the next interval. These fields stay in trusted backend results, outside browser values.
 
 <a id="conditional-idle-close"></a>
 ### Conditional idle close
@@ -208,7 +244,9 @@ The stable tool description can share the prompt prefix; results append as ordin
 
 - **Deployment** — the Runner requires Linux Unix sockets and a separately provisioned non-root filesystem identity. Windows named pipes support transport tests only.
 - **Capabilities** — The Runner overlay exposes only Bash. SSH text files require the separate `./files` entry and generation-bound backend access. Search, PowerShell, background, terminal, browser and indirect tools still require isolation before activation. The Runner overlay enables Web management controls.
-- **Idle scope** — Reclamation assumes one application instance managing an independent Runner. It does not merge activity across Harness processes or discover containers created directly through Runner after startup. Disabled accounts or missing ownership require maintenance; the background loop does not bypass native authorization.
+- **Cloud retention** — Workspace registration deletion does not remove retained cloud snapshots or private copies. Deployment operators manage retention for deleted workspaces. The provider preserves only regular files and directories in the closed download copy; symlinks and special entries remain available only in the full disk snapshot.
+- **Cloud acceptance** — `DSH_VULTR_TEST_CONFIG` selects a private deployment JSON for [the opt-in real-cloud Loader test](tests/vultr-loader.e2e.ts). Run it with `pnpm exec vitest run --config vitest.e2e.config.ts packages/sandbox/harness-sandbox/tests/vultr-loader.e2e.ts`; `DSH_VULTR_TEST_EVIDENCE` optionally selects its report path. It creates two billable VMs and disk snapshots, checks real SSH and authenticated HTTP with a scripted model, and removes its uniquely tagged resources. It does not verify a live model provider or browser controls.
+- **Idle scope** — Reclamation assumes one application instance managing its selected backend. It does not merge activity across Harness processes; the local Runner integration does not discover containers created directly through Runner after startup. Disabled accounts or missing ownership require maintenance; the background loop does not bypass native authorization.
 - **Uncertain mutations** — Lost PUT/DELETE outcomes require deployment maintenance to establish that old Runner requests have settled. This protocol cannot automatically clear that process-local barrier; restarting the Harness alone does not prove remote settlement.
 - **Validation** — the opt-in [conversation Docker fixture](../../../apps/cli/tests/profiles/harness-sandbox/fixtures/docker-acceptance.mjs) and [idle Docker fixture](../../../apps/cli/tests/profiles/harness-sandbox/fixtures/docker-idle-acceptance.mjs) use a controlled model and real authenticated Web and Runner profiles. They require Linux, root for setup, current built artifacts with Linux dependencies and Docker access. `M5_DATA_ROOT` must select the fixture's dedicated daemon-visible bind: `/tmp/antfarm-issue7-m5` for conversation or `/tmp/antfarm-issue8-m5` for idle; `M5_EVIDENCE_DIR` selects evidence output. The idle fixture uses 5000 ms idle and 100 ms sweep settings, independently checks Docker identities, capacity and retained files, and cleans its isolated deployment; nonzero child exits or exit signals fail acceptance. These fixtures establish no real-model or Vultr result.
 

@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for workspace-vultr.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/user/guide/workspace-vultr.md
+/:
+  en: 077005860d4e48c9
+  zh: 091cc42891701fa0
+/vultr-workspace-vms:
+  en: 2bfdb62ec996dfb1
+  zh: 201ac54d5a080845
+/vultr-workspace-vms/prepare-the-deployment:
+  en: ea4ccd6d2262a372
+  zh: c254195d82aad231
+/vultr-workspace-vms/use-workspace-files-and-execution:
+  en: 4985050a1e220242
+  zh: de35be723aa2706b
+/vultr-workspace-vms/close-and-restore:
+  en: 5ea14f7756e794b7
+  zh: 01e130496b07ff27
+/vultr-workspace-vms/recover-and-operate:
+  en: d509c15972c8b53a
+  zh: 5cbdd32557ee9d3d

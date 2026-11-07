@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在浏览器查看工作区沙箱状态，并开启或关闭沙箱。此插件需配合 Harness 管理接口和独立部署的 Runner 使用。面板打开时默认每两秒轮询状态；只有用户主动操作才会开启或关闭沙箱。
+在浏览器查看工作区沙箱状态，并开启或关闭沙箱。此插件需配合 Harness 管理接口以及本地 Runner 或 Vultr 后端使用。面板打开时默认每两秒轮询状态；只有用户主动操作才会开启或关闭沙箱。
 
 ## 目录
 
@@ -25,11 +25,13 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-Web bundle 默认禁用此插件。通过 [Harness 沙箱 overlay](../../../apps/cli/config/examples/harness-sandbox.patch.yml) 启用。部署前需准备独立 Runner 与规范工作区根目录。`pollIntervalMs` 是状态查询完成后的轮询间隔，默认为 2000 毫秒。
+Web bundle 默认禁用此插件。通过 [Runner overlay](../../../apps/cli/config/examples/harness-sandbox.patch.yml) 或 [Vultr overlay](../../../apps/cli/config/examples/harness-vultr.patch.yml) 启用，并满足对应后端的部署前提和规范工作区根目录要求。`pollIntervalMs` 是状态查询完成后的轮询间隔，默认为 2000 毫秒。
 
 工作区菜单和对话输入栏操作打开同一面板，面向选定的工作区。面板显示当前状态，防止重复提交未完成操作，支持手动刷新，并在关闭沙箱前要求确认。关闭面板不会关闭沙箱。
 
 容量满时提示用户关闭一个沙箱或稍后重试。操作结果未知时禁用新的修改操作；状态查询失败时标明最近观察到的状态已过期。工作区权限撤销时移除面板和菜单入口，连接更换或插件卸载后不再展示延迟返回的操作提示。
+
+云端启动失败提示刷新状态后重试；未能安全关闭时提示联系管理员，确认后再重新开启。
 
 | 字段 | 默认值 | 含义 |
 | --- | --- | --- |

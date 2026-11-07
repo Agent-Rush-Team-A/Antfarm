@@ -64,6 +64,8 @@ export const Config: Schema<Config> = Schema.intersect([Schema.union([
 
 const requestSchema = z.strictObject({ workspaceId: z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/u) })
 const reasons = {
+  cloud_open_failed: 'Cloud workspace could not start; query status before recovery',
+  cloud_save_failed: 'Cloud workspace could not finish saving; the original disk is retained until preservation is confirmed',
   sandbox_not_ready: 'Sandbox service is starting',
   sandbox_capacity: 'Sandbox capacity is full',
   sandbox_closing: 'Sandbox is closing; query its status before opening',
@@ -96,11 +98,15 @@ export default class WorkspaceSandbox extends TypertRemoteService {
   private accepting = false
   private readonly owner = Symbol('workspace-sandbox')
 
-  /** @param ctx - Native multiuser Harness context. @param config - Trusted deployment configuration. */
+  /**
+   * @param ctx - Native multiuser Harness context.
+   * @param config - Trusted deployment configuration.
+   */
   constructor(ctx: Context, config: Config) {
     super(ctx, 'workspaceSandbox')
     const settings = Config(config)
-    if (!isAbsolute(settings.workspaceRoot) || settings.workspaceRoot.includes('\0')) throw new Error('workspaceRoot must be an absolute directory')
+    if (!isAbsolute(settings.workspaceRoot)
+      || settings.workspaceRoot.includes('\0')) throw new Error('workspaceRoot must be an absolute directory')
     this.root = resolve(settings.workspaceRoot)
     this.transportFiber = settings.backend === 'provided' ? undefined : ctx.plugin(SandboxRunnerClient, settings)
     ctx.workspaceRegistry.registerDeletionGuard('harness-sandbox', WorkspaceSandbox.guardDeletion)
@@ -146,7 +152,8 @@ export default class WorkspaceSandbox extends TypertRemoteService {
   async open(request: SandboxRequest): Promise<SandboxValue> {
     const id = this.parse(request)
     const result = await this.openForUser(this.caller('open'), id)
-    return { workspaceId: id, state: result.state }
+    const progress = this.client.progress(id)
+    return { workspaceId: id, state: result.state, ...progress === undefined ? {} : { progress } }
   }
 
   /**
@@ -158,7 +165,8 @@ export default class WorkspaceSandbox extends TypertRemoteService {
   async status(request: SandboxRequest): Promise<SandboxValue> {
     const id = this.parse(request)
     const result = await this.statusForUser(this.caller('status'), id)
-    return { workspaceId: id, state: result.state }
+    const progress = this.client.progress(id)
+    return { workspaceId: id, state: result.state, ...progress === undefined ? {} : { progress } }
   }
 
   /**
@@ -170,7 +178,8 @@ export default class WorkspaceSandbox extends TypertRemoteService {
   async close(request: SandboxRequest): Promise<SandboxValue> {
     const id = this.parse(request)
     const result = await this.closeForUser(this.caller('close'), id)
-    return { workspaceId: id, state: result.state }
+    const progress = this.client.progress(id)
+    return { workspaceId: id, state: result.state, ...progress === undefined ? {} : { progress } }
   }
 
   /**
@@ -221,7 +230,7 @@ export default class WorkspaceSandbox extends TypertRemoteService {
   activityForUser(userId: UserId, workspaceId: WorkspaceId): SandboxIdleActivity {
     this.authorize(userId, workspaceId, 'status')
     this.available()
-    return this.state.activity(workspaceId)
+    return this.activity(workspaceId)
   }
 
   /**
@@ -283,11 +292,27 @@ export default class WorkspaceSandbox extends TypertRemoteService {
   }
 
   private matchesIdle(id: WorkspaceId, target: SandboxIdleCloseTarget, idleTimeoutMs: number, signal: AbortSignal): boolean {
-    const current = this.state.activity(id)
+    const current = this.activity(id)
     return !signal.aborted && !current.busy && current.sandbox.state === 'running'
       && current.sandbox.containerId === target.containerId && current.version === target.version
       && current.revision === target.revision && current.idleSince === target.idleSince
       && performance.now() - target.idleSince >= idleTimeoutMs
+  }
+
+  private activity(id: WorkspaceId): SandboxIdleActivity {
+    let local = this.state.activity(id)
+    const provider = this.client.activity(id)
+    if (provider === undefined) return local
+    if (provider.openings > 0 || provider.executions > 0 || provider.closing) {
+      // Preparation can outlive its caller; a later running query must start a fresh idle interval.
+      this.state.invalidateObservation(id, local.revision)
+      local = this.state.activity(id)
+    }
+    const openings = local.openings + provider.openings
+    const executions = local.executions + provider.executions
+    const closing = local.closing || provider.closing
+    return { ...local, openings, executions, closing,
+      busy: local.requests > 0 || openings > 0 || executions > 0 || closing }
   }
 
   private caller(operation: string): UserId {
@@ -297,7 +322,8 @@ export default class WorkspaceSandbox extends TypertRemoteService {
   }
 
   private denied(operation: string): never {
-    throw new RemoteError('remote-access/denied', 'Workspace is unavailable', { action: `workspaceSandbox/${operation}`, reason: 'not-found' })
+    throw new RemoteError('remote-access/denied', 'Workspace is unavailable',
+      { action: `workspaceSandbox/${operation}`, reason: 'not-found' })
   }
 
   private authorize(userId: UserId, workspaceId: WorkspaceId, operation: string): void {

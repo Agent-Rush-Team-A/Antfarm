@@ -7,7 +7,7 @@ import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 const resultSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(true), value: z.object({ name: z.string(), bytes: z.number().int().nonnegative() }) }),
   z.object({ ok: z.literal(false), error: z.object({
-    reason: z.enum(['invalid-request', 'invalid-name', 'too-large', 'exists', 'denied', 'unavailable', 'cancelled', 'io', 'cleanup']),
+    reason: z.enum(['invalid-request', 'invalid-name', 'too-large', 'exists', 'denied', 'unavailable', 'cancelled', 'io', 'cleanup', 'unknown']),
     stored: z.boolean(),
   }) }),
 ])

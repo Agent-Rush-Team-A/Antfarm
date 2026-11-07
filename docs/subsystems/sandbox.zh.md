@@ -175,7 +175,7 @@ interface ConfinedArgv {
 <a id="workspace-sandbox-management"></a>
 ## 工作区沙箱管理
 
-`ctx.workspaceSandbox` 在调用配置的本地 Runner 或 SSH 后端前核验原生多用户归属及登记的持久目录。`SandboxRequest` 仅含 `workspaceId`；`SandboxValue` 返回该编号和 `closed`、`starting`、`running`、`closing`、`cleanup_required` 中一种状态。浏览器结果不含容器编号或路径。`SandboxFailureReason` 在 `sandbox/failed` 下区分容量、清理、冲突，以及不可用或结果不明的操作；查询失败不会猜测状态。显式用户后端方法保留完整的 `RunnerRunningSandbox.containerId`，供执行接入。见[包参考](../../packages/sandbox/harness-sandbox/README.zh.md)和[可选 Web 部署](../user/guide/workspace-sandboxes.zh.md)。
+`ctx.workspaceSandbox` 在调用配置的本地 Runner 或 SSH 后端前核验原生多用户归属及登记的持久目录。`SandboxRequest` 仅含 `workspaceId`；`SandboxValue` 返回该编号和 `closed`、`starting`、`running`、`closing`、`cleanup_required` 中一种状态。浏览器结果不含容器编号或路径；可选 `SandboxProgress` 提供云阶段及脱敏失败。`SandboxFailureReason` 在 `sandbox/failed` 下区分容量、清理、冲突，以及不可用或结果不明的操作；查询失败不会猜测状态。显式用户后端方法保留完整的 `RunnerRunningSandbox.containerId`，供执行接入。见[包参考](../../packages/sandbox/harness-sandbox/README.zh.md)和[可选 Web 部署](../user/guide/workspace-sandboxes.zh.md)。
 
 内部通信服务 `ctx.sandboxRunnerClient` 接收绑定原始 `RunnerExecutionIdentity` 的完整 `RunnerExecutionRequest`；`RunnerExecutionResult` 保留已确认的退出码与输出尾部。`RunnerCancellationResult` 仅表示接纳，`RunnerExecutionError.execution` 则保留 `RunnerExecutionFailure` 的清理状态和已知 Bash 状态。本机中止与通信期限到达都不确认远端清理。通信层不增加用户授权或模型工具；请求上限、独立预算与安全重取由[包参考](../../packages/sandbox/harness-sandbox/README.zh.md#execution-transport)说明。
 
@@ -189,7 +189,7 @@ interface ConfinedArgv {
 
 [Workspace SSH 后端](../../packages/sandbox/harness-sandbox/README.zh.md#workspace-ssh) 提供与 Bash 相同运行时代次的文件系统。受信任调用方须实施原用户与轮次权限及路径约束，在每次操作前复核 `assertCurrent()` 并传递访问取消信号。连接关闭或中断会撤销该能力；本机 Runner 不会代为访问宿主文件。
 
-[Workspace 文本入口](../../packages/sandbox/harness-sandbox/README.zh.md#workspace-text-tools)将这些检查应用于原生 read/write/edit。它保留原生结果渲染和可选的已观察版本策略，将路径限制在捕获的远程根目录中，并按 Workspace 和代次区分观察标识。helper 关闭会等待已接纳文件请求；取消不回滚已经提交的写入。网页文件传输需要独立的远程集成。
+[Workspace 文本入口](../../packages/sandbox/harness-sandbox/README.zh.md#workspace-text-tools)将这些检查应用于原生 read/write/edit。它保留原生结果渲染和可选的已观察版本策略，将路径限制在捕获的远程根目录中，并按 Workspace 和代次区分观察标识。helper 关闭会等待已接纳文件请求；取消不回滚已经提交的写入。[Vultr 后端](../../packages/sandbox/harness-sandbox/README.zh.md#workspace-vultr)还通过 `ctx.workspaceFileAccess` 提供同代网页传输与已完成只读副本。
 
 ```ts type-equiv
 /** Files and directory of one original execution generation, never the Harness project directory. */
@@ -380,6 +380,20 @@ abstract execute(workspaceId: WorkspaceId, request: RunnerExecutionRequest, sign
 abstract cancel(workspaceId: WorkspaceId, request: RunnerExecutionIdentity): Promise<RunnerCancellationResult>
 
 /**
+ * Observe work retained by backend preparation or cleanup.
+ * @param _workspaceId - Authorized identity.
+ * @returns Provider-owned work that survives a cancelled caller, or persistent cleanup barriers.
+ */
+activity(_workspaceId: WorkspaceId): Pick<SandboxActivity, 'openings' | 'executions' | 'closing'> | undefined
+
+/**
+ * Observe deployment progress without exposing cloud identities.
+ * @param _workspaceId - Authorized identity.
+ * @returns Optional provider-specific cloud progress without deployment coordinates.
+ */
+progress(_workspaceId: WorkspaceId): SandboxProgress | undefined
+
+/**
  * Access files only in the captured execution generation; unsupported backends refuse rather than using host files.
  * @param _workspaceId - Authorized identity.
  * @param _target - Captured execution generation.
@@ -472,3 +486,5 @@ Types: [UserId](typert.zh.md) · [WorkspaceId](workspace.zh.md)
 
 Source: [`packages/sandbox/harness-sandbox/src/index.ts`](../../packages/sandbox/harness-sandbox/src/index.ts)
 <!-- END GENERATED cordis-surface -->
+
+可选 [Vultr 提供方](../../packages/sandbox/harness-sandbox/README.zh.md#workspace-vultr) 通过 `SandboxProgress` 提供云阶段与脱敏失败，拥有带版本云记录、单写者锁、快照完成后删除和恢复。其云活动让已取消的准备与持久失败屏障继续对 `activityForUser` 可见；空闲计时仍由调用方负责。`RunnerClosedSandbox.reconciled` 是原云修改标识已核对、数据已保存且资源确认不存在的内部回执，只有该回执可以解除已有修改不确定性。网页文件通过 `ctx.workspaceFileAccess` 访问同代远程文件或完整只读副本。

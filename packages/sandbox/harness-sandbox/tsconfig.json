@@ -79,6 +79,12 @@
     },
     {
       "path": "../../core/system-prompt"
+    },
+    {
+      "path": "../../fs/fs-local"
+    },
+    {
+      "path": "../../../native/system/packages/entry"
     }
   ]
 }

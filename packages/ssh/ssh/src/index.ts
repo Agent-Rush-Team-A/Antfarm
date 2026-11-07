@@ -33,6 +33,8 @@ export type HelperLaunch = {
 export interface Config {
   /** OpenSSH host alias, including its existing user, key and known-host configuration. */
   host: string
+  /** Absolute deployment-owned OpenSSH configuration, isolated from user-global aliases. */
+  configFile?: string
   /** Explicit script or self-contained executable invocation. */
   launch: HelperLaunch
   /** Absolute path to the installed, bundled helper entry. */
@@ -51,14 +53,18 @@ export interface Config {
   leaseMs?: number
 }
 
+/** Resolved budgets while retaining the optional isolated OpenSSH configuration. */
+export type ResolvedSshConfig = Omit<Required<Config>, 'configFile'> & Pick<Config, 'configFile'>
+
 /**
  * Validate deployment coordinates without opening SSH and resolve the schema-owned defaults.
  * @param config - Deployment-supplied connection settings.
  * @returns Validated coordinates with all connection budgets resolved.
  */
-export function resolveSshConfig(config: Config): Required<Config> {
+export function resolveSshConfig(config: Config): ResolvedSshConfig {
   const parsed = z.object({
     host: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.@-]*$/),
+    configFile: z.string().startsWith('/').refine(value => !/[\r\n\0]/u.test(value)).optional(),
     launch: z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('node-script'), node: z.string().startsWith('/'),
         bootstrapPath: z.string().startsWith('/').optional(), bootstrapHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
@@ -72,7 +78,7 @@ export function resolveSshConfig(config: Config): Required<Config> {
     leaseMs: z.number().int().min(3000).max(600_000).optional(),
   }).strict().parse(config)
   // Zod's optional properties include undefined; the owning schema resolves omitted budgets.
-  return SshConnection.Config(parsed as Config) as Required<Config>
+  return SshConnection.Config(parsed as Config) as ResolvedSshConfig
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -82,6 +88,7 @@ declare module '@deepseek-ai/cordis' {
 /** One non-reconnecting SSH session; loss invalidates all active operations. */
 export class SshConnection extends Service {
   static Config: schema<Config> = schema.object({
+    configFile: schema.string(),
     host: schema.string().required(), helper: schema.string().required(),
     launch: schema.union([
       schema.object({ kind: schema.const('node-script').required(), node: schema.string().required(), bootstrapPath: schema.string(), bootstrapHash: schema.string() }),
@@ -109,7 +116,7 @@ export class SshConnection extends Service {
   private failure: Error | undefined
   private sockets = new Set<Socket>()
   private nextSocket = 0
-  private readonly config: Required<Config>
+  private readonly config: ResolvedSshConfig
   private remote: Hello | undefined
 
   constructor(ctx: Context, config: Config) {
@@ -257,6 +264,8 @@ export class SshConnection extends Service {
     }
   }
 
+  private sshConfigArgs(): string[] { return this.config.configFile === undefined ? [] : ['-F', this.config.configFile] }
+
   private controlPath(): string { return join(this.directory as string, 'master') }
 
   private assertOpen(): void {
@@ -276,7 +285,7 @@ export class SshConnection extends Service {
     const combined = AbortSignal.any(signals)
     combined.throwIfAborted()
     const result = Promise.withResolvers<undefined>()
-    const command = execFile('ssh', ['-S', this.controlPath(), ...args, this.config.host], {
+    const command = execFile('ssh', [...this.sshConfigArgs(), '-S', this.controlPath(), ...args, this.config.host], {
       signal: combined, maxBuffer: 64 * 1024,
     }, (error) => { if (error === null) result.resolve(undefined); else result.reject(error) })
     const closed = new Promise<void>((resolve) => { command.once('close', () => { resolve() }) })
@@ -325,7 +334,7 @@ export class SshConnection extends Service {
       default: return assertNever(launch)
     }
     const child = spawn('ssh', [
-      '-T', '-M', '-S', this.controlPath(), '-o', 'ControlPersist=no', '-o', 'BatchMode=yes',
+      ...this.sshConfigArgs(), '-T', '-M', '-S', this.controlPath(), '-o', 'ControlPersist=no', '-o', 'BatchMode=yes',
       '-o', 'StrictHostKeyChecking=yes', '-o', 'ForwardAgent=no', '-o', 'ClearAllForwardings=yes',
       '-o', 'ServerAliveInterval=10', '-o', 'ServerAliveCountMax=3', this.config.host, command,
     ], { stdio: ['pipe', 'pipe', 'pipe'] })

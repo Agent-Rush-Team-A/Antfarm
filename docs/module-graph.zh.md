@@ -225,7 +225,6 @@ flowchart TD
     pkg_client_ui_user_questions["client-ui-user-questions"]
     pkg_client_ui_workflow_run["client-ui-workflow-run"]
     pkg_client_ui_workspace["client-ui-workspace"]
-    pkg_client_ui_workspace_sandbox["client-ui-workspace-sandbox"]
     pkg_client_web["client-web"]
   end
   subgraph group_compaction["packages/compaction"]
@@ -689,10 +688,12 @@ flowchart TD
   pkg_api_workspace_artifacts --> pkg_api_remote_access
   pkg_api_workspace_artifacts --> pkg_api_workspace_controller
   pkg_api_workspace_artifacts --> pkg_client_connection
+  pkg_api_workspace_artifacts --> pkg_fs_local
   pkg_api_workspace_artifacts --> pkg_workspace
   pkg_api_workspace_upload --> pkg_api_remote_access
   pkg_api_workspace_upload --> pkg_api_workspace_controller
   pkg_api_workspace_upload --> pkg_client_connection
+  pkg_api_workspace_upload --> pkg_fs_local
   pkg_api_workspace_upload --> pkg_workspace
   pkg_file_reference --> pkg_agent
   pkg_harness_dev_context --> pkg_agent
@@ -1474,10 +1475,13 @@ flowchart TD
   pkg_harness_sandbox --> pkg_api_multiuser
   pkg_harness_sandbox --> pkg_api_remote_access
   pkg_harness_sandbox --> pkg_api_session_controller
+  pkg_harness_sandbox --> pkg_fs
   pkg_harness_sandbox --> pkg_llm
   pkg_harness_sandbox --> pkg_session
+  pkg_harness_sandbox --> pkg_system_prompt
   pkg_harness_sandbox --> pkg_tools
   pkg_harness_sandbox --> pkg_typert_protocol
+  pkg_harness_sandbox --> pkg_working_directory
   pkg_harness_sandbox --> pkg_workspace
   pkg_schedule --> pkg_agent
   pkg_schedule --> pkg_api_session_controller
@@ -1654,7 +1658,6 @@ flowchart TD
 | [`client-ui-user-questions`](../packages/client/ui-user-questions) | `client` | — |
 | [`client-ui-workflow-run`](../packages/client/ui-workflow-run) | `client` | — |
 | [`client-ui-workspace`](../packages/client/ui-workspace) | `client` | — |
-| [`client-ui-workspace-sandbox`](../packages/client/ui-workspace-sandbox) | `client` | — |
 | [`client-web`](../packages/client/web) | `client` | — |
 | [`credentials`](../packages/credentials/credentials) | `credentials` | — |
 | [`office-to-pdf`](../packages/document/office-to-pdf) | `document` | — |
@@ -1781,8 +1784,8 @@ flowchart TD
 | [`llm-retry`](../packages/llm/llm-retry) | `llm` | [`agent`](../packages/core/agent), [`brand`](../packages/util/brand), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`timeout`](../packages/util/timeout) |
 | [`agent-default-model`](../packages/core/agent-default-model) | `core` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm) |
 | [`goal`](../packages/goal/goal) | `goal` | [`agent`](../packages/core/agent), [`brand`](../packages/util/brand), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`typert-protocol`](../packages/typert/protocol) |
-| [`api-workspace-artifacts`](../packages/api/workspace-artifacts) | `api` | [`api-remote-access`](../packages/api/remote-access), [`api-workspace-controller`](../packages/api/workspace-controller), [`client-connection`](../packages/client/connection), [`workspace`](../packages/workspace/workspace) |
-| [`api-workspace-upload`](../packages/api/workspace-upload) | `api` | [`api-remote-access`](../packages/api/remote-access), [`api-workspace-controller`](../packages/api/workspace-controller), [`client-connection`](../packages/client/connection), [`workspace`](../packages/workspace/workspace) |
+| [`api-workspace-artifacts`](../packages/api/workspace-artifacts) | `api` | [`api-remote-access`](../packages/api/remote-access), [`api-workspace-controller`](../packages/api/workspace-controller), [`client-connection`](../packages/client/connection), [`fs-local`](../packages/fs/fs-local), [`workspace`](../packages/workspace/workspace) |
+| [`api-workspace-upload`](../packages/api/workspace-upload) | `api` | [`api-remote-access`](../packages/api/remote-access), [`api-workspace-controller`](../packages/api/workspace-controller), [`client-connection`](../packages/client/connection), [`fs-local`](../packages/fs/fs-local), [`workspace`](../packages/workspace/workspace) |
 | [`file-reference`](../packages/context/file-reference) | `context` | [`agent`](../packages/core/agent) |
 | [`harness-dev-context`](../packages/context/harness-dev-context) | `context` | [`agent`](../packages/core/agent), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`system-prompt`](../packages/core/system-prompt) |
 | [`time-context`](../packages/context/time-context) | `context` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`util-time`](../packages/util/time) |
@@ -1921,7 +1924,7 @@ flowchart TD
 | [`sdk-protocol`](../packages/sdk/protocol) | `sdk` | [`commands`](../packages/interaction/commands), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`user-questions`](../packages/interaction/user-questions) |
 | [`agent-team`](../packages/team/agent-team) | `team` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`session-projection`](../packages/session/session-projection), [`subagent`](../packages/subagent/subagent), [`typert-protocol`](../packages/typert/protocol) |
 | [`workflow-ptc`](../packages/workflow/workflow-ptc) | `workflow` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm), [`ptc-runtime`](../packages/ptc-runtime/ptc-runtime), [`sandbox`](../packages/sandbox/sandbox), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`tools`](../packages/core/tools), [`workflow`](../packages/workflow/workflow), [`working-directory`](../packages/session/working-directory) |
-| [`harness-sandbox`](../packages/sandbox/harness-sandbox) | `sandbox` | [`agent`](../packages/core/agent), [`api-multiuser`](../packages/api/multiuser), [`api-remote-access`](../packages/api/remote-access), [`api-session-controller`](../packages/api/session-controller), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol), [`workspace`](../packages/workspace/workspace) |
+| [`harness-sandbox`](../packages/sandbox/harness-sandbox) | `sandbox` | [`agent`](../packages/core/agent), [`api-multiuser`](../packages/api/multiuser), [`api-remote-access`](../packages/api/remote-access), [`api-session-controller`](../packages/api/session-controller), [`fs`](../packages/fs/fs), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol), [`working-directory`](../packages/session/working-directory), [`workspace`](../packages/workspace/workspace) |
 | [`schedule`](../packages/schedule/schedule) | `schedule` | [`agent`](../packages/core/agent), [`api-session-controller`](../packages/api/session-controller), [`brand`](../packages/util/brand), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`session-projection`](../packages/session/session-projection), [`storage-domain`](../packages/storage/storage-domain), [`subagent`](../packages/subagent/subagent), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol), [`util-time`](../packages/util/time), [`workspace`](../packages/workspace/workspace) |
 | [`sdk-client`](../packages/sdk/client) | `sdk` | [`llm`](../packages/llm/llm), [`sdk-protocol`](../packages/sdk/protocol), [`session`](../packages/core/session) |
 | [`tool-agent-team`](../packages/team/tool-agent-team) | `team` | [`agent`](../packages/core/agent), [`agent-team`](../packages/team/agent-team), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |
