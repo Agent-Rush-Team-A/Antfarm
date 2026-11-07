@@ -30,7 +30,7 @@
         maxEntries: 2000
         maxDownloadBytes: 33554432
 
-# Deployment-owned catalog: visible before personal credentials are saved.
+# Public discovery uses no credential; configured models cover an unavailable first load.
 - id: llm-pi-ai
   config:
     providers:
@@ -39,6 +39,12 @@
         credentialScope: request
         api: openai-completions
         baseURL: https://api.vultrinference.com/v1
+        modelDiscovery:
+          type: vultr
+          timeoutMs: 5000
+          maxResponseBytes: 4194304
+          maxTokens: 8192
+          cacheTtlMs: 300000
         models:
           - id: deepseek-v4.1-flash-1017
             name: DeepSeek V4.1 Flash 1017

@@ -67,17 +67,18 @@ import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import { PiAiAdapter } from './adapter.ts'
 import { authContextFrom, credentialStoreFrom } from './auth.ts'
 import { catalogProvider, catalogProviderIds } from './catalog.ts'
-import { assertServiceable, Config, resolveProfiles } from './config.ts'
+import { assertServiceable, Config, resolveModelDiscovery, resolveProfiles } from './config.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { discoverModels } from './discovery.ts'
 import type { StoredModelDiscoveryProfile } from './discovery.ts'
 import { registerPiAiFlows } from './login.ts'
 import { providerDefaultsOf } from './provider-data.ts'
-import type { PiAiCredentialRequest, PiAiRequestHeaderContext } from './types.ts'
+import type { PiAiCredentialRequest, PiAiRequestHeaderContext, PiAiModelRefreshRequest, PiAiModelRefreshResult } from './types.ts'
+import { VultrModelDirectory } from './vultr-directory.ts'
 
 export { PiAiAdapter } from './adapter.ts'
 export type { PiAiAdapterOptions } from './adapter.ts'
-export type { PiAiCredentialRequest, PiAiRequestHeaderContext } from './types.ts'
+export type { PiAiCredentialRequest, PiAiRequestHeaderContext, PiAiModelRefreshRequest, PiAiModelRefreshResult } from './types.ts'
 export { Config } from './config.ts'
 export type {
   Options,
@@ -98,6 +99,16 @@ export const inject = ['llm']
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
+    /**
+     * Refresh an explicitly configured public directory without resolving a key.
+     * Unowned routes delegate with next(); discovery failures retain the last
+     * usable catalog and return a status. Endpoints remain deployment-owned.
+     * @mode waterfall
+     * @param request - provider route and explicit freshness override.
+     * @param next - delegate to another adapter instance.
+     * @returns public model status; this does not validate inference credentials.
+     */
+    'llm-pi-ai/refresh-models'(request: PiAiModelRefreshRequest, next: () => Promise<PiAiModelRefreshResult>): Promise<PiAiModelRefreshResult>
     /**
      * Authorize one Host-only credential resolution. A route-specific consumer
      * may replace the global resolver and must reject an unauthorized request
@@ -188,6 +199,11 @@ export function apply(ctx: Context, config: Config): void {
   const settingsNs = ctx.fiber.entry?.options.id ?? NS
   let lastRaw: ReturnType<Config['providers']['get']> | undefined
   let memoized: ReadonlyMap<string, ResolvedPiAiProviderProfile> | undefined
+  const directories = new Map<string, VultrModelDirectory>()
+  ctx.effect(() => async () => {
+    await Promise.all([...directories.values()].map(directory => directory.dispose()))
+    directories.clear()
+  }, 'llm-pi-ai: public directories')
   /**
    * The resolved profiles for the current configuration, memoized by the raw
    * snapshot's identity — which is also what makes the adapter's own snapshot
@@ -200,12 +216,51 @@ export function apply(ctx: Context, config: Config): void {
   const profiles = (): ReadonlyMap<string, ResolvedPiAiProviderProfile> => {
     const raw = config.providers.get()
     if (raw === lastRaw && memoized !== undefined) return memoized
-    const next = resolveProfiles(structuredClone(raw) as import('./config.ts').Options['providers'], 'deferred')
+    const configured = structuredClone(raw) as NonNullable<import('./config.ts').Options['providers']>
+    for (const [provider, directory] of directories) {
+      const profile = configured[provider]
+      const models = directory.models()
+      if (profile !== undefined && models !== undefined && deepEqualJson(resolveModelDiscovery(profile), directory.options)) {
+        profile.models = structuredClone([...models])
+      }
+    }
+    const next = resolveProfiles(configured, 'deferred')
     lastRaw = raw
     memoized = next
     return next
   }
   profiles()
+  const refreshModels = async (request: PiAiModelRefreshRequest): Promise<PiAiModelRefreshResult> => {
+    const source = config.providers.get()[request.provider]
+    const options = source === undefined ? undefined : resolveModelDiscovery(source)
+    if (options === undefined) return { status: 'unsupported', modelCount: 0 }
+    let directory = directories.get(request.provider)
+    if (directory === undefined || !deepEqualJson(directory.options, options)) {
+      const previous = directory
+      directory = new VultrModelDirectory(options)
+      directories.set(request.provider, directory)
+      await previous?.dispose()
+    }
+    const before = directory.models()
+    const result = await directory.refresh(request.force)
+    if (directories.get(request.provider) !== directory
+      || !deepEqualJson(resolveModelDiscovery(config.providers.get()[request.provider] ?? {}), options)) {
+      return { status: 'failed', modelCount: 0 }
+    }
+    if (before !== directory.models()) {
+      memoized = undefined
+      try { await ctx.parallel('llm/models-updated', request.provider) }
+      catch (_error) { ctx.logger.warn('Model directory loaded; selector notification failed. Reopen the model selector.') }
+    }
+    if (result.status === 'failed') {
+      return { status: 'failed', modelCount: source?.models?.length ?? 0 }
+    }
+    return result
+  }
+  ctx.on('llm-pi-ai/refresh-models', (request, next) => {
+    if (config.providers.get()[request.provider]?.modelDiscovery) return refreshModels(request)
+    return next()
+  })
   ctx.on('internal/config', (fiber, next) => {
     const raw: unknown = next()
     if (fiber !== ctx.fiber) return raw
@@ -265,6 +320,7 @@ export function apply(ctx: Context, config: Config): void {
   const auth = { credentials: credentialStoreFrom(ctx), authContext: authContextFrom(ctx) }
   const adapter = new PiAiAdapter({
     profiles,
+    refreshModels: async (provider) => { await refreshModels({ provider, force: false }) },
     resolveApiKey,
     auth,
     prepareHeaders: (request, headers) => ctx.waterfall('llm-pi-ai/request-headers', request, headers, () => headers),

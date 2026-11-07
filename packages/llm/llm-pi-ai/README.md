@@ -31,6 +31,8 @@ The adapter accepts the LLM service's [request-only user inputs](../llm/README.m
 
 The public Vultr directory is parsed with `@vultr/model-catalog`. Only ready text models with tools, streaming and a known context window are admitted; inference credentials are never needed for directory requests. Published output limits cap the deployment response budget, and only advertised reasoning levels are offered.
 
+Set `modelDiscovery: { type: vultr }` on an explicit `openai-completions` route to replace its live models with the public Vultr directory. Configured `models` remain available until the first successful load. Concurrent reads share one request; `timeoutMs`, `maxResponseBytes`, `maxTokens` and `cacheTtlMs` under `modelDiscovery` control request bounds and freshness. Refreshes publish `llm/models-updated` after replacing the directory and preserve prepared inference calls.
+
 ### When to choose it
 
 Choose this adapter when the same composition serves several providers, when a route needs pi-ai's catalog defaults with a few fields corrected, or when a hand-declared gateway must be reached through its own endpoint and protocol. Choose `dsh-llm-deepseek` for the direct DeepSeek route when the deployment needs no other provider. Both adapters can be mounted together because their route names do not collide; registering a route another adapter already owns fails plugin loading.
@@ -263,7 +265,7 @@ These limits define where the adapter stops and future work begins. They are cur
 - **Reset restores inherited configuration** — resetting a route supplied by a lower profile layer restores that route.
 - **Complete Config replacement can remove inherited dictionary entries** — a field reset instead restores its inherited value.
 - **`headers` can carry a credential the redactor never sees** — profile resolution rejects names and values Fetch cannot represent, but the dict remains plain strings; store credentials as `apiKeyEnv` references.
-- **Discovery does not change configured models** — adopt discovery results explicitly into the route configuration.
+- **Draft discovery does not change configured models** — adopt settings-page discovery explicitly; opt-in Vultr runtime discovery updates the live directory separately.
 - **Anthropic discovery reads at most 1,000 models** — the request uses the API's maximum page size but does not traverse `has_more`; entries beyond the first page must be added by hand.
 - **Uncataloged models need an unambiguous protocol** — catalog routes preserve each model's protocol, including both Azure APIs under `azure`. A model absent from a mixed-protocol catalog needs an explicit route-level `api`, which overrides every model on the route and must be one of the supported custom protocols. For Azure deployment names, keep the catalog model ID and set `AZURE_OPENAI_DEPLOYMENT_NAME_MAP`.
 - **A modality declaration is not verified** — a model declaring `image` its gateway does not serve is refused by the provider after prompt admission. The durable image remains in history and the same misdeclared model can fail again; switching to a text-only model remains possible because the shared LLM runtime projects image references into stable text for that request.

@@ -13,6 +13,7 @@
  * @module dsh-llm-pi-ai/config
  */
 import type { Volatile } from '@deepseek-ai/cordis'
+import { isAbsolute } from 'node:path'
 
 import type { CacheRetention, ChatTemplateKwargValue, ModelThinkingLevel, Provider, ThinkingBudgets, Transport } from '@earendil-works/pi-ai'
 import z from '@deepseek-ai/schemastery'
@@ -103,6 +104,8 @@ export type {
 
 /** Configuration for one pi-ai provider route; the `providers` dict key IS the route. */
 export interface PiAiProviderProfile {
+  /** Opt-in public Vultr directory; configured models remain the first-load fallback. */
+  modelDiscovery?: false | VultrModelDiscoveryConfig
   /** Credential reference (environment-variable name) resolved per request through `ctx.credentials`. */
   apiKeyEnv?: string
   /** Request requires an authorized consumer and never falls back to deployment credentials. @default global */
@@ -207,6 +210,52 @@ export interface PiAiProviderProfile {
   requestImageMaxBytes?: number
   /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
+}
+
+/** Request bounds and freshness for the public Vultr directory. */
+export interface VultrModelDiscoveryConfig {
+  /** Provider-document parser; currently only Vultr is supported. */
+  type: 'vultr'
+  /** Maximum directory request duration. @default 5000 */
+  timeoutMs?: number
+  /** Maximum decoded directory bytes. @default 4194304 */
+  maxResponseBytes?: number
+  /** Default output token budget, capped by advertised model limits. @default 8192 */
+  maxTokens?: number
+  /** Freshness and failed-attempt backoff interval. @default 300000 */
+  cacheTtlMs?: number
+  /** Absolute cache file outside user workspaces; omission keeps only a process-local directory. */
+  cachePath?: string
+}
+
+/**
+ * Resolve and validate deployment discovery options before network I/O.
+ * @param profile - configured route and optional discovery settings.
+ * @returns complete public-directory request settings, or undefined when disabled.
+ * @throws Error for an unsupported protocol, unsafe endpoint or invalid limits.
+ */
+export function resolveModelDiscovery(profile: Pick<PiAiProviderProfile, 'modelDiscovery' | 'api' | 'baseURL'>): Required<Omit<VultrModelDiscoveryConfig, 'cachePath'>> & { baseURL: string; cachePath?: string } | undefined {
+  const source = profile.modelDiscovery
+  if (source === undefined || source === false) return undefined
+  if (source.type !== 'vultr' || profile.api !== 'openai-completions' || profile.baseURL === undefined) {
+    throw new Error('Vultr model discovery requires an explicit Chat Completions baseURL.')
+  }
+  const url = new URL(profile.baseURL)
+  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+  if ((url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback))
+    || url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '') {
+    throw new Error('Vultr model discovery requires HTTPS or loopback HTTP without URL credentials, query or fragment.')
+  }
+  const options = { type: source.type, baseURL: profile.baseURL.replace(/\/+$/, ''),
+    timeoutMs: source.timeoutMs ?? 5000, maxResponseBytes: source.maxResponseBytes ?? 4194304,
+    maxTokens: source.maxTokens ?? 8192, cacheTtlMs: source.cacheTtlMs ?? 300000,
+    ...source.cachePath === undefined ? {} : { cachePath: source.cachePath } }
+  for (const value of [options.timeoutMs, options.maxResponseBytes, options.maxTokens, options.cacheTtlMs]) {
+    if (!Number.isSafeInteger(value) || value <= 0) throw new Error('Vultr model discovery limits must be positive safe integers.')
+  }
+  if (options.timeoutMs > MAX_TIMER_DELAY_MS) throw new Error('Vultr model discovery timeout exceeds the timer limit.')
+  if (options.cachePath !== undefined && !isAbsolute(options.cachePath)) throw new Error('Vultr model cache path must be absolute.')
+  return options
 }
 
 /** Validated profile with its route stamped and every adapter-owned default resolved. */
@@ -357,6 +406,14 @@ const modelProfile: z<PiAiModelProfile> = z.object({
 const modelOverride: z<PiAiModelOverride> = z.object(modelFields)
 
 const profile = z.object({
+  modelDiscovery: z.union([z.const(false), z.object({
+    type: z.const('vultr').required(),
+    timeoutMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).default(5000),
+    maxResponseBytes: z.number().step(1).min(1).default(4194304),
+    maxTokens: z.number().step(1).min(1).default(8192),
+    cacheTtlMs: z.number().step(1).min(1).default(300000),
+    cachePath: z.string(),
+  })]),
   apiKeyEnv: z.string().role('credential-ref'),
   credentialScope: z.union(['global', 'request']),
   displayName: z.string(),
@@ -453,6 +510,7 @@ export function resolveProfiles(
   const entries = Object.entries(providers ?? {})
   const resolved = new Map<string, ResolvedPiAiProviderProfile>()
   for (const [provider, source] of entries) {
+    resolveModelDiscovery(source)
     rejectRemovedFields(provider, source)
     if (provider.length === 0) throw new Error('llm-pi-ai: provider names must be non-empty')
     if (source.baseURL !== undefined && source.baseURL.length === 0) {

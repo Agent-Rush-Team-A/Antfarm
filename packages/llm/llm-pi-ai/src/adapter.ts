@@ -126,6 +126,8 @@ interface PiAiSnapshot {
 
 /** Constructor options for {@link PiAiAdapter}: the two resolution hooks the plugin owns. */
 export interface PiAiAdapterOptions {
+  /** Load an opt-in public directory before listing; inference snapshots remain stable. */
+  refreshModels?: (provider: string) => Promise<void>
   /** Current validated profiles by provider route; called once per operation. */
   profiles: () => ReadonlyMap<string, ResolvedPiAiProviderProfile>
   /**
@@ -379,6 +381,7 @@ export class PiAiAdapter extends LlmAdapter {
 
   override listModels(provider: string): Promise<readonly LlmModelInfo[]> {
     return Promise.resolve().then(async () => {
+      await this.config.refreshModels?.(provider)
       const snapshot = this.current()
       const profile = this.profileOf(snapshot, provider)
       try { if (profile.credentialScope !== 'request') await this.config.resolveApiKey(provider, profile) }
