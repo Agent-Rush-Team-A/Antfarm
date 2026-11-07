@@ -191,6 +191,8 @@ v2 写入后，v1 程序会拒绝该存储。无效或有歧义的回执会被�
 - [时间工具](../../util/time/README.zh.md)——Cron 与 RRULE 解析和发生时点计算。
 - [领域助手](src/domain.ts)、[时间编辑](src/update.ts)、[存储](src/storage.ts)和[运行时](src/runtime.ts)拥有 Schedule 策略。
 
+新提醒会话在调用会话创建前解析已注册工作区。模式准入和归属登记必须在投递前成功；准入或目录解析失败保留任务，不创建第二个普通会话。已保留的现有会话继续通过常规激活路径运行，不再次尝试登记归属。
+
 <a id="model-experience"></a>
 ## 模型体验
 

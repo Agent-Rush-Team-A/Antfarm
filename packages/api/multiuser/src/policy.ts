@@ -64,6 +64,8 @@ const GLOBAL_ACTIONS = [
 
 /** Actions allowed on a workspace the account owns. */
 const WORKSPACE_ACTIONS = [
+  'workspace/getMode',
+  'workspace/setMode',
   'workspaceSandbox/open',
   'workspaceSandbox/status',
   'workspaceSandbox/close',

@@ -4766,6 +4766,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Host service backing the generated `ctx.remote.workspace` namespace.',
     methods: [
       {
+        signature: '@Remote(\'getMode\') async getMode(request: WorkspaceGetModeRequest): Promise<WorkspaceModeValue>',
+        description: 'Read committed Workspace mode metadata after ownership checks.',
+        parameters: [{ name: 'request', description: 'Workspace to read.' }],
+        returns: 'committed mode metadata after access checks.',
+      },
+      {
+        signature: '@Remote(\'setMode\') async setMode(request: WorkspaceSetModeRequest, signal: AbortSignal): Promise<WorkspaceModeValue>',
+        description: 'Set an unlocked Workspace mode while preserving its original caller and registration.',
+        parameters: [{ name: 'request', description: 'Target mode and observed revision.' }, { name: 'signal', description: 'Caller cancellation before commit.' }],
+        returns: 'ready metadata after runtime settlement and durable publication.',
+      },
+      {
         signature: '@Remote(\'create\') async create(request: WorkspaceCreateRequest): Promise<WorkspaceCreateValue>',
         description: 'Create or idempotently resolve one Workspace over an existing directory.',
         parameters: [{ name: 'request', description: 'directory path to register.' }],
@@ -4902,6 +4914,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Durable workspace registry. Startup waits for `sessionPersistence`, builds one canonical-cwd header index, and completes the one-time history bootstrap before the service becomes active. The persistence dependency is mandatory so an unavailable peer can never be mistaken for an empty history and commit the initialized marker.',
     methods: [
       {
+        signature: 'readonly modes: IWorkspaceModes',
+        description: 'Runtime mode coordination for trusted Host consumers.',
+        parameters: [],
+      },
+      {
         signature: 'async create(path: string, title?: string): Promise<Workspace>',
         description: 'Create or reuse a workspace for an existing directory. The fully qualified path is canonicalized through `fs.realpath`; a relative, nonexistent, or non-directory path rejects. Repeated calls for the same canonical path return the existing entity without changing its title. A newly created workspace is prepended to the durable registry order. Different canonical paths may share a display title.',
         parameters: [{ name: 'path', description: 'Existing directory to own, in a fully qualified path spelling.' }, { name: 'title', description: 'Display title used only when a new record is created.' }],
@@ -4918,6 +4935,28 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Look up a workspace by id.',
         parameters: [{ name: 'id', description: 'Workspace id.' }],
         returns: 'the workspace, or `undefined` when unknown.',
+      },
+      {
+        signature: 'withSessionCreation<T>(workspaceId: WorkspaceId, sessionId: SessionId | undefined, create: (admission: WorkspaceSessionAdmission) => Promise<{ sessionId: SessionId; value: T }>, options: WorkspaceModeOperationOptions): Promise<T>',
+        description: 'Trusted ordinary Session admission; the callback runs under exclusive mode coordination.',
+        parameters: [{ name: 'workspaceId', description: 'Original registration.' }, { name: 'sessionId', description: 'Optional reusable Session identity.' }, { name: 'create', description: 'Creation callback that reserves each identity before persisting it.' }, { name: 'options', description: 'Captured authority and caller cancellation.' }],
+        returns: 'the callback value after durable attachment and permanent mode locking.',
+      },
+      {
+        signature: 'findSession(sessionId: SessionId): Workspace | undefined',
+        description: 'Resolve accounting by permanent and pending identities, including currently filtered Sessions.',
+        parameters: [{ name: 'sessionId', description: 'Ordinary Session whose registration is required.' }],
+        returns: 'its Workspace, or undefined when no registration owns the identity.',
+      },
+      {
+        signature: 'assertSessionReady(sessionId: SessionId): void',
+        description: 'Refuse messages before ordinary Session creation commits or pending recovery settles.',
+        parameters: [{ name: 'sessionId', description: 'Ordinary Session whose original registration must be ready.' }],
+      },
+      {
+        signature: 'assertSessionOperation(sessionId: SessionId, operation: \'fork\' | \'archive\'): void',
+        description: 'Refuse single-mode forks and archives before any new log or activity stop.',
+        parameters: [{ name: 'sessionId', description: 'Source or archive target.' }, { name: 'operation', description: 'Forbidden single-mode operation.' }],
       },
       {
         signature: 'list(): Workspace[]',
@@ -5792,6 +5831,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Guard one Workspace registration deletion before its durable writes.',
     description: 'Guard one Workspace registration deletion before its durable writes. Providers may refuse by throwing and must await `next()` to hold their guard until deletion settles.',
     parameters: [{ name: 'workspaceId', description: 'Registration the trusted backend caller is removing.' }, { name: 'next', description: 'Continue deletion and return whether the registration existed.' }],
+  },
+  {
+    name: 'workspace/recover-session',
+    mode: 'waterfall',
+    signature: '\'workspace/recover-session\'(sessionId: SessionId, next: () => Promise<boolean>): Promise<boolean>',
+    summary: 'Take over a pending ordinary Session before completing its Workspace registration.',
+    description: 'Take over a pending ordinary Session before completing its Workspace registration.',
+    parameters: [{ name: 'sessionId', description: 'Durable pending identity, never a newly minted replacement.' }, { name: 'next', description: 'Delegate to other lifecycle providers; false means no provider took ownership.' }],
   },
   {
     name: 'workspace/session-activity',
@@ -7196,6 +7243,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'InvokeRemoteRequest',
     declaration: 'export interface InvokeRemoteRequest {\n    readonly namespace: string;\n    readonly method: string;\n    readonly args: Readonly<Record<string, unknown>>;\n    readonly uplink?: AsyncIterable<unknown>;\n    readonly uplinkWindow?: RemoteUplinkWindow | undefined;\n    readonly peer: PeerScope;\n    readonly signal?: AbortSignal;\n}',
+  },
+  {
+    name: 'IWorkspaceModes',
+    declaration: 'export interface IWorkspaceModes {\n    get(workspaceId: WorkspaceId): WorkspaceModeConfig;\n    registerRuntime(runtime: WorkspaceModeRuntime): () => Promise<void>;\n    setMode(request: WorkspaceSetModeRequest, options: WorkspaceModeOperationOptions): Promise<WorkspaceModeConfig>;\n    recover(workspaceId: WorkspaceId, options: WorkspaceModeOperationOptions): Promise<WorkspaceModeConfig>;\n    acquireUse(workspaceId: WorkspaceId, options: WorkspaceModeOperationOptions): Promise<WorkspaceModeUseLease>;\n}',
   },
   {
     name: 'JobAppendOptions',
@@ -10707,7 +10758,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'Workspace',
-    declaration: 'export interface Workspace {\n    readonly id: WorkspaceId;\n    readonly path: string;\n    readonly title: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly sessionIds: readonly SessionId[];\n    setTitle(title: string): Promise<void>;\n    attachSession(sessionId: SessionId): Promise<void>;\n    insertSessionBefore(sessionId: SessionId, beforeSessionId?: SessionId): Promise<void>;\n    detachSession(sessionId: SessionId): Promise<void>;\n    status(): Promise<\'ok\' | \'missing-dir\'>;\n}',
+    declaration: 'export interface Workspace {\n    readonly modeConfig: WorkspaceModeConfig;\n    readonly id: WorkspaceId;\n    readonly path: string;\n    readonly title: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly sessionIds: readonly SessionId[];\n    setTitle(title: string): Promise<void>;\n    attachSession(sessionId: SessionId): Promise<void>;\n    insertSessionBefore(sessionId: SessionId, beforeSessionId?: SessionId): Promise<void>;\n    detachSession(sessionId: SessionId): Promise<void>;\n    status(): Promise<\'ok\' | \'missing-dir\'>;\n}',
   },
   {
     name: 'WorkspaceArchiveSessionRequest',
@@ -10830,12 +10881,64 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type WorkspaceFollowIncrement = {\n    readonly type: \'replace\';\n    readonly value: WorkspaceBaseline;\n} | {\n    readonly type: \'upsert\';\n    readonly workspace: WorkspaceView;\n} | {\n    readonly type: \'remove\';\n    readonly workspaceId: WorkspaceId;\n} | {\n    readonly type: \'order\';\n    readonly workspaceIds: readonly WorkspaceId[];\n} | {\n    readonly type: \'archived\';\n    readonly archivedSessionIds: readonly SessionId[];\n} | {\n    readonly type: \'pinned\';\n    readonly pinnedSessionIds: readonly SessionId[];\n};',
   },
   {
+    name: 'WorkspaceGetModeRequest',
+    declaration: 'export interface WorkspaceGetModeRequest {\n    readonly workspaceId: WorkspaceId;\n}',
+  },
+  {
     name: 'WorkspaceInsertBeforeRequest',
     declaration: 'export interface WorkspaceInsertBeforeRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly beforeWorkspaceId?: WorkspaceId;\n}',
   },
   {
     name: 'WorkspaceInsertSessionBeforeRequest',
     declaration: 'export interface WorkspaceInsertSessionBeforeRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly sessionId: SessionId;\n    readonly beforeSessionId?: SessionId;\n}',
+  },
+  {
+    name: 'WorkspaceMode',
+    declaration: 'export type WorkspaceMode = \'single-vm\' | \'multi-vm\' | \'single-docker\' | \'multi-docker\';',
+  },
+  {
+    name: 'WorkspaceModeChange',
+    declaration: 'export interface WorkspaceModeChange {\n    readonly changeId: WorkspaceModeChangeId;\n    readonly workspaceId: WorkspaceId;\n    readonly project: string;\n    readonly from: WorkspaceMode;\n    readonly to: WorkspaceMode;\n    readonly previousRevision: number;\n}',
+  },
+  {
+    name: 'WorkspaceModeChangeDecision',
+    declaration: 'export type WorkspaceModeChangeDecision = \'commit\' | \'rollback\';',
+  },
+  {
+    name: 'WorkspaceModeChangeId',
+    declaration: 'export type WorkspaceModeChangeId = Branded<\'WorkspaceModeChangeId\'>;',
+  },
+  {
+    name: 'WorkspaceModeConfig',
+    declaration: 'export interface WorkspaceModeConfig {\n    readonly workspaceId: WorkspaceId;\n    readonly mode: WorkspaceMode;\n    readonly revision: number;\n    readonly operationState: WorkspaceModeOperationState;\n    readonly modeLocked: boolean;\n    readonly lockReason: WorkspaceModeLockReason | null;\n    readonly firstSessionId: SessionId | null;\n}',
+  },
+  {
+    name: 'WorkspaceModeLockReason',
+    declaration: 'export type WorkspaceModeLockReason = \'first-session-created\';',
+  },
+  {
+    name: 'WorkspaceModeOperationOptions',
+    declaration: 'export interface WorkspaceModeOperationOptions {\n    readonly signal: AbortSignal;\n    admit(): void;\n}',
+  },
+  {
+    name: 'WorkspaceModeOperationState',
+    declaration: 'export type WorkspaceModeOperationState = \'ready\' | \'switching\' | \'creating-session\' | \'recovery-required\';',
+  },
+  {
+    name: 'WorkspaceModeRuntime',
+    declaration: 'export interface WorkspaceModeRuntime {\n    readonly supportedModes: readonly WorkspaceMode[];\n    prepare(change: WorkspaceModeChange, signal: AbortSignal): Promise<void>;\n    settle(change: WorkspaceModeChange, decision: WorkspaceModeChangeDecision, signal: AbortSignal): Promise<void>;\n}',
+  },
+  {
+    name: 'WorkspaceModeUseConfig',
+    declaration: 'export type WorkspaceModeUseConfig = WorkspaceModeConfig & {\n    readonly operationState: \'ready\';\n};',
+  },
+  {
+    name: 'WorkspaceModeUseLease',
+    declaration: 'export interface WorkspaceModeUseLease {\n    readonly config: WorkspaceModeUseConfig;\n    readonly signal: AbortSignal;\n    admit(): void;\n    release(): void;\n}',
+  },
+  {
+    name: 'WorkspaceModeValue',
+    declaration: 'export interface WorkspaceModeValue {\n    readonly config: WorkspaceModeConfig;\n}',
   },
   {
     name: 'WorkspaceOrderValue',
@@ -10856,6 +10959,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceRuntimeFiles',
     declaration: 'export interface WorkspaceRuntimeFiles {\n    readonly fs: FileSystem;\n    readonly root: string;\n    readonly signal: AbortSignal;\n    assertCurrent(): void;\n}',
+  },
+  {
+    name: 'WorkspaceSessionAdmission',
+    declaration: 'export interface WorkspaceSessionAdmission {\n    readonly sessionId: SessionId;\n    readonly mode: WorkspaceMode;\n    readonly single: boolean;\n    readonly reuseOnly: boolean;\n    readonly signal: AbortSignal;\n    reserve(id: SessionId): Promise<void>;\n}',
+  },
+  {
+    name: 'WorkspaceSetModeRequest',
+    declaration: 'export interface WorkspaceSetModeRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly mode: WorkspaceMode;\n    readonly expectedRevision: number;\n}',
   },
   {
     name: 'WorkspaceUnarchiveSessionRequest',
@@ -10879,7 +10990,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WorkspaceView',
-    declaration: 'export interface WorkspaceView {\n    readonly workspaceId: WorkspaceId;\n    readonly path: string;\n    readonly title: string;\n    readonly sessionIds: readonly SessionId[];\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+    declaration: 'export interface WorkspaceView {\n    readonly modeConfig: WorkspaceModeConfig;\n    readonly workspaceId: WorkspaceId;\n    readonly path: string;\n    readonly title: string;\n    readonly sessionIds: readonly SessionId[];\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
 ]
 

@@ -105,6 +105,16 @@ Workspace 注册不意味着拥有其目录。未来的破坏性文件系统操�
 
 归档准入是本包声明并派发的两个宿主事件之上的能力接缝：`workspace/session-activity`（waterfall）向已组合的提供方询问某会话还有什么在跑，`workspace/session-stop`（parallel）请它们停止这些工作。`archiveSession(sessionId)` 只询问一次活动 waterfall，对非空答案以 `WorkspaceActiveSessionError` 拒绝，其 `activity` 按族列出各项——键由各提供方自己合并进本包留空的 `SessionActivityKindMap`；`archiveSession(sessionId, { stopActivity: true })` 跳过活动检查，先写入归档，再派发停止事件，因此持久化的归档集合已经拦住停止所引发的每一次唤醒；提供方抛错只记日志，归档保留。调用在每个提供方的停止请求都已发出后返回，被停止的工作自行收敛。两种询问都在存在性检查之后进行，对已归档 id 从不发生。随附的提供方是 Agent 注册表（运行中的回合）、任务注册表接缝（所属任务）、Subagent runtime（运行中的子孙）与 Schedule 插件（活跃提醒）；没有提供方的组合可自由归档。
 
+<a id="workspace-modes"></a>
+### Workspace 模式
+
+工作区模式为 `single-vm`、`multi-vm`、`single-docker` 和 `multi-docker`。注册服务支持 `defaultMode`（默认 `multi-vm`），仅用于新记录。`Workspace.modeConfig` 包含模式、单调递增版本、操作状态和首个会话的永久锁定信息。运行时提供方从 `@deepseek-ai/dsh-workspace/types` 导入浏览器安全的协调接口。模式元数据本身不会启动执行后端。
+
+`ctx.workspaceRegistry.modes` 协调版本和运行时切换。注册一个幂等的 `WorkspaceModeRuntime`；`prepare` 准备资源，`settle` 完成已持久化的提交或回滚决定。配置切换与会话创建等待先前资源租约收尾。持有 `acquireUse` 租约直到所有保留的写入和传输流收尾，并将捕获快照传递给嵌套函数。运行时注销取消准入并等待实际释放。未完成的操作阻止依赖操作；注册服务初始化后，运行时注册触发恢复，可信 Host 调用方可携带捕获的权限重试 `recover`。存储隔离仍然有效。
+
+
+首个成功创建的普通会话永久锁定模式。`withSessionCreation` 持有独占准入，在创建前持久化固定会话身份，并原子完成归属登记和锁定。单会话模式仅允许永久保留的首个身份，并拒绝分支和归档，包括停止请求和当前被过滤的会话。失败后保留日志的初始化需要通过 `workspace/recover-session` 接管生命周期，可信恢复才能完成；确定没有残留会话时释放保留身份。直接登记归属同样检查永久名额。
+
 ### 源码地图
 
 | 文件 | 职责 |
@@ -117,7 +127,7 @@ Workspace 注册不意味着拥有其目录。未来的破坏性文件系统操�
 
 ### 持久形态
 
-注册表打开 `workspace` 领域（版本 2）：一张以 `WorkspaceId` 为键的 `workspaces` 表，加上一个持有 `workspaceIds`（权威显示顺序）、`archivedSessionIds`、`pinnedSessionIds`、可选的首次使用身份 `defaultWorkspaceId` 与可选 `pendingMutation` 标记的全局状态。归档与置顶集合存储会话 id 字符串，默认值为空，不包含逐项对象或时间戳；置顶数组把最近置顶的 id 放在前面。归档在同一次全局状态写入中清除置顶，但不改变 Workspace 成员关系。取消归档不做会话存在性探测，因为从集合中移除 id 不可能引入未知 id，而归档会在加入前校验会话。
+注册表打开 `workspace` 领域（版本 3）：一张以 `WorkspaceId` 为键的 `workspaces` 表，加上一个持有 `workspaceIds`（权威显示顺序）、`archivedSessionIds`、`pinnedSessionIds`、可选的首次使用身份 `defaultWorkspaceId` 与可选 `pendingMutation` 标记的全局状态。归档与置顶集合存储会话 id 字符串，默认值为空，不包含逐项对象或时间戳；置顶数组把最近置顶的 id 放在前面。归档在同一次全局状态写入中清除置顶，但不改变 Workspace 成员关系。取消归档不做会话存在性探测，因为从集合中移除 id 不可能引入未知 id，而归档会在加入前校验会话。
 
 ### 生命周期
 
@@ -143,7 +153,6 @@ Workspace 注册不意味着拥有其目录。未来的破坏性文件系统操�
 - [历史删除 Workspace 注册记录决策](../../../.agents/notes/archived/feature/2026-07-27-workspace-registration-deletion.md)——为什么移除项目绝不会删除其文件夹或会话。
 
 -----
-
 <a id="model-experience"></a>
 ## 模型体验
 

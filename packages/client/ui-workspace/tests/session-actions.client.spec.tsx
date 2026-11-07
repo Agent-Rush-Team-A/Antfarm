@@ -63,6 +63,8 @@ const sessions: SessionListState = {
 // arrives through its injected Set hooks, never through this seat.
 const workspaces: WorkspaceSnapshot = {
   items: [{
+    modeConfig: { workspaceId: 'alpha' as WorkspaceId, mode: 'multi-vm', revision: 0, operationState: 'ready',
+      modeLocked: false, lockReason: null, firstSessionId: null },
     workspaceId: 'alpha' as WorkspaceId, path: '/projects/alpha', title: 'alpha', sessionIds: [one.id],
     createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
   }],

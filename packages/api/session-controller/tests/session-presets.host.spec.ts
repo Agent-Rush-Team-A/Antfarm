@@ -10,10 +10,11 @@ import type { Agent, AgentFactory } from '@deepseek-ai/dsh-agent'
 import { agentPresetProjectionDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
 import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
+import { ApiSessionAgentController } from '../src/agent.ts'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSessionTestRemote, testSessionPersistence } from './test-remote.ts'
+import { mockWorkspaceRegistry, createSessionTestRemote, testSessionPersistence } from './test-remote.ts'
 
 /** Booted contexts and their temp roots, torn down after each test. */
 const contexts: Context[] = []
@@ -116,7 +117,7 @@ async function harness(options: HarnessOptions = {}) {
   }) as never)
   const { members, archived } = options.workspace ?? { members: [], archived: [] }
   const workspace = { id: WORKSPACE, path: cwd, sessionIds: members, attachSession: () => Promise.resolve() }
-  ctx.provide('workspaceRegistry', {
+  mockWorkspaceRegistry(ctx, {
     get: (id: WorkspaceId) => id === WORKSPACE ? workspace : undefined,
     list: () => [workspace],
     archivedSessionIds: archived,
@@ -676,4 +677,54 @@ describe('session.create Workspace placement', () => {
     expect(selections).toEqual([])
     expect(presetOf(draft)).toBe('minimal')
   })
+})
+
+it('refuses identity fallback for a single-mode live Session that has started', async () => {
+  const { ctx, remote, cwd } = await harness({ presets: ['standard'] })
+  const sessionId = SessionId('single-live')
+  await remote.create({ sessionId })
+  ctx.sessions.get(sessionId)!.append('turn/start', { turn: 1 })
+  const agents = new ApiSessionAgentController(ctx)
+  await expect(agents.createSession({ sessionId, cwd, preserveIdentity: true, reusable: () => true }))
+    .rejects.toMatchObject({ sessionId })
+  expect(ctx.agents.list().map(agent => agent.id)).toEqual([sessionId])
+})
+
+it('refuses identity fallback when another writer holds a single-mode blank Session', async () => {
+  const stored = new Map<SessionId, StoredSession>()
+  const sessionId = SessionId('single-writer-held')
+  const { ctx, cwd } = await harness({ presets: ['standard'], stored, held: new Set([sessionId]) })
+  stored.set(sessionId, { header: storedHeader(sessionId, cwd), events: [] })
+  const agents = new ApiSessionAgentController(ctx)
+  await expect(agents.createSession({ sessionId, cwd, preserveIdentity: true, reusable: () => true }))
+    .rejects.toMatchObject({ sessionId })
+  expect(ctx.agents.list()).toEqual([])
+})
+
+it('refuses to recreate a missing permanent single-mode log', async () => {
+  const { ctx, cwd } = await harness({ presets: ['standard'] })
+  const sessionId = SessionId('single-missing-log')
+  const agents = new ApiSessionAgentController(ctx)
+  await expect(agents.createSession({ sessionId, cwd, preserveIdentity: true, reuseOnly: true, reusable: () => true }))
+    .rejects.toMatchObject({ sessionId })
+  expect(ctx.sessions.list()).toEqual([])
+  expect(ctx.agents.list()).toEqual([])
+})
+
+it('honors creation cancellation before writing a Session log', async () => {
+  const { ctx, cwd } = await harness({ presets: ['standard'] })
+  const controller = new AbortController()
+  controller.abort()
+  const agents = new ApiSessionAgentController(ctx)
+  await expect(agents.createSession({ cwd, signal: controller.signal, reusable: () => true })).rejects.toMatchObject({ name: 'AbortError' })
+  expect(ctx.sessions.list()).toEqual([])
+})
+
+it('captures the original Remote caller for ordinary creation admission', async () => {
+  const { ctx } = await harness({ workspace: { members: [], archived: [] } })
+  const principal = { kind: 'mode-test', name: 'creator' }
+  const decide = vi.spyOn(ctx.remoteAccess, 'decide').mockReturnValue({ kind: 'allow' } as never)
+  const actor = ctx.extend({ invocation: { signal: new AbortController().signal, peer: { principal } } as never })
+  await actor.sessionController.create({ workspaceId: WORKSPACE })
+  expect(decide).toHaveBeenCalledWith(expect.objectContaining({ principal, action: 'session/create' }))
 })

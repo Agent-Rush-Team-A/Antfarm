@@ -90,3 +90,7 @@
   inject: [workspaceFileAccess]
   config:
     storage: provided
+
+- id: workspace
+  config:
+    defaultMode: multi-vm

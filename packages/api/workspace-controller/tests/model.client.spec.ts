@@ -35,6 +35,8 @@ function workspace(
   updatedAt = '2026-01-01T00:00:00.000Z',
 ): WorkspaceView {
   return {
+    modeConfig: { workspaceId: wid(id), mode: 'multi-vm', revision: 0, operationState: 'ready',
+      modeLocked: false, lockReason: null, firstSessionId: null },
     workspaceId: wid(id),
     path: `/w/${id}`,
     title: id,
@@ -69,6 +71,10 @@ function deferred<T>(): Deferred<T> {
 }
 
 class FakeWorkspaceRemote implements WorkspaceRemote {
+  readonly getMode = vi.fn<WorkspaceRemote['getMode']>(async ({ workspaceId }) => remoteOk({ config: workspace(String(workspaceId)).modeConfig }))
+  readonly setMode = vi.fn<WorkspaceRemote['setMode']>(async ({ workspaceId, mode, expectedRevision }) => remoteOk({
+    config: { ...workspace(String(workspaceId)).modeConfig, mode, revision: expectedRevision + 3 },
+  }))
   readonly initializeDefault = vi.fn<WorkspaceRemote['initializeDefault']>(async () => remoteOk({ workspace: workspace('default') }))
   readonly calls: Array<{ readonly method: string; readonly request: unknown }> = []
   onCreate: (request: WorkspaceCreateRequest) => Promise<RemoteResult<WorkspaceCreateValue>> = request =>
@@ -569,4 +575,34 @@ describe('ClientWorkspaceModel', () => {
     model.removeView(wid('gone'))
     expect(model.getSnapshot().items).toEqual([])
   })
+})
+
+it('keeps a higher mode revision when an older unary result arrives after a stream update', async () => {
+  const remote = new FakeWorkspaceRemote(), model = new ClientWorkspaceModel(remote)
+  model.replaceBaseline({ items: [workspace('a')], archivedSessionIds: [], pinnedSessionIds: [] })
+  const pending = deferred<Awaited<ReturnType<WorkspaceRemote['setMode']>>>()
+  remote.setMode.mockImplementationOnce(() => pending.promise)
+  const changing = model.setMode(wid('a'), 'single-vm', 0)
+  const latest = { ...workspace('a'), modeConfig: { ...workspace('a').modeConfig, mode: 'single-docker' as const, revision: 9 } }
+  model.upsertView(latest)
+  pending.resolve(remoteOk({ config: { ...workspace('a').modeConfig, mode: 'single-vm', revision: 3 } }))
+  expect(await changing).toMatchObject({ ok: true, value: { config: { mode: 'single-docker', revision: 9 } } })
+  expect(model.getSnapshot().items[0]?.modeConfig).toMatchObject({ mode: 'single-docker', revision: 9 })
+})
+
+it('preserves high mode revisions across older row and replacement frames', () => {
+  const model = new ClientWorkspaceModel(new FakeWorkspaceRemote())
+  const high = { ...workspace('a'), modeConfig: { ...workspace('a').modeConfig, mode: 'single-vm' as const, revision: 5 } }
+  model.upsertView(high)
+  model.upsertView(workspace('a', [], '2026-02-01T00:00:00.000Z'))
+  expect(model.getSnapshot().items[0]?.modeConfig.revision).toBe(5)
+  model.replaceBaseline({ items: [workspace('a')], archivedSessionIds: [], pinnedSessionIds: [] })
+  expect(model.getSnapshot().items[0]?.modeConfig).toMatchObject({ mode: 'single-vm', revision: 5 })
+})
+
+it('retains structured mode failures for the Client service', async () => {
+  const remote = new FakeWorkspaceRemote(), model = new ClientWorkspaceModel(remote)
+  const failure = new RemoteError('workspace/mode-runtime-unavailable', 'Unavailable', { workspaceId: wid('a') })
+  remote.setMode.mockResolvedValueOnce({ ok: false, error: failure })
+  expect(await model.setMode(wid('a'), 'single-vm', 0)).toEqual({ ok: false, error: failure })
 })

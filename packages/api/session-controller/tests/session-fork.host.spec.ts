@@ -1,3 +1,4 @@
+import { mockWorkspaceRegistry } from './test-remote.ts'
 /** Session Controller fork boundaries, lineage, and inherited model routing. */
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 
@@ -35,7 +36,7 @@ async function composed(workspaces: readonly Workspace[] = []): Promise<Context>
   await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(AgentRegistry)
   installSessionReadTestServices(ctx)
-  ctx.provide('workspaceRegistry', { list: () => workspaces, archivedSessionIds: [] } as never)
+  mockWorkspaceRegistry(ctx, { list: () => workspaces, archivedSessionIds: [] } as never)
   ctx.agents.setFactory({
     createAgent: async (ownerCtx: Context, options: CreateAgentOptions): Promise<AgentHandle> => {
       const session = ctx.sessions.create(options.sessionId, {
@@ -94,6 +95,44 @@ async function liveAgent(
 const remote = async (ctx: Context) => await createSessionTestRemote(ctx, {
   defaultModelSelection: () => ({ provider: 'default-provider', model: 'default-model' }),
   cwd: '/tmp',
+})
+
+it('passes the original Remote cancellation signal through ordinary fork creation', async () => {
+  const ctx = await composed()
+  try {
+    const source = ctx.sessions.create(sid('signal-source'), { meta: { cwd: '/proj' } })
+    source.append('turn/start', { turn: 1 })
+    source.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    await remote(ctx)
+    const controller = new AbortController()
+    const actor = ctx.extend({ invocation: { signal: controller.signal, peer: { principal: undefined } } as never })
+    const create = vi.spyOn(ctx.agents, 'create')
+    await actor.sessionController.fork({ sessionId: source.id })
+    expect(create.mock.calls[0]?.[0].signal).toBe(controller.signal)
+  } finally {
+    await ctx.fiber.dispose()
+  }
+})
+
+it('captures the original Remote caller for fork admission', async () => {
+  const sourceId = sid('caller-source')
+  const workspace = {
+    id: 'caller-workspace', path: '/proj', sessionIds: [sourceId], attachSession: async () => {},
+  } as never
+  const ctx = await composed([workspace])
+  try {
+    const source = ctx.sessions.create(sourceId, { meta: { cwd: '/proj' } })
+    source.append('turn/start', { turn: 1 })
+    source.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    await remote(ctx)
+    const principal = { kind: 'user', userId: 'fork-owner', username: 'alice' }
+    const decide = vi.spyOn(ctx.remoteAccess, 'decide').mockReturnValue({ kind: 'allow' } as never)
+    const actor = ctx.extend({ invocation: { signal: new AbortController().signal, peer: { principal } } as never })
+    await actor.sessionController.fork({ sessionId: source.id })
+    expect(decide).toHaveBeenCalledWith(expect.objectContaining({ principal, action: 'session/fork' }))
+  } finally {
+    await ctx.fiber.dispose()
+  }
 })
 
 describe('sessions.fork', () => {
@@ -256,7 +295,7 @@ describe('sessions.fork', () => {
         textResponse('reply'), textResponse('checkpoint'), textResponse('continued'),
       ])
       ctx.llm.registerAdapter(['mock'], adapter)
-      ctx.provide('workspaceRegistry', { list: () => [], archivedSessionIds: [] } as never)
+      mockWorkspaceRegistry(ctx, { list: () => [], archivedSessionIds: [] } as never)
       const source = await harness.create(sid('manual-compaction-source'), { provider: 'mock', model: 'mock' })
       const originalPrompt = 'older conversation history '.repeat(60)
       source.followup(message(originalPrompt))
@@ -295,7 +334,7 @@ describe('sessions.fork', () => {
         const harness = await mountAgentLoopTestHarness(ctx)
         const adapter = new MockAdapter(Array.from({ length: 4 }, () => textResponse('reply')))
         ctx.llm.registerAdapter(['mock'], adapter)
-        ctx.provide('workspaceRegistry', { list: () => [], archivedSessionIds: [] } as never)
+        mockWorkspaceRegistry(ctx, { list: () => [], archivedSessionIds: [] } as never)
         const source = await harness.create(sid('source'), { provider: 'mock', model: 'mock' })
         source.followup(message('A'))
         await source.whenIdle()
@@ -640,7 +679,7 @@ describe('sessions.fork', () => {
     onTestFinished(() => ctx.fiber.dispose())
     await mountAgentLoopTestDependencies(ctx)
     const harness = await mountAgentLoopTestHarness(ctx)
-    ctx.provide('workspaceRegistry', { list: () => [], archivedSessionIds: [] } as never)
+    mockWorkspaceRegistry(ctx, { list: () => [], archivedSessionIds: [] } as never)
     const { session: source } = await harness.create(sid('session-routed'))
     source.append('turn/start', { turn: 1 })
     source.append('request/header', {

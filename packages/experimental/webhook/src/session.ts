@@ -4,7 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { randomUUID } from 'node:crypto'
 import { isAbsolute } from 'node:path'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import type { AgentOptions } from '@deepseek-ai/dsh-agent'
+import type { AgentHandle, AgentOptions } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import { boundContextSummary, createUserMessage, errorChain } from '@deepseek-ai/dsh-llm'
@@ -107,21 +107,34 @@ export async function createWebhookSession(
   const workspace = await ctx.workspaceRegistry.create(resolved.workspacePath)
   signal.throwIfAborted()
   const sessionId = brandString<SessionId>(`webhook-${randomUUID()}`)
-  const handle = await ctx.agents.create({
-    sessionId,
-    signal,
-    meta: { cwd: workspace.path, agentPreset: preset.id },
-    agentOptions: resolved.agentOptions,
-    setup: async (agentCtx) => {
-      await ctx.agentPresets.mount(agentCtx, preset.id)
-    },
-  })
+  let createdHandle: AgentHandle | undefined
+  let handle: AgentHandle
+  try {
+    handle = await ctx.workspaceRegistry.withSessionCreation(workspace.id, sessionId, async (admission) => {
+      const handle = await ctx.agents.create({
+        sessionId,
+        signal: admission.signal,
+        meta: { cwd: workspace.path, agentPreset: preset.id },
+        agentOptions: resolved.agentOptions,
+        setup: async (agentCtx) => {
+          await ctx.agentPresets.mount(agentCtx, preset.id)
+        },
+      })
+      createdHandle = handle
+      return { sessionId, value: handle }
+    }, { signal, admit: () => { signal.throwIfAborted() } })
+  } catch (error) {
+    if (createdHandle !== undefined) {
+      try { await createdHandle.dispose() } catch (disposalError) {
+        reportRollbackFailure(ctx, `Agent disposal for Session "${sessionId}"`, disposalError)
+      }
+    }
+    throw error
+  }
 
-  let attached = false
+  const attached = true
   try {
     signal.throwIfAborted()
-    await workspace.attachSession(sessionId)
-    attached = true
     signal.throwIfAborted()
     ctx.permissionPresets.set(handle.agent.session, resolved.permissionPreset)
     ctx.sessionTitle.rename(handle.agent.session, resolved.title)

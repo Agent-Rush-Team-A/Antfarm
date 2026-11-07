@@ -44,6 +44,8 @@ const sessionState = (items: readonly SessionSummary[]): SessionListState => ({
   projectionsBySession: {},
 })
 const workspace = (id: string, sessionIds: readonly string[]): WorkspaceView => ({
+  modeConfig: { workspaceId: id as WorkspaceId, mode: 'multi-vm', revision: 0, operationState: 'ready',
+    modeLocked: false, lockReason: null, firstSessionId: null },
   workspaceId: id as WorkspaceId, path: `/projects/${id}`, title: id,
   sessionIds: sessionIds.map(sid), createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
 })
@@ -78,6 +80,8 @@ async function bench(access: 'fake' | 'static' = 'fake') {
   if (access === 'static') new StaticRemoteAccess(ctx)
   else ctx.provide('remoteAccess', { source: accessSource, whenAccess: vi.fn(() => () => {}), whenResourceAccess })
   const create = vi.fn(async (input: { name: string } | { path: string }) => ({
+    modeConfig: { workspaceId: 'ws-new' as never, mode: 'multi-vm', revision: 0, operationState: 'ready',
+      modeLocked: false, lockReason: null, firstSessionId: null },
     workspaceId: 'ws-new' as never,
     path: 'name' in input ? `/projects/${input.name}` : input.path,
     title: 'new', sessionIds: [], createdAt: '0', updatedAt: '0',

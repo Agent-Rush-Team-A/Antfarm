@@ -67,7 +67,7 @@ async function placement(test: Awaited<ReturnType<typeof setup>>) {
   const attachSession = vi.fn<(sessionId: SessionId) => Promise<void>>(async () => {})
   const resolveByPath = vi.fn(async (path: string) => {
     if (path === '/missing') throw new Error(`ENOENT: ${path}`)
-    return path === '/work' ? { attachSession } : undefined
+    return path === '/work' ? { id: 'work-id', attachSession } : undefined
   })
   test.ctx.provide('workspaceRegistry', { resolveByPath, archivedSessionIds: [] })
   const title = (id: SessionId): string | undefined => test.ctx.sessionTitle.get(test.agents.get(id)!.session)?.title
@@ -564,14 +564,14 @@ it('delivers the latest occurrence after a target resolution that spans several 
   })
 })
 
-it('joins a created Session to the Workspace at its directory and names it after the task', async () => {
+it('passes the registered Workspace to Session creation and names it after the task', async () => {
   const reserved = SessionId('reserved')
   const tasks = [task({ kind: 'new_once', sessionId: reserved, create: { cwd: '/work' } })]
   const test = await setup(tasks)
   const placed = await placement(test)
   test.runtime.requestDrive()
   await vi.advanceTimersByTimeAsync(1000)
-  expect(placed.attachSession).toHaveBeenCalledExactlyOnceWith(reserved)
+  expect(placed.attachSession).not.toHaveBeenCalled()
   expect(placed.title(reserved)).toBe('Task')
   expect(test.agents.get(reserved)?.followup).toHaveBeenCalledOnce()
 })
@@ -602,7 +602,7 @@ it('delivers to the Session that an earlier delivery attempt created and keeps i
   await vi.advanceTimersByTimeAsync(1000)
   expect(test.createSession).not.toHaveBeenCalled()
   expect(placed.title(reserved)).toBe('Earlier name')
-  expect(placed.attachSession).toHaveBeenCalledExactlyOnceWith(reserved)
+  expect(placed.attachSession).not.toHaveBeenCalled()
   expect(agent.followup).toHaveBeenCalledOnce()
 })
 
@@ -618,13 +618,13 @@ it('leaves a created Session outside every Workspace when no Workspace owns its 
   expect(placed.title(reserved)).toBe('Task')
 })
 
-it('delivers when the Workspace join and the naming of a created Session fail', async () => {
+it('retains delivery when naming fails after Session admission', async () => {
   const reserved = SessionId('reserved')
   // Title cleaning removes the zero-width space that task validation keeps, so the title service rejects the name.
   const record = createRRuleScheduleRecord(
     ScheduleId('task'), '\u200B', 'Do work', 'DTSTART:20260916T000001Z\nRRULE:FREQ=DAILY;COUNT=1', Date.now(),
   )
-  const tasks = [seededTask(record, { kind: 'new_once', sessionId: reserved, create: { cwd: '/missing' } })]
+  const tasks = [seededTask(record, { kind: 'new_once', sessionId: reserved, create: { cwd: '/work' } })]
   const test = await setup(tasks)
   const placed = await placement(test)
   const warn = vi.spyOn(test.ctx.logger, 'warn')
@@ -634,7 +634,6 @@ it('delivers when the Workspace join and the naming of a created Session fail', 
   expect(tasks[0]).toMatchObject({ status: 'ended', target: { kind: 'session', sessionId: reserved } })
   expect(placed.title(reserved)).toBeUndefined()
   expect(warn.mock.calls).toEqual([
-    ['schedule: Session reserved did not join the Workspace at /missing: Error: ENOENT: /missing'],
     ['schedule: Session reserved was not named: SessionTitleInvalidError: session title must contain visible characters'],
   ])
 })

@@ -1,4 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { AgentOptions } from '@deepseek-ai/dsh-agent'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -61,7 +62,7 @@ function harness(options: HarnessOptions = {}): SessionHarness {
   }
   const workspace = {
     path: '/workspace',
-    async attachSession() {
+    async attachSession(_sessionId: SessionId) {
       calls.push('attach')
       if (options.abortAt === 'attach') controller.abort(new Error('abort after attach'))
       if (options.failAt === 'attach') throw new Error('attach failed')
@@ -111,6 +112,14 @@ function harness(options: HarnessOptions = {}): SessionHarness {
       },
     },
     workspaceRegistry: {
+      async withSessionCreation(
+        _workspaceId: unknown, sessionId: SessionId,
+        create: (admission: { signal: AbortSignal }) => Promise<{ sessionId: SessionId; value: typeof handle }>,
+      ) {
+        const result = await create({ signal: controller.signal })
+        await workspace.attachSession(sessionId)
+        return result.value
+      },
       async create(path: string) {
         calls.push(`workspace:${path}`)
         if (options.failAt === 'workspace') throw new Error('workspace failed')

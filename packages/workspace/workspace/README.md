@@ -104,6 +104,15 @@ The API has two owners: `WorkspaceRegistry` creates, orders, and deletes project
 
 Archive admission is a capability seam over two Host events this package declares and dispatches: `workspace/session-activity` (waterfall) asks the composed providers what still runs for a Session, and `workspace/session-stop` (parallel) asks them to stop it. `archiveSession(sessionId)` asks the activity waterfall once and rejects a non-empty answer with `WorkspaceActiveSessionError`, whose `activity` lists each family with its items — the keys are the providers' own, merged into `SessionActivityKindMap`, which this package leaves empty; `archiveSession(sessionId, { stopActivity: true })` skips the activity check, writes the archive, and then dispatches the stop event, so the durable archive set already gates every wake the stops induce; a rejecting provider is logged and the archive stays. The call resolves once every provider's stop request was issued, while the stopped work settles on its own. Both questions come after the existence check and never for an already archived id. The shipped providers are the Agent registry (the running turn), the job registry seam (owned jobs), the Subagent runtime (running descendants), and the Schedule plugin (active reminders); a composition without providers archives freely.
 
+<a id="workspace-modes"></a>
+### Workspace modes
+
+Workspace modes are `single-vm`, `multi-vm`, `single-docker`, and `multi-docker`. The registration service accepts `defaultMode` (default `multi-vm`), applying it only to new records. `Workspace.modeConfig` contains the mode, monotonic revision, operation state, and permanent first-Session lock. Runtime providers import the browser-safe coordination interfaces from `@deepseek-ai/dsh-workspace/types`. Mode metadata alone does not activate an execution backend.
+
+`ctx.workspaceRegistry.modes` coordinates revisions and runtime changes. Register one idempotent `WorkspaceModeRuntime`; `prepare` stages resources, and `settle` completes a persisted commit or rollback decision. Configuration changes and Session creation wait for earlier resource leases. Hold `acquireUse` leases until all retained writes and streams settle, and pass the captured snapshot to nested helpers. Runtime withdrawal aborts admission and waits for actual release. An interrupted intent blocks dependent operations; runtime registration triggers recovery after registry initialization, and trusted Host callers can retry `recover` with captured authority. Storage quarantine remains authoritative.
+
+The first successful ordinary Session permanently locks its mode. `withSessionCreation` holds exclusive admission, persists a stable Session identity before creation, and atomically attaches and locks it. Single modes permit only the permanent first identity and reject forks and archives, including stop requests and currently filtered Sessions. Failed setup with a retained log requires lifecycle takeover through `workspace/recover-session` before trusted recovery can complete; a definite fresh miss releases the reservation. Direct attachment checks the same permanent limit.
+
 ### Source map
 
 | File | Role |
@@ -116,7 +125,7 @@ Archive admission is a capability seam over two Host events this package declare
 
 ### Durable shape
 
-The registry opens the `workspace` domain (version 2): a `workspaces` table keyed by `WorkspaceId` plus one global state holding `workspaceIds` (the authoritative display order), `archivedSessionIds`, `pinnedSessionIds`, the optional `defaultWorkspaceId` first-use identity, and the optional `pendingMutation` marker. Archive and pin sets contain Session id strings, default to empty, and carry no per-entry objects or timestamps; the pin array keeps the most recently pinned id first. Archiving clears the pin in the same global-state write without changing Workspace membership. Unarchive runs no session-existence probe, because dropping an id from the set cannot introduce an unknown one, while archive verifies the session before adding it.
+The registry opens the `workspace` domain (version 3): a `workspaces` table keyed by `WorkspaceId` plus one global state holding `workspaceIds` (the authoritative display order), `archivedSessionIds`, `pinnedSessionIds`, the optional `defaultWorkspaceId` first-use identity, and the optional `pendingMutation` marker. Archive and pin sets contain Session id strings, default to empty, and carry no per-entry objects or timestamps; the pin array keeps the most recently pinned id first. Archiving clears the pin in the same global-state write without changing Workspace membership. Unarchive runs no session-existence probe, because dropping an id from the set cannot introduce an unknown one, while archive verifies the session before adding it.
 
 ### Lifecycle
 

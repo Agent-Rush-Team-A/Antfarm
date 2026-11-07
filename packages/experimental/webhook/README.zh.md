@@ -47,6 +47,8 @@ kind: "package-reference"
 
 [GitHub 评审指南](../../../docs/user/guide/github-review.zh.md)展示了规则模块、专用入口端口、密钥设置与 Workspace 路由。
 
+Webhook 创建在 Agent 持久化前通过工作区模式准入保留普通会话身份。单会话名额限制在写入第二份日志前拒绝操作。归属登记和永久锁定一并完成后才应用权限、标题和消息。销毁失败的 Agent 不会删除已保存的会话日志或释放持久化保留身份；可信工作区恢复负责协调它。
+
 <a id="model-experience"></a>
 ## 模型体验
 

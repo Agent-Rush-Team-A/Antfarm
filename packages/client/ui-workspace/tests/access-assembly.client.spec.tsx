@@ -68,6 +68,8 @@ async function bench(access: ClientAccessState, options: { ungroupedSession?: Se
   }
   await runtime.workspaces.update((draft) => {
     draft.items = [{
+      modeConfig: { workspaceId: WORKSPACE, mode: 'multi-vm', revision: 0, operationState: 'ready',
+        modeLocked: false, lockReason: null, firstSessionId: null },
       workspaceId: WORKSPACE, title: 'Project', path: '/projects/project',
       sessionIds: [], createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
     }] as never

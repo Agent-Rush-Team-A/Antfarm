@@ -7,13 +7,25 @@
 
 import { randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
+import z from '@deepseek-ai/schemastery'
+import type { WorkspaceMode, IWorkspaceModes } from './mode-types.ts'
+export type * from './mode-types.ts'
+export { WorkspaceModeError } from './mode-errors.ts'
+
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { DomainGlobal, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { WorkspaceEntity } from './entity.ts'
+import { WorkspaceModeError } from './mode-errors.ts'
+import { WorkspaceModeSessions } from './mode-sessions.ts'
+import type { WorkspaceSessionAdmission } from './mode-sessions.ts'
+export type { WorkspaceSessionAdmission } from './mode-sessions.ts'
+import type { WorkspaceModeOperationOptions } from './mode-types.ts'
+import { WorkspaceModes } from './modes.ts'
 import type { WorkspaceEntityHost } from './entity.ts'
 
+export { workspaceModeConfig } from './mode-config.ts'
 export { WorkspaceMoveInvalidError } from './entity.ts'
 import { defaultWorkspaceTitle, fullyQualifiedWorkspacePath, realpathNormalize } from './paths.ts'
 import { workspaceDomainSpec } from './spec.ts'
@@ -117,6 +129,14 @@ declare module '@deepseek-ai/cordis' {
 
   interface Events {
     /**
+     * Take over a pending ordinary Session before completing its Workspace registration.
+     * @param sessionId - Durable pending identity, never a newly minted replacement.
+     * @param next - Delegate to other lifecycle providers; false means no provider took ownership.
+     * @mode waterfall
+     */
+    'workspace/recover-session'(sessionId: SessionId, next: () => Promise<boolean>): Promise<boolean>
+
+    /**
      * Guard one Workspace registration deletion before its durable writes.
      * Providers may refuse by throwing and must await `next()` to hold their guard until deletion settles.
      * @param workspaceId - Registration the trusted backend caller is removing.
@@ -156,6 +176,12 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+/** Workspace registration deployment policy. */
+export interface Config {
+  /** Initial mode of newly created records; existing records retain their mode. */
+  defaultMode: WorkspaceMode
+}
+
 interface BootstrapGroup {
   readonly path: string
   readonly headers: SessionHeader[]
@@ -176,7 +202,17 @@ const compareHeaders = (left: SessionHeader, right: SessionHeader): number =>
  * history and commit the initialized marker.
  */
 export class WorkspaceRegistry extends Service {
+  /** Deployment default, applied only to new registrations. */
+  static Config: z<Config> = z.object({
+    defaultMode: z.union(['single-vm', 'multi-vm', 'single-docker', 'multi-docker']).default('multi-vm'),
+  })
+
   static inject = ['storageDomain', 'sessionPersistence']
+
+  /** Runtime mode coordination for trusted Host consumers. */
+  readonly modes: IWorkspaceModes
+  private readonly modeCoordinator: WorkspaceModes
+  private readonly modeSessions: WorkspaceModeSessions
 
   private table?: KvTable<WorkspaceId, WorkspaceRecord>
   private global?: DomainGlobal<WorkspaceDomainState>
@@ -201,9 +237,24 @@ export class WorkspaceRegistry extends Service {
     },
   }
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, readonly config: Config = { defaultMode: 'multi-vm' }) {
     super(ctx, 'workspaceRegistry')
     this.deletionOwner = ctx
+    this.modes = this.modeCoordinator = new WorkspaceModes({
+      defaultMode: config.defaultMode,
+      entity: id => this.entities.get(id),
+      list: () => [...this.entities.values()],
+      report: error => ctx.logger.warn(`workspace mode recovery failed; dependent operations remain blocked: ${String(error)}`),
+    })
+    this.modeSessions = new WorkspaceModeSessions(this.modeCoordinator, {
+      owner: id => this.findSession(id)?.id,
+      header: async (id) => {
+        const persisted = (await this.listStoredHeaders()).find(header => header.id === id)
+        return persisted ?? this.ctx.get('sessions')?.get(id)?.header
+      },
+      recover: id => ctx.waterfall('workspace/recover-session', id, () => Promise.resolve(false)),
+      report: error => ctx.logger.warn(`workspace pending Session inspection failed: ${String(error)}`),
+    })
   }
 
   /** Open the domain, finish bootstrap when required, and rebuild the ordered cache. */
@@ -228,6 +279,12 @@ export class WorkspaceRegistry extends Service {
     this.validateStoredState(this.requireState())
     this.rebuildEntities()
     this.reportFilteredCandidates()
+    for (const entity of this.entities.values()) {
+      if (entity.modeRecord().modeIntent !== undefined && entity.modeConfig.operationState !== 'recovery-required') {
+        await entity.updateMode(record => ({ ...record, modeOperationState: 'recovery-required' }))
+      }
+    }
+    this.ctx.effect(() => () => this.modeCoordinator.dispose(), 'workspace.modeAdmission')
   }
 
   /**
@@ -295,6 +352,60 @@ export class WorkspaceRegistry extends Service {
   }
 
   /**
+   * Trusted ordinary Session admission; the callback runs under exclusive mode coordination.
+   * @param workspaceId - Original registration.
+   * @param sessionId - Optional reusable Session identity.
+   * @param create - Creation callback that reserves each identity before persisting it.
+   * @param options - Captured authority and caller cancellation.
+   * @returns the callback value after durable attachment and permanent mode locking.
+   */
+  withSessionCreation<T>(workspaceId: WorkspaceId, sessionId: SessionId | undefined,
+    create: (admission: WorkspaceSessionAdmission) => Promise<{ sessionId: SessionId; value: T }>,
+    options: WorkspaceModeOperationOptions): Promise<T> {
+    return this.modeSessions.create(workspaceId, sessionId, create, options)
+  }
+
+  /**
+   * Resolve accounting by permanent and pending identities, including currently filtered Sessions.
+   * @param sessionId - Ordinary Session whose registration is required.
+   * @returns its Workspace, or undefined when no registration owns the identity.
+   */
+  findSession(sessionId: SessionId): Workspace | undefined {
+    return [...this.entities.values()].find((entity) => {
+      const record = entity.modeRecord()
+      return record.firstSessionId === sessionId
+        || record.modeIntent?.operation === 'create-session' && record.modeIntent.sessionId === sessionId
+        || record.sessionIds.includes(sessionId)
+    })
+  }
+
+  /**
+   * Refuse messages before ordinary Session creation commits or pending recovery settles.
+   * @param sessionId - Ordinary Session whose original registration must be ready.
+   */
+  assertSessionReady(sessionId: SessionId): void {
+    const workspace = this.findSession(sessionId)
+    if (workspace === undefined) return
+    const entity = this.entities.get(workspace.id)
+    if (entity === undefined) throw new Error('Workspace Session registration is inconsistent')
+    this.modeCoordinator.assertReady(entity)
+  }
+
+  /**
+   * Refuse single-mode forks and archives before any new log or activity stop.
+   * @param sessionId - Source or archive target.
+   * @param operation - Forbidden single-mode operation.
+   */
+  assertSessionOperation(sessionId: SessionId, operation: 'fork' | 'archive'): void {
+    const workspace = this.findSession(sessionId)
+    if (workspace?.modeConfig.mode.startsWith('single-') === true) {
+      throw new WorkspaceModeError('workspace/session-operation-forbidden', {
+        workspaceId: workspace.id, sessionId, operation,
+      })
+    }
+  }
+
+  /**
    * Synchronous workspace projection in durable registry order. Every
    * entity's `sessionIds` getter is already filtered by the startup/live
    * canonical-cwd header index; this method performs no persistence reads.
@@ -337,7 +448,10 @@ export class WorkspaceRegistry extends Service {
   delete(id: WorkspaceId): Promise<boolean> {
     return this.enqueueOperation(async () => {
       if (!this.entities.has(id)) return false
-      return this.ctx.waterfall('workspace/before-delete', id, () => this.deleteKnown(id))
+      return this.modeCoordinator.exclusive(id, { signal: new AbortController().signal, admit: () => {} }, async (entity) => {
+        this.modeCoordinator.assertReady(entity)
+        return this.ctx.waterfall('workspace/before-delete', id, () => this.deleteKnown(id))
+      })
     })
   }
 
@@ -396,6 +510,7 @@ export class WorkspaceRegistry extends Service {
     return this.enqueueOperation(async () => {
       // The chain slot serializes against every other registry write, so this
       // check-then-write pair cannot interleave with another archive.
+      this.assertSessionOperation(sessionId, 'archive')
       if (this.requireState().archivedSessionIds.includes(sessionId)) return
       if (!(await this.sessionKnown(sessionId))) {
         throw new WorkspaceUnknownSessionError(sessionId, 'archive')
@@ -548,6 +663,10 @@ export class WorkspaceRegistry extends Service {
     const id = WorkspaceId(randomUUID())
     const now = new Date().toISOString()
     const record: WorkspaceRecord = {
+      mode: this.config.defaultMode,
+      modeRevision: 0,
+      firstSessionId: null,
+      modeOperationState: 'ready',
       path: canonical,
       title: workspaceName,
       sessionIds: [],
@@ -712,6 +831,10 @@ export class WorkspaceRegistry extends Service {
         id = WorkspaceId(randomUUID())
         const createdAt = new Date(group.newestAt).toISOString()
         const record: WorkspaceRecord = {
+          mode: this.config.defaultMode,
+          modeRevision: 0,
+          firstSessionId: sessionIds.at(-1) ?? null,
+          modeOperationState: 'ready',
           path: group.path,
           title: defaultWorkspaceTitle(group.path),
           sessionIds,
@@ -737,6 +860,8 @@ export class WorkspaceRegistry extends Service {
       await table.update(id, record => ({
         ...record,
         sessionIds,
+        firstSessionId: record.firstSessionId ?? [...group.headers].sort((left, right) => left.createdAt - right.createdAt)[0]?.id ?? null,
+        modeRevision: record.modeRevision + 1,
         updatedAt: new Date().toISOString(),
       }))
       for (const sessionId of historical) accounted.set(sessionId, id)
@@ -793,6 +918,9 @@ export class WorkspaceRegistry extends Service {
     const paths = new Map<string, WorkspaceId>()
     const accounted = new Map<SessionId, WorkspaceId>()
     for (const [id, record] of table.entries()) {
+      if (record.modeIntent?.operation === 'switch-mode' && record.modeIntent.workspaceId !== id) {
+        throw new Error(`workspace domain is inconsistent: mode intent does not belong to workspace '${id}'`)
+      }
       const pathHolder = paths.get(record.path)
       if (pathHolder !== undefined) {
         throw new Error(
@@ -808,6 +936,16 @@ export class WorkspaceRegistry extends Service {
             `workspace domain is inconsistent: session '${sessionId}' is accounted `
             + `by both workspace '${holder}' and workspace '${id}'`,
           )
+        }
+        accounted.set(sessionId, id)
+      }
+      const retained = [record.firstSessionId,
+        record.modeIntent?.operation === 'create-session' ? record.modeIntent.sessionId : null]
+      for (const sessionId of retained) {
+        if (sessionId === null) continue
+        const holder = accounted.get(sessionId)
+        if (holder !== undefined && holder !== id) {
+          throw new Error(`workspace domain is inconsistent: retained Session '${sessionId}' has multiple owners`)
         }
         accounted.set(sessionId, id)
       }

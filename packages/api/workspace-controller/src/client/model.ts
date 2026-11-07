@@ -5,6 +5,7 @@ import type {} from '@deepseek-ai/dsh-api-workspace-controller/remote'
 import { isRemoteFailure } from '@deepseek-ai/dsh-api-gateway/client'
 import type { RemoteFailure, RemoteResult, TypertClientRemote } from '@deepseek-ai/dsh-typert-protocol'
 import type {
+  WorkspaceModeConfig, WorkspaceMode, WorkspaceModeValue,
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
   WorkspaceBaseline,
@@ -62,6 +63,7 @@ export interface WorkspaceFollowSink {
  * Owns the Client Workspace projection, mutation echoes, and stream/unary race resolution.
  */
 export class ClientWorkspaceModel implements WorkspaceFollowSink {
+  private readonly modes = new Map<WorkspaceId, WorkspaceModeConfig>()
   private items: readonly WorkspaceView[] = []
   private archivedSessionIds: WorkspaceArchiveValue['archivedSessionIds'] = []
   private pinnedSessionIds: WorkspacePinValue['pinnedSessionIds'] = []
@@ -91,6 +93,30 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
   /** @param remote - generated Workspace Remote namespace. */
   constructor(private readonly remote: WorkspaceRemote) {
     this.snapshotCache = this.buildSnapshot()
+  }
+
+  /**
+   * Read mode metadata without accepting an older revision.
+   * @param workspaceId - Target Workspace.
+   * @returns the latest accepted mode snapshot or structured Remote failure.
+   */
+  async getMode(workspaceId: WorkspaceId): Promise<RemoteResult<WorkspaceModeValue>> {
+    const result = await this.remote.getMode({ workspaceId })
+    return result.ok ? { ok: true, value: { config: this.mergeMode(result.value.config) } } : result
+  }
+
+  /**
+   * Change an unlocked mode using its observed revision.
+   * @param workspaceId - Target Workspace.
+   * @param mode - Requested mode.
+   * @param expectedRevision - Latest observed revision.
+   * @param signal - Caller cancellation.
+   * @returns the latest accepted snapshot or structured Remote failure.
+   */
+  async setMode(workspaceId: WorkspaceId, mode: WorkspaceMode, expectedRevision: number,
+    signal?: AbortSignal): Promise<RemoteResult<WorkspaceModeValue>> {
+    const result = await this.remote.setMode({ workspaceId, mode, expectedRevision }, signal)
+    return result.ok ? { ok: true, value: { config: this.mergeMode(result.value.config) } } : result
   }
 
   /**
@@ -386,13 +412,36 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
     this.invalidate()
   }
 
+  private rememberMode(config: WorkspaceModeConfig): WorkspaceModeConfig {
+    const current = this.modes.get(config.workspaceId)
+    if (current !== undefined && current.revision >= config.revision) return current
+    this.modes.set(config.workspaceId, config)
+    return config
+  }
+
+  private mergeMode(config: WorkspaceModeConfig): WorkspaceModeConfig {
+    if (this.removedIds.has(config.workspaceId)) return config
+    const latest = this.rememberMode(config)
+    const row = this.items.find(item => item.workspaceId === latest.workspaceId)
+    if (row !== undefined && row.modeConfig !== latest) {
+      this.items = this.items.map(item => item === row ? { ...item, modeConfig: latest } : item)
+      this.invalidate()
+    }
+    return latest
+  }
+
   private upsert(view: WorkspaceView): void {
     if (this.removedIds.has(view.workspaceId)) return
     const index = this.items.findIndex(item => item.workspaceId === view.workspaceId)
     const installed = this.items[index]
     // Unary responses and stream increments race on separate requests. Keep
     // the newest Host projection regardless of their arrival order.
-    if (installed !== undefined && Date.parse(view.updatedAt) < Date.parse(installed.updatedAt)) return
+    const modeConfig = this.rememberMode(view.modeConfig)
+    if (installed !== undefined && Date.parse(view.updatedAt) < Date.parse(installed.updatedAt)) {
+      this.mergeMode(modeConfig)
+      return
+    }
+    view = { ...view, modeConfig }
     if (!this.committedOrder.includes(view.workspaceId)) {
       this.committedOrder = [view.workspaceId, ...this.committedOrder]
     }
@@ -403,6 +452,7 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
   }
 
   private remove(workspaceId: WorkspaceId, immediate = false): void {
+    this.modes.delete(workspaceId)
     this.removedIds.add(workspaceId)
     this.committedOrder = this.committedOrder.filter(id => id !== workspaceId)
     const items = this.items.filter(item => item.workspaceId !== workspaceId)
@@ -419,7 +469,9 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
   private installViews(views: readonly WorkspaceView[]): void {
     const installed = new Map<WorkspaceId, WorkspaceView>()
     for (const view of views) {
-      if (!this.removedIds.has(view.workspaceId)) installed.set(view.workspaceId, view)
+      if (!this.removedIds.has(view.workspaceId)) {
+        installed.set(view.workspaceId, { ...view, modeConfig: this.rememberMode(view.modeConfig) })
+      }
     }
     this.items = [...installed.values()]
     this.committedOrder = views.map(view => view.workspaceId)

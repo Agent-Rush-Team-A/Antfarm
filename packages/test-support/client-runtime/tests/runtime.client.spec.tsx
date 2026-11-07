@@ -14,7 +14,7 @@ import { act, cleanup } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import { createSnapshotStore, defineStore } from '@deepseek-ai/dsh-client-store'
 import { createScope, type SessionReference } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   PropsRenderSlots, SessionStandardProps, SlotRendererHost,
@@ -565,7 +565,9 @@ describe('workspaces', () => {
     try {
       const signal = new AbortController().signal
       await expect(runtime.workspaces.initializeDefault(signal)).resolves.toBeUndefined()
-      const workspace = {
+      const workspace: WorkspaceView = {
+        modeConfig: { workspaceId: 'default' as WorkspaceId, mode: 'multi-vm', revision: 0, operationState: 'ready',
+          modeLocked: false, lockReason: null, firstSessionId: null },
         workspaceId: 'default' as WorkspaceId, title: 'default-workspace', path: '/default', sessionIds: [],
         createdAt: '2026-09-20T00:00:00Z', updatedAt: '2026-09-20T00:00:00Z',
       }

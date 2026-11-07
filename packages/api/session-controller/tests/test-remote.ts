@@ -1,7 +1,7 @@
 /** Test-only direct Remote face over the Session Controller's internal controllers. */
 import type { SessionControllerInternals } from '../src/index.ts'
 
-import { SessionLogOffset } from '@deepseek-ai/dsh-session'
+import { SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import type { ModelSelection as AgentModelSelection } from '@deepseek-ai/dsh-agent'
 import type {
@@ -9,7 +9,7 @@ import type {
   AttachmentAdmissionPart,
   ImageAttachmentLimits,
 } from '@deepseek-ai/dsh-attachment'
-import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import type { SessionProjectionsValue } from '../src/types.ts'
 import {
   SessionPersistenceNotFoundError,
@@ -402,4 +402,50 @@ export async function createSessionTestRemote(
     observeProjections: (request, signal = new AbortController().signal) => direct.observeProjections(request, signal),
     control: (signal = new AbortController().signal) => direct.control(signal),
   }
+}
+
+/** Unit-test Workspace peer that delegates creation while leaving mode policy to real-composition suites. */
+export function mockWorkspaceRegistry(ctx: Context, peer: Partial<import('@deepseek-ai/dsh-workspace').WorkspaceRegistry>): void {
+  const list = peer.list ?? (() => [])
+  const normalized = () => list().map(workspace => Object.assign(workspace, {
+    modeConfig: workspace.modeConfig ?? {
+      workspaceId: workspace.id, mode: 'multi-vm' as const, revision: 0, operationState: 'ready' as const,
+      modeLocked: false, lockReason: null, firstSessionId: null,
+    },
+  }))
+  const get = peer.get ?? (id => normalized().find(workspace => workspace.id === id))
+  const withSessionCreation: import('@deepseek-ai/dsh-workspace').WorkspaceRegistry['withSessionCreation'] =
+    peer.withSessionCreation ?? (async (workspaceId, sessionId, create, options) => {
+      options.admit()
+      const workspace = get(workspaceId)
+      const result = await create({
+        sessionId: sessionId ?? SessionId('test-reserved'), mode: 'multi-vm', single: false,
+        reuseOnly: false, signal: options.signal, reserve: async () => {},
+      })
+      try { await workspace?.attachSession(result.sessionId) } catch (error) {
+        throw new RemoteError('session/workspace-attach-failed', 'Workspace attachment failed', {
+          workspaceId, sessionId: result.sessionId,
+        }, { cause: error })
+      }
+      return result.value
+    })
+  ctx.provide('workspaceRegistry', {
+    archivedSessionIds: [],
+    ...peer,
+    list: normalized,
+    get: (id: import('@deepseek-ai/dsh-workspace').WorkspaceId) => {
+      normalized()
+      const workspace = get(id)
+      if (workspace !== undefined && workspace.modeConfig === undefined) Object.assign(workspace, {
+        modeConfig: { workspaceId: id, mode: 'multi-vm', revision: 0, operationState: 'ready',
+          modeLocked: false, lockReason: null, firstSessionId: null },
+      })
+      return workspace
+    },
+    resolveByPath: peer.resolveByPath ?? (async (path: string) => normalized().find(workspace => workspace.path === path)),
+    findSession: peer.findSession ?? ((sessionId: SessionId) => normalized().find(workspace => workspace.sessionIds?.includes(sessionId))),
+    assertSessionOperation: peer.assertSessionOperation ?? (() => {}),
+    assertSessionReady: peer.assertSessionReady ?? (() => {}),
+    withSessionCreation,
+  } as never)
 }

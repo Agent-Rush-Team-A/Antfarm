@@ -5,6 +5,9 @@
  * @module @deepseek-ai/dsh-workspace/src/types
  */
 
+import type { WorkspaceModeConfig, WorkspaceModeErrorDetailsMap } from './mode-types.ts'
+export type * from './mode-types.ts'
+
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TypertResource } from '@deepseek-ai/dsh-typert-protocol'
@@ -21,7 +24,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     workspace: TypertResource<WorkspaceId>
   }
 
-  interface RemoteErrorDetailsMap {
+  interface RemoteErrorDetailsMap extends WorkspaceModeErrorDetailsMap {
     /** No registration carries that Workspace identity. */
     'workspace/not-found': { readonly workspaceId: WorkspaceId }
   }
@@ -67,6 +70,9 @@ export interface SessionActivity {
  * implementation stays private.
  */
 export interface Workspace {
+  /** Committed mode metadata and current operation admission state. */
+  readonly modeConfig: WorkspaceModeConfig
+
   /** Stable record id (generated uuid). */
   readonly id: WorkspaceId
 

@@ -3,6 +3,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {
   IWorkspaces, WorkspaceId, WorkspaceSnapshot, WorkspaceView,
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { WorkspaceMode, WorkspaceModeConfig } from '@deepseek-ai/dsh-workspace/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { workspaceSnapshot } from './fixtures.ts'
@@ -60,6 +61,34 @@ export class TestWorkspaces implements IWorkspaces {
    */
   stub<Key extends WorkspaceAction>(method: Key, impl: WorkspaceStub<Key>): void {
     this.stubs.set(method, impl as (...args: unknown[]) => unknown)
+  }
+
+  /**
+   * @param workspaceId - Target Workspace.
+   * @returns stubbed or fixture mode metadata.
+   */
+  async getMode(workspaceId: WorkspaceId): Promise<WorkspaceModeConfig> {
+    this.calls.push({ method: 'getMode', args: [workspaceId] })
+    const stub = this.stubs.get('getMode')
+    if (stub !== undefined) return await (stub(workspaceId) as Promise<WorkspaceModeConfig>)
+    return this.list.getSnapshot().items.find(workspace => workspace.workspaceId === workspaceId)?.modeConfig
+      ?? { workspaceId, mode: 'multi-vm', revision: 0, operationState: 'ready', modeLocked: false, lockReason: null, firstSessionId: null }
+  }
+
+  /**
+   * @param workspaceId - Target Workspace.
+   * @param mode - Requested mode.
+   * @param expectedRevision - Observed revision.
+   * @param signal - Caller cancellation.
+   * @returns stubbed or inert mode echo.
+   */
+  async setMode(
+    workspaceId: WorkspaceId, mode: WorkspaceMode, expectedRevision: number, signal?: AbortSignal,
+  ): Promise<WorkspaceModeConfig> {
+    this.calls.push({ method: 'setMode', args: [workspaceId, mode, expectedRevision, signal] })
+    const stub = this.stubs.get('setMode')
+    if (stub !== undefined) return await (stub(workspaceId, mode, expectedRevision, signal) as Promise<WorkspaceModeConfig>)
+    return { workspaceId, mode, revision: expectedRevision + 3, operationState: 'ready', modeLocked: false, lockReason: null, firstSessionId: null }
   }
 
   /**

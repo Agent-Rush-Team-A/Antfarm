@@ -14,6 +14,7 @@ import {
   ClientWorkspaceModel,
   createWorkspaceStateStream,
   WorkspaceArchiveError,
+  WorkspaceModeCommandError,
   WorkspaceController,
   WorkspaceCreateError,
   type WorkspaceFollowSink,
@@ -343,6 +344,23 @@ describe('Workspace state stream', () => {
 })
 
 describe('WorkspaceController', () => {
+  it('round-trips mode commands and preserves their structured failures', async ({ mock, start }) => {
+    const { remote, client } = await gatewayClient(mock, start)
+    const controller = new WorkspaceController(client.ctx, new ClientWorkspaceModel(remote.workspace))
+    await expect(controller.getMode(wid('one'))).resolves.toMatchObject({ mode: 'multi-vm', revision: 0 })
+    await expect(controller.setMode(wid('one'), 'single-docker', 0)).resolves.toMatchObject({ mode: 'single-docker', revision: 3 })
+    expect(mock.log.requests('workspace/setMode')).toEqual([{ workspaceId: 'one', mode: 'single-docker', expectedRevision: 0 }])
+    const failure = new RemoteError('workspace/mode-revision-conflict', 'stale configuration', {
+      workspaceId: wid('one'), expectedRevision: 0, actualRevision: 3,
+    })
+    mock.remote.workspace.setMode.mockResolvedValueOnce(err(failure))
+    await expect(controller.setMode(wid('one'), 'single-vm', 0)).rejects.toMatchObject({
+      name: 'WorkspaceModeCommandError', rpcError: failure,
+    })
+    mock.remote.workspace.getMode.mockResolvedValueOnce(err(failure))
+    await expect(controller.getMode(wid('one'))).rejects.toBeInstanceOf(WorkspaceModeCommandError)
+  })
+
   it('returns no Workspace when startup is ineligible without changing the list', async ({ mock, start }) => {
     const { remote, client } = await gatewayClient(mock, start)
     const model = new ClientWorkspaceModel(remote.workspace)

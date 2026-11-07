@@ -5,6 +5,7 @@ import { Deque } from '@deepseek-ai/dsh-deque'
 import type { DomainChanged } from '@deepseek-ai/dsh-storage-domain'
 import type { Workspace, WorkspaceRecord } from '@deepseek-ai/dsh-workspace'
 import {
+  workspaceModeConfig,
   workspaceDomainState,
   workspaceRecord,
   WorkspaceId,
@@ -26,6 +27,7 @@ type WorkspaceFeedFrame = Exclude<WorkspaceFollowFrame, { readonly type: 'replac
 export function workspaceView(workspace: Workspace): WorkspaceView {
   return {
     workspaceId: workspace.id,
+    modeConfig: workspace.modeConfig,
     path: workspace.path,
     title: workspace.title,
     sessionIds: [...workspace.sessionIds],
@@ -38,6 +40,7 @@ function changedWorkspaceView(workspaceId: string, value: unknown): WorkspaceVie
   const record: WorkspaceRecord = workspaceRecord.parse(value)
   return {
     workspaceId: WorkspaceId(workspaceId),
+    modeConfig: workspaceModeConfig(WorkspaceId(workspaceId), record),
     path: record.path,
     title: record.title,
     sessionIds: [...record.sessionIds],

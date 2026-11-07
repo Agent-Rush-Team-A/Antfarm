@@ -28,6 +28,15 @@ interface SessionSummary {
 }
 
 interface WorkspaceView {
+  readonly modeConfig: {
+    readonly workspaceId: string
+    readonly mode: 'single-vm' | 'multi-vm' | 'single-docker' | 'multi-docker'
+    readonly revision: number
+    readonly operationState: 'ready' | 'switching' | 'creating-session' | 'recovery-required'
+    readonly modeLocked: boolean
+    readonly lockReason: 'first-session-created' | null
+    readonly firstSessionId: string | null
+  }
   readonly workspaceId: string
   readonly path: string
   readonly title: string
@@ -239,7 +248,9 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
     const existing = workspaces.find(workspace => workspace.path === path)
     if (existing !== undefined) return ok({ workspace: structuredClone(existing), created: false })
     const now = new Date().toISOString()
-    const workspace = {
+    const workspace: WorkspaceView = {
+      modeConfig: { workspaceId: `fx-ws-${String(workspaces.length + 1)}`, mode: 'multi-vm', revision: 0, operationState: 'ready',
+        modeLocked: false, lockReason: null, firstSessionId: null },
       workspaceId: `fx-ws-${String(workspaces.length + 1)}`,
       path,
       title: path.split('/').filter(Boolean).at(-1) ?? path,
