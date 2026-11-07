@@ -37,6 +37,11 @@ function registerUi(ctx: Context): void {
         if (!result.ok) throw result.error
         return result.value
       },
+      refreshModels: async (id, force, signal) => {
+        const result = await remote.refreshModels({ id, force }, signal)
+        if (!result.ok) throw result.error
+        return result.value
+      },
       create: async (request, signal) => { const result = await remote.create(request, signal)
         if (!result.ok) throw result.error
         return result.value

@@ -3,13 +3,15 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { Button, IconShieldOutlineRegular, Input, Modal, Toast, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConnectionState } from '@deepseek-ai/dsh-client-connection/client'
 import type { InjectFace, PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import type { CreateCredentialRequest, ReplaceCredentialRequest, UserCredentialId, UserCredentialView } from '@deepseek-ai/dsh-api-user-credentials/types'
+import type { CreateCredentialRequest, ReplaceCredentialRequest, CredentialModelCatalogResult, UserCredentialId, UserCredentialView } from '@deepseek-ai/dsh-api-user-credentials/types'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type { CredentialCopyKey } from './locales.ts'
 import css from './Credentials.module.css'
 
 /** Plain callbacks and connection observation supplied by the registrant. */
 export interface CredentialActions {
+  /** @param id - own record. @param force - explicit retry. @param signal - dialog lifetime. @returns public directory status. */
+  refreshModels: (id: UserCredentialId, force: boolean, signal: AbortSignal) => Promise<CredentialModelCatalogResult>
   /** @param signal - dialog lifetime. @returns caller-owned safe metadata. */
   list: (signal: AbortSignal) => Promise<UserCredentialView[]>
   /** @param request - submitted form. @param signal - dialog lifetime. @returns committed metadata. */
@@ -79,6 +81,8 @@ export function CredentialsPanel(props: CredentialActions & { t: TranslateNS<'us
   const [editing, setEditing] = useState<UserCredentialView | undefined>()
   const [confirmRemove, setConfirmRemove] = useState<UserCredentialId | undefined>()
   const [error, setError] = useState<CredentialCopyKey | undefined>()
+  const [activity, setActivity] = useState<'credentials' | 'saving' | 'models'>('credentials')
+  const [catalogs, setCatalogs] = useState<Partial<Record<UserCredentialId, CredentialModelCatalogResult>>>({})
   const name = useRef<HTMLInputElement>(null)
   const secret = useRef<HTMLInputElement>(null)
   const lifetime = useRef<AbortController | null>(null)
@@ -87,27 +91,38 @@ export function CredentialsPanel(props: CredentialActions & { t: TranslateNS<'us
   const secretId = useId()
   const nameHintId = useId()
   const secretHintId = useId()
-  const { list } = props
+  const { list, refreshModels } = props
+
+  async function loadModels(id: UserCredentialId, force: boolean, signal: AbortSignal): Promise<void> {
+    if (signal.aborted) return
+    setActivity('models')
+    let result: CredentialModelCatalogResult
+    try { result = await refreshModels(id, force, signal) }
+    catch (_error) { result = { status: 'failed', modelCount: 0 } }
+    if (!signal.aborted) setCatalogs(current => ({ ...current, [id]: result }))
+  }
 
   useEffect(() => {
     const controller = new AbortController()
     lifetime.current = controller
     pending.current = true
-    void list(controller.signal).then((value) => {
-      if (isActive(controller)) setRows(value)
+    void list(controller.signal).then(async (value) => {
+      if (!isActive(controller)) return
+      setRows(value)
+      await Promise.all(value.map(row => loadModels(row.id, false, controller.signal)))
     }).catch((failure: unknown) => {
       if (isActive(controller)) setError(failureKey(failure))
     }).finally(() => {
       if (isActive(controller)) { pending.current = false; setBusy(false) }
     })
     return () => { controller.abort(); if (secret.current !== null) secret.current.value = '' }
-  }, [list])
+  }, [list, refreshModels])
 
   async function run(operation: (signal: AbortSignal) => Promise<unknown>, success?: CredentialCopyKey): Promise<void> {
     const controller = lifetime.current
     if (controller === null || !isActive(controller) || pending.current) return
     pending.current = true
-    setBusy(true); setError(undefined)
+    setBusy(true); setError(undefined); setActivity('credentials')
     try {
       await operation(controller.signal)
       if (!isActive(controller)) return
@@ -138,9 +153,13 @@ export function CredentialsPanel(props: CredentialActions & { t: TranslateNS<'us
         const label = name.current.value
         secret.current.value = ''
         void run(async (signal) => {
-          if (editing === undefined) await props.create({ name: label, value }, signal)
-          else await props.replace({ id: editing.id, value }, signal)
-          if (!signal.aborted) cancelEdit()
+          setActivity('saving')
+          const record = editing === undefined ? await props.create({ name: label, value }, signal)
+            : await props.replace({ id: editing.id, value }, signal)
+          if (signal.aborted) return
+          cancelEdit()
+          setRows(current => [...current.filter(row => row.id !== record.id), record])
+          await loadModels(record.id, false, signal)
         }, 'saved')
       }}>
         <label htmlFor={nameId}>{props.t('name')}</label>
@@ -159,12 +178,22 @@ export function CredentialsPanel(props: CredentialActions & { t: TranslateNS<'us
       <p className={css.note}>{props.t('usageNote')}</p>
       <p className={css.note}>{props.t('checkNote')}</p>
       <Button disabled={busy} onClick={() => { void run(async () => {}) }}>{props.t('refresh')}</Button>
-      {busy && rows.length === 0 && <p role="status">{props.t('loading')}</p>}
+      {busy && <p role="status">{props.t(activity === 'saving' ? 'saving' : activity === 'models' ? 'modelsLoading' : 'loading')}</p>}
       {!busy && error === undefined && rows.length === 0 && <p>{props.t('empty')}</p>}
       <ul className={css.list}>
         {rows.map(row => <li key={row.id} className={css.row}>
           <div><strong>{row.name}</strong><span className={css.status}>{props.t('saved')}</span></div>
+          {catalogs[row.id]?.status === 'ready' && <p className={css.note} role="status">
+            {props.t('modelsLoaded', { count: catalogs[row.id]?.modelCount ?? 0 })}
+          </p>}
+          {catalogs[row.id]?.status === 'stale' && <p className={css.note} role="alert">
+            {props.t('modelsStale', { count: catalogs[row.id]?.modelCount ?? 0 })}
+          </p>}
+          {catalogs[row.id]?.status === 'failed' && <p className={css.note} role="alert">{props.t('modelsFailed')}</p>}
           <div className={css.actions}>
+            {catalogs[row.id]?.status !== 'unsupported' && <Button size="sm" disabled={busy} onClick={() => {
+              void run(signal => loadModels(row.id, true, signal))
+            }}>{props.t(catalogs[row.id]?.status === 'failed' || catalogs[row.id]?.status === 'stale' ? 'modelsRetry' : 'modelsRefresh')}</Button>}
             <Button size="sm" disabled={busy} onClick={() => { void run(signal => props.check(row.id, signal), 'checked') }}>{props.t('check')}</Button>
             <Button size="sm" disabled={busy} onClick={() => {
               setEditing(row); setConfirmRemove(undefined)

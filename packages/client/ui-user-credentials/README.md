@@ -31,6 +31,8 @@ The name field asks for the service's configured credential name, such as `Vultr
 
 Credential values use a password input. Submission clears that input before the request; responses never refill it. Closing, disconnecting, access revocation and switching accounts discard the dialog. No form or credential list is written to browser storage. A failed request shows localized fixed copy rather than displaying raw exceptions.
 
+After saving or replacing a bound credential, the dialog reports the number of available models and directs the user to the conversation selector. Directory loading and failed or stale results stay beside the saved record; **Refresh models** and **Retry loading models** retry without resubmitting the secret. Reopening the dialog reloads directory status. Loading a public catalog does not validate the key with Vultr.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

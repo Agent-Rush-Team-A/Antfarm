@@ -15,7 +15,7 @@ const saved: UserCredentialView = { id: brandString<UserCredentialId>('a'), name
 
 function actions(overrides: Partial<CredentialActions> = {}): CredentialActions {
   return { list: async () => [], create: async () => saved, replace: async () => saved,
-    remove: async () => {}, check: async () => {}, ...overrides }
+    remove: async () => {}, check: async () => {}, refreshModels: async () => ({ status: 'unsupported', modelCount: 0 }), ...overrides }
 }
 
 it('clears submitted values immediately and keeps failed requests out of visible copy', async () => {
@@ -71,4 +71,36 @@ it('aborts dialog-owned work and discards a response that arrives after closing'
   pending.resolve([saved])
   await pending.promise
   expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+it('loads models after saving, displays their count and allows an explicit refresh', async () => {
+  let rows: UserCredentialView[] = []
+  const refreshModels = vi.fn(async () => ({ status: 'ready' as const, modelCount: 12 }))
+  const report = vi.fn()
+  render(<CredentialsPanel {...actions({ list: async () => rows, create: async () => { rows = [saved]; return saved }, refreshModels })}
+    t={t} report={report} onClose={() => {}} />)
+  await screen.findByText(en.empty)
+  fireEvent.change(screen.getByLabelText(en.name), { target: { value: saved.name } })
+  fireEvent.change(screen.getByLabelText(en.value), { target: { value: 'PRIVATE-CANARY' } })
+  fireEvent.click(screen.getByRole('button', { name: en.save }))
+  await screen.findByText(t('modelsLoaded', { count: 12 }))
+  expect(refreshModels).toHaveBeenCalledWith(saved.id, false, expect.any(AbortSignal))
+  await waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('button', { name: en.modelsRefresh }).disabled).toBe(false) })
+  fireEvent.click(screen.getByRole('button', { name: en.modelsRefresh }))
+  await waitFor(() => { expect(refreshModels).toHaveBeenCalledWith(saved.id, true, expect.any(AbortSignal)) })
+  expect(document.body.textContent).not.toContain('PRIVATE-CANARY')
+  expect(report).toHaveBeenCalledWith('saved', true)
+})
+
+it('keeps the saved credential visible when model loading fails and supports retry', async () => {
+  let status: 'failed' | 'ready' = 'failed'
+  const refreshModels = vi.fn(async () => ({ status, modelCount: status === 'ready' ? 2 : 0 }))
+  render(<CredentialsPanel {...actions({ list: async () => [saved], refreshModels })} t={t} report={() => {}} onClose={() => {}} />)
+  await screen.findByText(en.modelsFailed)
+  expect(screen.getByText(saved.name)).toBeTruthy()
+  status = 'ready'
+  await waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('button', { name: en.modelsRetry }).disabled).toBe(false) })
+  fireEvent.click(screen.getByRole('button', { name: en.modelsRetry }))
+  await screen.findByText(t('modelsLoaded', { count: 2 }))
+  expect(screen.queryByText(en.modelsFailed)).toBeNull()
 })

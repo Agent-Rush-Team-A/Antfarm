@@ -33,6 +33,8 @@ kind: "package-reference"
 
 在显式 `openai-completions` 路由上设置 `modelDiscovery: { type: vultr }`，即可用公开 Vultr 目录替换运行中的模型列表。首次成功加载前，已配置的 `models` 继续可用。并发读取共享一次请求；`modelDiscovery` 下的 `timeoutMs`、`maxResponseBytes`、`maxTokens` 与 `cacheTtlMs` 控制请求限额和有效期。目录替换完成后发布 `llm/models-updated`，已准备的推理调用保持原配置。
 
+将 `modelDiscovery.cachePath` 设置为 Host 私有目录中的绝对文件路径，即可在重启后恢复公开目录。有效缓存无需网络请求；过期缓存会在刷新失败时继续提供模型。缓存必须匹配精确接口，并重新解析、检查大小。空列表或无效响应不会替换成功缓存。缓存写入失败会记录日志，但不会丢弃可用的网络模型。
+
 ### 何时选择
 
 当同一组合服务多个提供方、某条路由需要 pi-ai 目录默认值并修正少数字段、或必须通过自有端点与协议到达手工声明网关时，选择本适配器。当部署不需要其他提供方时，选择 `dsh-llm-deepseek` 直连 DeepSeek 路由。两个适配器可以同时挂载，因为它们的路由名不冲突；注册其他适配器已拥有的路由会导致插件加载失败。

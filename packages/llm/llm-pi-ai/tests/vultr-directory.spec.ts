@@ -1,4 +1,6 @@
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { createServer } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
 import Llm from '@deepseek-ai/dsh-llm'
@@ -9,7 +11,7 @@ import { resolveModelDiscovery } from '../src/config.ts'
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
-async function harness() {
+async function harness(cachePath?: string) {
   let body = await readFile(new URL('./fixtures/vultr-catalog.json', import.meta.url), 'utf8')
   let status = 200
   let calls = 0
@@ -23,13 +25,14 @@ async function harness() {
   if (address === null || typeof address === 'string') throw new Error('Missing address')
   const ctx = new Context()
   await ctx.plugin(Llm)
-  const fiber = ctx.plugin(PiAi, { providers: { vultr: {
+  const config: PiAi.Options = { providers: { vultr: {
     api: 'openai-completions', baseURL: `http://127.0.0.1:${address.port}/v1`, credentialScope: 'request',
-    modelDiscovery: { type: 'vultr' }, models: [{ id: 'fallback', name: 'Fallback model' }],
-  } } })
+    modelDiscovery: { type: 'vultr', ...cachePath === undefined ? {} : { cachePath } }, models: [{ id: 'fallback', name: 'Fallback model' }],
+  } } }
+  const fiber = ctx.plugin(PiAi, config)
   await fiber
   cleanups.push(() => ctx.fiber.dispose())
-  return { ctx, fiber, calls: () => calls, refuse: () => { status = 503 }, empty: () => { body = '{"data":[]}' } }
+  return { ctx, fiber, config, calls: () => calls, refuse: () => { status = 503 }, empty: () => { body = '{"data":[]}' } }
 }
 
 it('loads a live route without credentials and shares concurrent directory reads', async () => {
@@ -80,4 +83,33 @@ it('rejects unsafe endpoints and invalid deployment limits before discovery', ()
   }
   expect(() => resolveModelDiscovery({ ...base, modelDiscovery: { type: 'vultr', timeoutMs: 0 } })).toThrow(/positive/)
   expect(() => resolveModelDiscovery({ ...base, modelDiscovery: { type: 'vultr', cachePath: 'relative.json' } })).toThrow(/absolute/)
+})
+
+it('restores a public directory across reloads and preserves the cache on failed refreshes', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'vultr-directory-cache-'))
+  cleanups.push(() => rm(root, { recursive: true, force: true }))
+  const path = join(root, 'catalog.json')
+  const f = await harness(path)
+  const before = await f.ctx.llm.listModels('vultr')
+  const cache = await readFile(path, 'utf8')
+  expect(cache).not.toContain('authorization')
+  await f.fiber.dispose(); f.refuse()
+  await f.ctx.plugin(PiAi, f.config)
+  expect(await f.ctx.llm.listModels('vultr')).toEqual(before)
+  expect(f.calls()).toBe(1)
+  expect(await f.ctx.waterfall('llm-pi-ai/refresh-models', { provider: 'vultr', force: true },
+    () => Promise.resolve({ status: 'unsupported' as const, modelCount: 0 }))).toEqual({ status: 'stale', modelCount: 2 })
+  expect(await readFile(path, 'utf8')).toBe(cache)
+})
+
+it('refuses a corrupt or foreign-endpoint cache and keeps first-load fallback models', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'vultr-directory-cache-'))
+  cleanups.push(() => rm(root, { recursive: true, force: true }))
+  const path = join(root, 'catalog.json')
+  for (const value of ['{bad-json', JSON.stringify({ version: 1, baseURL: 'https://other.example/v1', fetchedAt: Date.now(), payload: {} })]) {
+    await writeFile(path, value)
+    const f = await harness(path); f.refuse()
+    expect((await f.ctx.llm.listModels('vultr')).map(model => model.id)).toEqual(['fallback'])
+    expect(f.calls()).toBe(1)
+  }
 })

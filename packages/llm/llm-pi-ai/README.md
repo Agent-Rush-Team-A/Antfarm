@@ -33,6 +33,8 @@ The public Vultr directory is parsed with `@vultr/model-catalog`. Only ready tex
 
 Set `modelDiscovery: { type: vultr }` on an explicit `openai-completions` route to replace its live models with the public Vultr directory. Configured `models` remain available until the first successful load. Concurrent reads share one request; `timeoutMs`, `maxResponseBytes`, `maxTokens` and `cacheTtlMs` under `modelDiscovery` control request bounds and freshness. Refreshes publish `llm/models-updated` after replacing the directory and preserve prepared inference calls.
 
+Set `modelDiscovery.cachePath` to an absolute private Host file to retain the public directory across restarts. Fresh caches avoid network requests; an expired cache remains available if a refresh fails. Cache files are matched to the exact endpoint, parsed again and size-bounded. Empty or invalid replies never replace a successful cache. A cache write failure is logged without discarding usable network models.
+
 ### When to choose it
 
 Choose this adapter when the same composition serves several providers, when a route needs pi-ai's catalog defaults with a few fields corrected, or when a hand-declared gateway must be reached through its own endpoint and protocol. Choose `dsh-llm-deepseek` for the direct DeepSeek route when the deployment needs no other provider. Both adapters can be mounted together because their route names do not collide; registering a route another adapter already owns fails plugin loading.

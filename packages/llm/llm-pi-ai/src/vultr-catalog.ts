@@ -32,6 +32,7 @@ export function parseVultrModels(payload: unknown, maxTokens: number): PiAiModel
       const model = normalizeModel(document)
       if (!isAgentModel(model) || !model.streaming || !model.inputModalities.includes('text')
         || model.contextWindow === null || !Number.isSafeInteger(model.contextWindow) || model.contextWindow <= 0) continue
+      if (model.maxOutputTokens !== null && (!Number.isSafeInteger(model.maxOutputTokens) || model.maxOutputTokens <= 0)) continue
       const efforts: PiAiReasoningEfforts = {}
       if (model.reasoning !== null) {
         if (!model.reasoning.mandatory) efforts.off = 'none'
@@ -39,11 +40,12 @@ export function parseVultrModels(payload: unknown, maxTokens: number): PiAiModel
           if (level !== 'off' && model.reasoning.supportedEfforts?.includes(level)) efforts[level] = level
         }
       }
+      if (model.reasoning?.mandatory && !Object.keys(efforts).some(key => key !== 'off')) continue
       models.set(model.id, {
         id: model.id,
         name: model.name,
         contextWindow: model.contextWindow,
-        maxTokens: Math.min(maxTokens, model.maxOutputTokens ?? maxTokens),
+        maxTokens: Math.min(maxTokens, model.maxOutputTokens ?? maxTokens, model.contextWindow),
         input: model.inputModalities.includes('image') ? ['text', 'image'] : ['text'],
         reasoningEfforts: Object.keys(efforts).some(key => key !== 'off') ? efforts : false,
         compat: {
@@ -66,6 +68,16 @@ export function parseVultrModels(payload: unknown, maxTokens: number): PiAiModel
  * @throws LlmError with fixed guidance on HTTP, transport, size or parsing failure.
  */
 export async function fetchVultrModels(request: VultrCatalogRequest): Promise<PiAiModelProfile[]> {
+  return parseVultrModels(await fetchVultrCatalog(request), request.maxTokens)
+}
+
+/**
+ * Read bounded public JSON for normalization and persistent directory caching.
+ * @param request - deployment-owned endpoint and request limits.
+ * @returns untrusted directory JSON; callers must parse it before publishing or caching.
+ * @throws LlmError with fixed guidance when directory I/O fails.
+ */
+export async function fetchVultrCatalog(request: VultrCatalogRequest): Promise<unknown> {
   const timeout = AbortSignal.timeout(request.timeoutMs)
   const signal = request.signal === undefined ? timeout : AbortSignal.any([timeout, request.signal])
   try {
@@ -97,7 +109,7 @@ export async function fetchVultrModels(request: VultrCatalogRequest): Promise<Pi
       await reader.cancel().catch((_error: unknown) => { /* The request result is decided; cancellation is cleanup. */ })
       reader.releaseLock()
     }
-    return parseVultrModels(JSON.parse(Buffer.concat(chunks, total).toString('utf8')), request.maxTokens)
+    return JSON.parse(Buffer.concat(chunks, total).toString('utf8'))
   } catch (_error) {
     throw new LlmError('Cannot load Vultr models. Check the connection and retry.', 'DISCOVERY_FAILED')
   }

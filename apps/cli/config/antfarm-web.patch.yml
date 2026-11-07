@@ -45,6 +45,7 @@
           maxResponseBytes: 4194304
           maxTokens: 8192
           cacheTtlMs: 300000
+          cachePath: !!js process.getBuiltinModule('node:path').join(ctx.profileContext.home, 'cache', 'vultr-model-catalog.json')
         models:
           - id: deepseek-v4.1-flash-1017
             name: DeepSeek V4.1 Flash 1017
