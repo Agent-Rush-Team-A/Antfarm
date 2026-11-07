@@ -177,6 +177,11 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
       await login()
       const inferenceKey = (await readFile(inferenceKeyPath, 'utf8')).trim()
       await rpc(currentContext, base, 'userCredentials/create', { request: { name: 'Vultr API Key', value: inferenceKey } })
+      function workspaceRow(title: string) {
+        return currentPage.getByRole('treeitem').filter({ has: currentPage.getByRole('button', {
+          name: 'Workspace actions for ' + title, exact: true, includeHidden: true,
+        }) }).first()
+      }
       async function workspace(title: string, first = false) {
         const created = currentPage.waitForResponse(response => new URL(response.url()).pathname.endsWith('/api/workspace/create'))
         await currentPage.getByRole('button', { name: first ? 'Choose workspace' : 'Add workspace', exact: true }).click()
@@ -185,11 +190,12 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
         await currentPage.locator('[data-composer-input][contenteditable="true"]').first().waitFor()
         const createdWorkspace = envelope.result.value.workspace
         await rpc(currentContext, base, 'workspace/rename', { request: { workspaceId: createdWorkspace.workspaceId, title } })
+        await workspaceRow(title).hover()
         await currentPage.getByRole('button', { name: 'New session in ' + title, exact: true }).waitFor()
         return { ...createdWorkspace, title }
       }
       async function choose(title: string): Promise<void> {
-        await currentPage.getByRole('treeitem').filter({ has: currentPage.getByRole('button', { name: 'Workspace actions for ' + title, exact: true }) }).first().click()
+        await workspaceRow(title).click()
       }
       async function prompt(text: string, done: string): Promise<void> {
         const input = currentPage.locator('[data-composer-input][contenteditable="true"]').first()
@@ -231,6 +237,7 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
       const original = await stateOf(a.workspaceId)
       await record('monthly-summary-matches', { sha256: createHash('sha256').update(monthly).digest('hex'), instanceId: original.instanceId })
       const firstSession = await currentPage.locator('[data-conversation-session]').first().getAttribute('data-conversation-session')
+      await workspaceRow(a.title).hover()
       await currentPage.getByRole('button', { name: 'New session in ' + a.title, exact: true }).click()
       await expect.poll(() => currentPage.locator('[data-conversation-session]').first().getAttribute('data-conversation-session')).not.toBe(firstSession)
       await prompt('请使用 bash 读取工作区已有的月度汇总.csv，合计所有月份，生成年度汇总.json，键名为 orders、quantity、amount；前两项为整数，amount 为保留两位小数的字符串。不要重新生成月度汇总.csv。完成后只回复：同工作区续接已完成', '同工作区续接已完成')
@@ -238,12 +245,21 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
       expect((await stateOf(a.workspaceId)).instanceId).toBe(original.instanceId)
       await record('second-session-shares-files-and-vm')
       await prompt('请测试 bash 超时：执行 echo $$ > timeout.pid; sleep 20，timeoutMs 必须设为 1000。收到超时错误后，再用 bash 检查 timeout.pid 中的进程已经退出，并创建 timeout-confirmed.txt，内容为 TIMEOUT_PROCESS_GONE。不要重复 sleep 命令。检查成功后只回复：超时清理已确认', '超时清理已确认')
+      const timeout = currentPage.locator('[data-tool="bash"][data-state="error"]').filter({ hasText: 'Command timed out after 1000ms.' }).first()
+      await timeout.waitFor()
+      await timeout.scrollIntoViewIfNeeded()
+      await screenshot('timeout-tool-error')
       expect((await download('timeout-confirmed.txt')).toString().trim()).toBe('TIMEOUT_PROCESS_GONE')
       await record('timeout-and-process-cleanup')
       const b = await workspace('Isolated B')
       await record('workspace-b', b)
       await prompt('请使用 bash 检查当前工作区的销售明细.csv、月度汇总.csv 和年度汇总.json 均不存在。检查通过后创建 isolation.txt，内容为 WORKSPACE_ISOLATED。完成后只回复：工作区隔离已确认', '工作区隔离已确认')
       expect((await download('isolation.txt')).toString().trim()).toBe('WORKSPACE_ISOLATED')
+      for (const name of ['销售明细.csv', '月度汇总.csv', '年度汇总.json']) {
+        const missing = await currentContext.request.get(new URL('api/workspace/downloadFileBinary?'
+          + new URLSearchParams({ workspaceId: b.workspaceId, path: name }), base).href)
+        expect(missing.status()).toBe(404)
+      }
       expect((await stateOf(b.workspaceId)).instanceId).not.toBe(original.instanceId)
       await record('separate-workspace-files-and-vm')
       const c = await workspace('Capacity C')
