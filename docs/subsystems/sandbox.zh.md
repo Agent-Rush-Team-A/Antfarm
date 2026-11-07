@@ -215,7 +215,7 @@ interface SandboxExecutionAdmission {
 显式 Docker 提供方从经过验证的持久绑定目录提供原生文本文件。`WorkspaceRuntimeFiles.displayRoot` 可提供模型显示根目录，不改变实际根目录或授权。Docker 使用 `/workspace`；省略时保留文件系统提供方的显示路径。
 
 ```ts type-equiv
-/** Files and directory of one original execution generation, never the Harness project directory. */
+/** Files and directory retained for one original execution generation. */
 interface WorkspaceRuntimeFiles {
   readonly fs: FileSystem
   readonly root: string

@@ -1,4 +1,4 @@
-/** Bounded, descriptor-anchored directory checkpoints with durable file and directory writes. */
+/** Bounded, Linux descriptor-anchored directory checkpoints with durable file and directory writes. */
 import { constants } from 'node:fs'
 import { mkdir, open, opendir } from 'node:fs/promises'
 import type { FileHandle } from 'node:fs/promises'
@@ -82,7 +82,7 @@ export async function copyWorkspaceDirectory(source: string, destination: string
     const target = await open(output, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
     try {
       if (ownership !== undefined) await target.chown(ownership.uid, ownership.gid)
-      await target.chmod(info.mode & 0o777)
+      await target.chmod(info.mode & 0o3777)
       await target.sync()
     } finally { await target.close() }
   }

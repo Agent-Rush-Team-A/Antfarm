@@ -8,7 +8,7 @@ import type { RunnerClosedSandbox, RunnerRunningSandbox, RunnerSandboxStatus, Sa
 import type { SandboxProgress, SandboxActivity } from './types.ts'
 import type { RunnerCancellationResult, RunnerExecutionIdentity, RunnerExecutionRequest, RunnerExecutionResult } from './execution.ts'
 
-/** Files and directory of one original execution generation, never the Harness project directory. */
+/** Files and directory retained for one original execution generation. */
 export interface WorkspaceRuntimeFiles {
   readonly fs: FileSystem
   readonly root: string

@@ -222,7 +222,7 @@ Docker 提供方使用 `./docker`，配置为 Runner 通信参数加 `workspaceR
 [管理服务](src/index.ts)负责授权、目录校验和浏览器安全结果投影。[应用状态](src/lifecycle.ts)协调关闭标记；[许可](src/permits.ts)通过真实收件箱事件绑定[对话接纳](src/conversation.ts)。[通信子服务](src/transport.ts)拥有 [HTTP 客户端](src/runner-client.ts)，将请求收束绑定到卸载。[通信设置](src/config.ts)分别提供生命周期、执行和取消预算；[执行校验](src/execution.ts)检查身份及结果，[管理类型](src/types.ts)声明脱敏的浏览器值和错误。
 
 
-[模式后端](src/mode-backend.ts) 将共享模式许可保留到消息和资源收尾。[目录资源](src/mode-directory-resources.ts) 保存完整且有总量限制的文件副本与私有恢复日志，在目标目录旁准备文件，再通过已同步的重命名发布。回滚分别尝试清理目标和恢复源状态。符号链接及特殊条目会使目录保存失败；不完整的副本不会替换工作区。日志和备份保留到协调器以 ready 状态及更高 revision 授权清理。
+[模式后端](src/mode-backend.ts) 将共享模式许可保留到消息和资源收尾。[目录资源](src/mode-directory-resources.ts) 保存完整且有总量限制的文件副本与私有恢复日志，在目标目录旁准备文件，再通过已同步的重命名发布。回滚分别尝试清理目标和恢复源状态。Linux 目录副本保留 setgid 与 sticky 权限位。符号链接及特殊条目会使目录保存失败；不完整的副本不会替换工作区。日志和备份保留到协调器以 ready 状态及更高 revision 授权清理。
 
 Vultr 模式资源适配器在准备目标前，用现有快照路径保存源状态。发布及源回收会替换关闭后的文件视图，确认过期快照已删除，再准备从已发布文件为新 VM 导入内容。删除失败时保留原始快照编号和候选文件副本，供重启后恢复。普通多会话 VM 的关闭与重开继续使用已保存快照。
 

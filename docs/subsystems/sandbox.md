@@ -215,7 +215,7 @@ The [Workspace text entry](../../packages/sandbox/harness-sandbox/README.md#work
 The explicit Docker provider supplies native text files from its verified persistent bind directory. `WorkspaceRuntimeFiles.displayRoot` optionally supplies a model-visible root without changing the physical root or authorization. Docker supplies `/workspace`; omission retains the filesystem provider's display paths.
 
 ```ts type-equiv
-/** Files and directory of one original execution generation, never the Harness project directory. */
+/** Files and directory retained for one original execution generation. */
 interface WorkspaceRuntimeFiles {
   readonly fs: FileSystem
   readonly root: string
