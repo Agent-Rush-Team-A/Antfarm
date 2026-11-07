@@ -22,6 +22,8 @@
  * questions a provider asks while resolving. Both are stable across snapshots,
  * so a configuration change rebuilds the collection without forgetting who is
  * signed in.
+ * Request-scoped failures expose only safe guidance and routing facts; raw
+ * provider messages, request identifiers, and exception causes are discarded.
  *
  * @module dsh-llm-pi-ai/adapter
  */
@@ -47,6 +49,7 @@ import {
 import type {
   GenerateOptions,
   ImageAttachmentAccess,
+  LlmFailure,
   LlmModelInfo,
   LlmProviderInfo,
   LlmResolvedModelInfo,
@@ -72,6 +75,45 @@ const ANTHROPIC_TOOL_UPDATE_PLACEHOLDER: ToolSchema = {
   name: 'DeferredToolPlaceholder',
   description: 'Reserved placeholder that keeps deferred tool loading active; never call this tool.',
   parameters: { type: 'object', properties: {} },
+}
+
+/** Personal requests retain routing facts but never provider diagnostics or causes. */
+function personalRequestFailure(failure: LlmFailure): LlmFailure {
+  let message: string
+  switch (failure.code) {
+    case 'AUTH':
+      message = 'The model service rejected the credential. Check your personal API key and its permissions.'
+      break
+    case 'QUOTA':
+      message = 'The model service quota is exhausted. Check your account quota or billing.'
+      break
+    case 'RATE_LIMIT':
+      message = 'The model service rate limit was reached. Try again later.'
+      break
+    case 'SERVER':
+      message = 'The model service is unavailable. Try again later.'
+      break
+    case 'TIMEOUT':
+    case 'TRANSPORT':
+    case 'STREAM_CLOSED':
+      message = 'The model connection was interrupted. Check your connection and try again.'
+      break
+    case 'ABORTED':
+      message = 'The model request was cancelled.'
+      break
+    case 'CONTEXT_WINDOW_EXCEEDED':
+      message = 'The model context window was exceeded. Shorten the conversation or choose a larger model.'
+      break
+    default:
+      message = 'The model request failed. Check the model configuration or contact the administrator.'
+  }
+  return {
+    message,
+    code: failure.code,
+    ...failure.status === undefined ? {} : { status: failure.status },
+    ...failure.providerRetryAfterMs === undefined ? {} : { providerRetryAfterMs: failure.providerRetryAfterMs },
+    ...failure.offloadImages === undefined ? {} : { offloadImages: failure.offloadImages },
+  }
 }
 
 /** One resolution's frozen view: the profiles and the collection built from them. */
@@ -484,11 +526,9 @@ export class PiAiAdapter extends LlmAdapter {
             return
           }
           const chunk = result.value
-          if (profile.credentialScope === 'request' && apiKey !== undefined && chunk.type === 'finish'
+          if (profile.credentialScope === 'request' && chunk.type === 'finish'
             && (chunk.reason.kind === 'error' || chunk.reason.kind === 'aborted')) {
-            yield { ...chunk, reason: { ...chunk.reason, failure: { ...chunk.reason.failure,
-              message: chunk.reason.failure.message.replaceAll(apiKey, '[redacted]'),
-            } } }
+            yield { ...chunk, reason: { ...chunk.reason, failure: personalRequestFailure(chunk.reason.failure) } }
           } else yield chunk
         }
       } finally {
@@ -501,15 +541,17 @@ export class PiAiAdapter extends LlmAdapter {
         }
       }
     } catch (error: unknown) {
-      if (profile.credentialScope === 'request' && apiKey !== undefined
-        && error instanceof Error && error.message.includes(apiKey)) {
-        throw new LlmError(error.message.replaceAll(apiKey, '[redacted]'), error instanceof LlmError ? error.code : 'PI_AI_ERROR')
-      }
+      const personal = profile.credentialScope === 'request'
       if (timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT') !== undefined) {
-        throw new LlmError(`pi-ai stream idle timeout after ${streamIdleTimeoutMs}ms`, 'TIMEOUT', { cause: error })
+        throw new LlmError(`pi-ai stream idle timeout after ${streamIdleTimeoutMs}ms`, 'TIMEOUT', personal ? undefined : { cause: error })
       }
       if (options.signal?.aborted) {
-        throw new LlmError('pi-ai request aborted by caller', 'ABORTED', { cause: error })
+        throw new LlmError('pi-ai request aborted by caller', 'ABORTED', personal ? undefined : { cause: error })
+      }
+      if (personal) {
+        const failure = personalRequestFailure(error instanceof LlmError
+          ? error.failure : { message: '', code: 'PI_AI_ERROR' })
+        throw new LlmError(failure.message, failure.code, failure)
       }
       throw error
     } finally {
