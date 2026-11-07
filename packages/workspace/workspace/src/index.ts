@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
 import z from '@deepseek-ai/schemastery'
-import type { WorkspaceMode } from './mode-types.ts'
+import type { WorkspaceMode, IWorkspaceModes } from './mode-types.ts'
 export type * from './mode-types.ts'
 export { WorkspaceModeError } from './mode-errors.ts'
 
@@ -17,6 +17,7 @@ import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { DomainGlobal, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { WorkspaceEntity } from './entity.ts'
+import { WorkspaceModes } from './modes.ts'
 import type { WorkspaceEntityHost } from './entity.ts'
 
 export { WorkspaceMoveInvalidError } from './entity.ts'
@@ -194,6 +195,10 @@ export class WorkspaceRegistry extends Service {
 
   static inject = ['storageDomain', 'sessionPersistence']
 
+  /** Runtime mode coordination for trusted Host consumers. */
+  readonly modes: IWorkspaceModes
+  private readonly modeCoordinator: WorkspaceModes
+
   private table?: KvTable<WorkspaceId, WorkspaceRecord>
   private global?: DomainGlobal<WorkspaceDomainState>
   private state?: WorkspaceDomainState
@@ -220,6 +225,12 @@ export class WorkspaceRegistry extends Service {
   constructor(ctx: Context, readonly config: Config = { defaultMode: 'multi-vm' }) {
     super(ctx, 'workspaceRegistry')
     this.deletionOwner = ctx
+    this.modes = this.modeCoordinator = new WorkspaceModes({
+      defaultMode: config.defaultMode,
+      entity: id => this.entities.get(id),
+      list: () => [...this.entities.values()],
+      report: error => ctx.logger.warn(`workspace mode recovery failed; dependent operations remain blocked: ${String(error)}`),
+    })
   }
 
   /** Open the domain, finish bootstrap when required, and rebuild the ordered cache. */
@@ -244,6 +255,12 @@ export class WorkspaceRegistry extends Service {
     this.validateStoredState(this.requireState())
     this.rebuildEntities()
     this.reportFilteredCandidates()
+    for (const entity of this.entities.values()) {
+      if (entity.modeRecord().modeIntent !== undefined && entity.modeConfig.operationState !== 'recovery-required') {
+        await entity.updateMode(record => ({ ...record, modeOperationState: 'recovery-required' }))
+      }
+    }
+    this.ctx.effect(() => () => this.modeCoordinator.dispose(), 'workspace.modeAdmission')
   }
 
   /**
@@ -353,7 +370,10 @@ export class WorkspaceRegistry extends Service {
   delete(id: WorkspaceId): Promise<boolean> {
     return this.enqueueOperation(async () => {
       if (!this.entities.has(id)) return false
-      return this.ctx.waterfall('workspace/before-delete', id, () => this.deleteKnown(id))
+      return this.modeCoordinator.exclusive(id, { signal: new AbortController().signal, admit: () => {} }, async (entity) => {
+        this.modeCoordinator.assertReady(entity)
+        return this.ctx.waterfall('workspace/before-delete', id, () => this.deleteKnown(id))
+      })
     })
   }
 

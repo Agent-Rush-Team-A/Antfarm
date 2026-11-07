@@ -85,14 +85,28 @@ export class WorkspaceEntity implements Workspace {
   }
 
   get modeConfig(): WorkspaceModeConfig {
+    const record = this.modeRecord()
     return Object.freeze({
       workspaceId: this.id,
-      mode: this.record.mode,
-      revision: this.record.modeRevision,
-      operationState: this.record.modeOperationState,
-      modeLocked: this.record.firstSessionId !== null,
-      lockReason: this.record.firstSessionId === null ? null : 'first-session-created',
-      firstSessionId: this.record.firstSessionId,
+      mode: record.mode,
+      revision: record.modeRevision,
+      operationState: record.modeOperationState,
+      modeLocked: record.firstSessionId !== null,
+      lockReason: record.firstSessionId === null ? null : 'first-session-created',
+      firstSessionId: record.firstSessionId,
+    })
+  }
+
+  /** @returns the durable snapshot; respects storage quarantine before reading cached metadata. */
+  modeRecord(): WorkspaceRecord {
+    return this.host.table().get(this.id) ?? this.record
+  }
+
+  /** @param update - Atomic mode mutation. @returns after durability and revision publication. */
+  async updateMode(update: (record: WorkspaceRecord) => WorkspaceRecord): Promise<void> {
+    await this.mutate((record) => {
+      const next = update(record)
+      return { ...next, modeRevision: record.modeRevision + 1 }
     })
   }
 
