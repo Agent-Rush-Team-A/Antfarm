@@ -80,7 +80,9 @@ describe('web e2e: workspace management (create / rename / grouping / hover affo
       () => scaffold.ctx.workspaceRegistry.resolveByPath(join(parent, name)),
       { timeout: 10_000 },
     ).not.toBeUndefined()
-    // Adoption also opens a blank Session. Its selected row must reach the
+    await page.getByRole('dialog', { name: 'Workspace configuration', exact: true })
+      .getByRole('button', { name: 'Start session', exact: true }).click()
+    // Confirming adoption opens a blank Session. Its selected row must reach the
     // browser before a later workspace action can depend on the row positions.
     const row = page.getByRole('treeitem').filter({ hasText: name }).first()
     const section = row.locator('xpath=ancestor::*[contains(@class, "groupSection")][1]')
@@ -104,6 +106,12 @@ describe('web e2e: workspace management (create / rename / grouping / hover affo
     // settle before a test may delete the registration; re-registration after
     // a delete mints a fresh blank Session+Agent too (no cwd-based reuse
     // exists), so callers opt in only where a fresh attach is possible.
+    const configuration = page.getByRole('dialog', { name: 'Workspace configuration', exact: true })
+    const workspace = await scaffold.ctx.workspaceRegistry.resolveByPath(path)
+    if (workspace?.modeConfig.firstSessionId === null) {
+      await configuration.getByRole('button', { name: 'Start session', exact: true }).click()
+      await configuration.waitFor({ state: 'hidden' })
+    }
     if (options.waitForAgent === true) {
       await expect.poll(() => scaffold.ctx.agents.list().length, { timeout: 10_000 })
         .toBeGreaterThan(agentsBefore)
@@ -1030,6 +1038,7 @@ describe('web e2e: New Session after an outdated blank cache', () => {
       await scaffold.ctx.sessionProjectionCache.write(blank)
       const workspace = await scaffold.ctx.workspaceRegistry.create(scaffold.workspaceCwd, 'New session regression')
       await workspace.attachSession(id)
+      expect(workspace.modeConfig.firstSessionId).toBe(id)
       browser = await chromium.launch()
       const page = await newEnglishPage(browser)
       await page.clock.setFixedTime(now)
@@ -1038,8 +1047,8 @@ describe('web e2e: New Session after an outdated blank cache', () => {
 
       await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
       const selected = page.locator('[role="treeitem"][aria-selected="true"]')
-      // Startup asks for a new conversation with the stale blank as its reuse
-      // candidate; the Host declines the started Session and creates a blank one.
+      // Importing the existing Session has already locked this multi-session Workspace.
+      // Startup names its stale blank candidate; the Host declines the started Session and creates a blank one.
       await expect.poll(() => selected.innerText()).toBe('New Session')
       await expect.poll(() => workspace.sessionIds.length).toBe(2)
       const startupBlank = workspace.sessionIds.find(member => member !== id)

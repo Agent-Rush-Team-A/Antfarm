@@ -1,3 +1,4 @@
+import { modeFailureKey } from './mode-errors.ts'
 import { multipleSessions, recentWorkspace } from './mode-policy.ts'
 /** Workspace archive and directory UI capability. */
 
@@ -333,7 +334,11 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     } catch (error: unknown) {
       // Reported here, not in connectWorkspace: startup restoration calls that
       // directly and stays console-only.
-      if (!navigation.aborted) this.notify({ kind: 'createFailed', message: creationFailureMessage(error) })
+      if (!navigation.aborted) {
+        const guidance = modeFailureKey(error, 'toast.createFailed')
+        this.notify({ kind: 'createFailed', message: guidance === 'toast.createFailed' ? creationFailureMessage(error)
+          : this.ctx.locale.bind('workspace')(guidance) })
+      }
       throw error
     }
     if (navigation.aborted) return
@@ -513,7 +518,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     if (sessionId === undefined && target !== undefined) {
       const row = this.workspaces.list.getSnapshot().items.find(item => item.workspaceId === target)
       // Fresh Workspaces remain configurable until the user starts the first Session.
-      if (row?.modeConfig.firstSessionId !== null) sessionId = await this.connectWorkspace(target)
+      if (row !== undefined && row.modeConfig.firstSessionId !== null) sessionId = await this.connectWorkspace(target)
     }
     if (sessionId !== undefined && !navigation.aborted) {
       this.replaceMain(sessionId, navigation, 'preserve')

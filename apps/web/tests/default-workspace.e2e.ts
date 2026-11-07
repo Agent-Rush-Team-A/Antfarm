@@ -16,7 +16,7 @@ const FAILURE_EXPECTED = fileURLToPath(new URL('./expected/default-workspace/fai
 const MODE = webSnapshotMode()
 
 describe.skipIf(MODE === 'record')('web e2e: default Workspace', () => {
-  it('prepares a blank Session on startup, reuses it after reload, and sends through the ordinary composer', async () => {
+  it('keeps startup configurable, confirms the first Session, reuses it after reload, and sends through the composer', async () => {
     const fixture = await selectedSessionFixture(FIXTURE)
     const scaffold = await launchWebScaffold({
       firstUse: true,
@@ -33,12 +33,23 @@ describe.skipIf(MODE === 'record')('web e2e: default Workspace', () => {
       try {
         await page.goto(scaffold.authenticatedUrl)
         const input = page.locator('[data-composer-input][contenteditable="true"]').first()
-        await input.waitFor()
+        await page.getByRole('button', { name: 'Choose workspace', exact: true }).waitFor()
         // Language-neutral on disk, localized in the hero chip. The chip's
         // aria-label is its fixed call to action, so the label is its text.
         await expect.poll(() => page.getByRole('button', { name: 'Choose workspace', exact: true }).textContent())
+          .toBe('Choose workspace')
+        await expect.poll(() => scaffold.ctx.workspaceRegistry.list().length).toBe(1)
+        expect(scaffold.ctx.sessions.list()).toHaveLength(0)
+        await page.reload()
+        await page.getByRole('button', { name: 'Choose workspace', exact: true }).waitFor()
+        expect(scaffold.ctx.sessions.list()).toHaveLength(0)
+        await page.getByRole('button', { name: 'New session', exact: true }).filter({ hasText: 'New Session' }).click()
+        await page.getByRole('dialog', { name: 'Workspace configuration', exact: true })
+          .getByRole('button', { name: 'Start session', exact: true }).click()
+        await expect.poll(() => scaffold.ctx.sessions.list().length).toBe(1)
+        await input.waitFor()
+        await expect.poll(() => page.getByRole('button', { name: 'Choose workspace', exact: true }).textContent())
           .toBe('Default workspace')
-        expect(scaffold.ctx.workspaceRegistry.list()).toHaveLength(1)
         const initialSession = scaffold.ctx.sessions.list()[0]!
         expect(scaffold.ctx.sessions.list()).toHaveLength(1)
         expect(initialSession.snapshotEvents().some(event => event.type === 'user/message')).toBe(false)
@@ -101,6 +112,8 @@ describe.skipIf(MODE === 'record')('web e2e: default Workspace', () => {
         await page.keyboard.press('Enter')
         await picker.getByRole('button', { name: '打开', exact: true }).click()
         await picker.waitFor({ state: 'hidden' })
+        await page.getByRole('dialog', { name: '工作区配置', exact: true })
+          .getByRole('button', { name: '开始会话', exact: true }).click()
         await expect.poll(() => scaffold.ctx.workspaceRegistry.list().length).toBe(1)
         await input.waitFor()
         expect(await input.textContent()).toBe('')

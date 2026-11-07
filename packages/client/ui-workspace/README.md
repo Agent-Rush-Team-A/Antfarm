@@ -47,9 +47,11 @@ The selected blank **New Session** retains its provisional first slot and cannot
 
 Choose **Add workspace** and select a directory to register it, choose its mode, and explicitly start a Session. **View options → Group by** defaults to **WorkSpace**, which lists Workspaces as sibling sections. Select **Workspace Tree** to nest each Workspace under its nearest registered ancestor, including Workspaces added later. Each Workspace keeps its own Sessions and row actions. Child Workspaces appear before the parent's own Sessions. Ancestors start expanded unless a saved collapsed state exists. A saved collapse also hides the current Session; ancestor folder icons stay highlighted when a descendant Workspace contains it. Row fills and hit targets span the same width at every level; only the contents indent. Workspace dragging reorders siblings; dropping on a descendant targets the nearest compatible ancestor, so an expanded parent can be moved past without collapsing it. Search-result navigation expands every ancestor. Grouping and expansion are saved in the current browser; switching modes preserves each Workspace's expansion preference, and the single-list view stays flat.
 
+Use the shield button on each Workspace row or its configuration menu entry to inspect all four modes. The first ordinary Session permanently locks that Workspace’s mode; refreshing preserves the lock. A deployment runtime validates mode availability when saving.
+
 Hierarchy uses registered canonical paths only. It does not scan for projects or resolve symlink aliases. Nesting does not change Session working directories, logs, or Workspace membership. Deleting a parent Workspace leaves its child Workspaces registered and places them under their next registered ancestor, or at the root.
 
-On devices without hover, expanded Workspace rows keep their menu and New Session controls visible, and archived search results keep the Unarchive control visible.
+On devices without hover, Workspace rows keep configuration and menu controls visible, and show New Session while the mode allows creation, and archived search results keep the Unarchive control visible.
 
 ### Search
 
@@ -108,6 +110,8 @@ When the optional [workspace file provider](../../api/workspace-artifacts/README
 
 <details>
 <summary>Implementation internals — click to expand</summary>
+
+Workspace configuration is available from each Workspace menu without an execution provider. The form reads `modeConfig`, saves through `IWorkspaces.setMode` with the observed revision, and displays permanent first-Session locking and operational recovery states. Concurrent edits require an explicit refresh; a failed change retains the committed mode and reports localized recovery guidance. Single-session modes hide New Session after the permanent first Session, and hide fork and archive from rows, menus, and shortcuts. Descendants inherit the Workspace through their parent catalog; filtered membership does not reopen admission. Global New Session controls follow the same current-or-recent Workspace source.
 
 The package is one composition: both target slots are declared by other plugins, so `apply` uses `slots.inject()` to register for each declaration lifetime and re-register after a declaring slot is restored.
 
@@ -235,8 +239,6 @@ These pages cover the sidebar host, the hero surface, and the picking backends.
 - [Workspace Controller](../../api/workspace-controller/README.md) — the Host mutations and framework-neutral Client projection that own Workspaces, membership, and Workspace group order.
 
 -----
-
-Workspace configuration is available from each Workspace menu without an execution provider. The form reads `modeConfig`, saves through `IWorkspaces.setMode` with the observed revision, and displays permanent first-Session locking and operational recovery states. Concurrent edits require an explicit refresh; a failed change retains the committed mode and reports localized recovery guidance. Single-session modes hide New Session after the permanent first Session, and hide fork and archive from rows, menus, and shortcuts. Descendants inherit the Workspace through their parent catalog; filtered membership does not reopen admission. Global New Session controls follow the same current-or-recent Workspace source.
 
 <a id="model-experience"></a>
 ## Model Experience

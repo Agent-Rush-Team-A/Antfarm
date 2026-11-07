@@ -1,0 +1,156 @@
+/** Workspace mode UI through the shipped Loader and durable coordinator; only external execution is a test adapter. */
+import { randomUUID } from 'node:crypto'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { chromium, type APIRequestContext } from 'playwright'
+import { expect, it, onTestFinished } from 'vitest'
+import type { WorkspaceCreateValue, WorkspaceModeValue } from '@deepseek-ai/dsh-api-workspace-controller'
+import type { WorkspaceModeRuntime } from '@deepseek-ai/dsh-workspace/types'
+import { compareOrRefreshGolden, launchWebScaffold, webSnapshotMode } from './scaffold.ts'
+
+it('configures four modes, preserves permanent locks, and keeps Workspace admission independent', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'workspace-mode-ui-'))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
+  const overlay = join(root, 'workspace-mode-ui.yml')
+  await writeFile(overlay, JSON.stringify([{ id: 'multiuser', config: { workspaceRoot: join(root, 'workspaces') } }]))
+  const scaffold = await launchWebScaffold({ firstUse: true, accountAuthentication: true, compareReplaySession: false,
+    extraOverlayPath: [fileURLToPath(new URL('../../cli/config/antfarm-web.patch.yml', import.meta.url)), overlay] })
+  onTestFinished(() => scaffold.close())
+  const browser = await chromium.launch({ args: ['--no-sandbox'] })
+  try {
+    const context = await browser.newContext({ locale: 'en-US', timezoneId: 'Asia/Shanghai', viewport: { width: 1280, height: 900 } })
+    const page = await context.newPage()
+    const errors: string[] = []
+    page.on('pageerror', (error) => { errors.push(error.message) })
+    const password = randomUUID()
+    await scaffold.ctx.multiuser.provisionUser('alice', password)
+    const base = new URL(scaffold.authenticatedUrl).origin
+    await page.goto(base)
+    await page.getByLabel('Username', { exact: true }).fill('alice')
+    await page.getByLabel('Password', { exact: true }).fill(password)
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+    await page.getByRole('button', { name: 'Choose workspace', exact: true }).waitFor()
+    expect(scaffold.ctx.workspaceRegistry.list()).toHaveLength(0)
+    await page.getByRole('button', { name: 'Choose workspace', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Workspace configuration', exact: true })
+    await dialog.waitFor()
+    const a = scaffold.ctx.workspaceRegistry.list()[0]
+    if (a === undefined) throw new Error('Workspace creation did not register a row')
+    expect(scaffold.ctx.sessions.list()).toHaveLength(0)
+    await page.keyboard.press('Escape')
+    await dialog.waitFor({ state: 'hidden' })
+    await page.reload()
+    await page.getByRole('button', { name: 'Choose workspace', exact: true }).waitFor()
+    expect(scaffold.ctx.sessions.list()).toHaveLength(0)
+    const workspaceRow = (title: string) => page.getByRole('treeitem').filter({ has: page.getByText(title, { exact: true }) }).first()
+    async function configure(title: string) {
+      const row = workspaceRow(title)
+      await row.hover()
+      await row.getByRole('button', { name: 'Workspace configuration', exact: true }).click()
+      await dialog.waitFor()
+    }
+    await configure(a.title)
+    await dialog.getByRole('radio', { name: 'Single session · VM', exact: true }).check()
+    await dialog.getByRole('button', { name: 'Save mode', exact: true }).click()
+    await page.getByText('The execution environment is unavailable. Contact the administrator.', { exact: true }).waitFor()
+    expect(a.modeConfig.mode).toBe('multi-vm')
+    const runtime: WorkspaceModeRuntime = { supportedModes: ['single-vm', 'multi-vm', 'single-docker', 'multi-docker'],
+      prepare: async (_change, signal) => { signal.throwIfAborted() },
+      settle: async (_change, _decision, signal) => { signal.throwIfAborted() } }
+    scaffold.ctx.effect(() => scaffold.ctx.workspaceRegistry.modes.registerRuntime(runtime))
+    for (const [mode, label] of [
+      ['single-docker', 'Single session · Docker'], ['multi-docker', 'Multiple sessions · Docker'],
+      ['multi-vm', 'Multiple sessions · VM'], ['single-vm', 'Single session · VM'],
+    ] as const) {
+      await dialog.getByRole('radio', { name: label, exact: true }).check()
+      await dialog.getByRole('button', { name: 'Save mode', exact: true }).click()
+      await expect.poll(() => a.modeConfig.mode).toBe(mode)
+      await expect.poll(() => dialog.getByRole('button', { name: 'Save mode', exact: true }).isDisabled()).toBe(true)
+    }
+    const expected = fileURLToPath(new URL('./expected/workspace-mode-ui/', import.meta.url))
+    const scrub = (text: string) => text.replaceAll(`  - paragraph: ${a.title}\n`, '  - paragraph: Workspace A\n').replaceAll(a.id, '<workspace-a>')
+      .replaceAll(a.modeConfig.firstSessionId ?? '\0', '<first-session>')
+    await compareOrRefreshGolden(join(expected, 'configurable.expected.md'), scrub(await dialog.ariaSnapshot()), webSnapshotMode())
+    await page.keyboard.press('Escape')
+    async function rpc<T>(client: APIRequestContext, method: string, request: unknown): Promise<T> {
+      const response = await client.post(`${base}/api/${method}`, { headers: { origin: base },
+        data: { type: 'client-request', rpcId: randomUUID(), method, payload: { args: { request } } } })
+      expect(response.status()).toBe(200)
+      const reply = await response.json() as { result: { ok: boolean; value: T; error?: unknown } }
+      if (!reply.result.ok) throw new Error(`Remote rejected: ${JSON.stringify(reply.result.error)}`)
+      return reply.result.value
+    }
+    const b = (await rpc<WorkspaceCreateValue>(context.request, 'workspace/create', { title: 'Workspace B' })).workspace
+    await configure(a.title)
+    await dialog.getByRole('radio', { name: 'Single session · Docker', exact: true }).check()
+    const changed = await rpc<WorkspaceModeValue>(context.request, 'workspace/setMode', {
+      workspaceId: a.id, mode: 'multi-docker', expectedRevision: a.modeConfig.revision })
+    await dialog.getByRole('alert').getByText('Configuration changed. Refresh before choosing again.', { exact: true }).waitFor()
+    expect(await dialog.getByRole('button', { name: 'Save mode', exact: true }).isDisabled()).toBe(true)
+    await dialog.getByRole('button', { name: 'Refresh configuration', exact: true }).click()
+    await dialog.getByRole('radio', { name: 'Single session · VM', exact: true }).check()
+    await dialog.getByRole('button', { name: 'Save mode', exact: true }).click()
+    await expect.poll(() => a.modeConfig.revision).toBeGreaterThan(changed.config.revision)
+    await page.keyboard.press('Escape')
+    // New Session on a fresh Workspace asks for explicit confirmation through the same mode form.
+    await workspaceRow(a.title).hover()
+    await workspaceRow(a.title).getByRole('button', { name: `New session in ${a.title}`, exact: true }).click()
+    await dialog.getByRole('button', { name: 'Start session', exact: true }).click()
+    await expect.poll(() => a.modeConfig.firstSessionId).not.toBeNull()
+    const first = a.modeConfig.firstSessionId
+    await dialog.waitFor({ state: 'hidden' })
+    await configure(a.title)
+    await dialog.getByText('The first session has been created. The mode is permanently locked.', { exact: true }).waitFor()
+    expect(await dialog.getByRole('radio', { name: 'Single session · VM', exact: true }).isDisabled()).toBe(true)
+    await compareOrRefreshGolden(join(expected, 'locked.expected.md'), scrub(await dialog.ariaSnapshot()), webSnapshotMode())
+    await page.keyboard.press('Escape')
+    await workspaceRow(a.title).hover()
+    expect(await workspaceRow(a.title).getByRole('button', { name: `New session in ${a.title}`, exact: true }).count()).toBe(0)
+    expect(await page.getByRole('button', { name: 'New session', exact: true }).count()).toBe(0)
+    await page.keyboard.press('Control+Alt+n')
+    expect(a.sessionIds).toEqual([first])
+    await page.reload()
+    await configure(a.title)
+    await dialog.getByText('The first session has been created. The mode is permanently locked.', { exact: true }).waitFor()
+    await page.keyboard.press('Escape')
+    await configure('Workspace B')
+    await dialog.getByRole('radio', { name: 'Multiple sessions · Docker', exact: true }).check()
+    await dialog.getByRole('button', { name: 'Save mode', exact: true }).click()
+    const multi = scaffold.ctx.workspaceRegistry.get(b.workspaceId)
+    if (multi === undefined) throw new Error('Second Workspace disappeared')
+    await expect.poll(() => multi.modeConfig.mode).toBe('multi-docker')
+    expect(a.modeConfig.mode).toBe('single-vm')
+    await page.keyboard.press('Escape')
+    await workspaceRow('Workspace B').hover()
+    await workspaceRow('Workspace B').getByRole('button', { name: 'New session in Workspace B', exact: true }).click()
+    await dialog.getByRole('button', { name: 'Start session', exact: true }).click()
+    await expect.poll(() => multi.sessionIds.length).toBe(1)
+    await dialog.waitFor({ state: 'hidden' })
+    await workspaceRow('Workspace B').hover()
+    await expect.poll(() => workspaceRow('Workspace B')
+      .getByRole('button', { name: 'New session in Workspace B', exact: true }).count()).toBe(1)
+    expect(a.sessionIds).toEqual([first])
+    // Narrow viewports keep the row's configuration entry reachable and the modal inside the window.
+    await page.setViewportSize({ width: 390, height: 844 })
+    if (!await page.getByRole('dialog', { name: 'Navigation', exact: true }).isVisible()) {
+      await page.locator('[data-sidebar-opener]').click()
+    }
+    await configure(a.title)
+    const bounds = await dialog.boundingBox()
+    expect(bounds).not.toBeNull()
+    if (bounds !== null) { expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.x + bounds.width).toBeLessThanOrEqual(390) }
+    await mkdir(fileURLToPath(new URL('../../../.playwright-mcp/', import.meta.url)), { recursive: true })
+    const shots = await mkdtemp(fileURLToPath(new URL('../../../.playwright-mcp/issue45-', import.meta.url)))
+    await page.screenshot({ path: join(shots, 'light.png') })
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await page.screenshot({ path: join(shots, 'dark.png') })
+    await page.mouse.click(1, 1)
+    await dialog.waitFor({ state: 'hidden' })
+    await configure(a.title)
+    await page.keyboard.press('Escape')
+    await dialog.waitFor({ state: 'hidden' })
+    expect(errors).toEqual([])
+  } finally { await browser.close() }
+})

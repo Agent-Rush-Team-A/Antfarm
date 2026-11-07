@@ -41,6 +41,7 @@ export function sandboxPermission(workspace: Pick<UiWorkspace, 'whenAccess'>, id
 
 
 /**
+ * Keep status available while automatic or busy modes refuse manual mutations.
  * @param config - Latest authoritative mode; missing rows cannot accept mutations.
  * @param operation - Status remains available while execution is managed automatically.
  * @returns Whether mode admission allows this manual environment operation.

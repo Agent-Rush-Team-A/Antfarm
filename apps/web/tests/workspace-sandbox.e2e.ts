@@ -156,6 +156,8 @@ it.skipIf(process.platform !== 'linux')('opens and closes from both entries, sho
       await page.locator('button[type="submit"]').click()
       const previous = new Set(host.ctx.workspaceRegistry.list().map(workspace => workspace.id))
       await page.getByRole('button', { name: 'Choose workspace', exact: true }).click()
+      await page.getByRole('dialog', { name: 'Workspace configuration', exact: true })
+        .getByRole('button', { name: 'Start session', exact: true }).click()
       await page.locator('[data-composer-input][contenteditable="true"]').first().waitFor()
       await page.getByRole('treeitem').first().hover()
       await page.getByRole('button', { name: /^Workspace actions for /u }).waitFor()

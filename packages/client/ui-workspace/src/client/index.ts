@@ -1,5 +1,5 @@
 import { newSessionAvailable } from './mode-policy.ts'
-import { modeFailureKey } from './mode-ui.ts'
+import { modeFailureKey } from './mode-errors.ts'
 import { registerModeUi } from './mode-ui.ts'
 import { WorkspaceFilesButton, type WorkspaceFilesInjected } from './WorkspaceFilesButton.tsx'
 import type {} from '@deepseek-ai/dsh-api-workspace-artifacts/client'

@@ -3,6 +3,7 @@ import { expect, it, onTestFinished, vi } from 'vitest'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { MenuRegistry } from '@deepseek-ai/dsh-client-ui-context-menu/src/client/registry.ts'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceId, WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { registerSessionMenus } from '../src/client/session-actions/context-menus.tsx'
@@ -21,6 +22,8 @@ function bench() {
     items: [], pinnedSessionIds: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
   })
   ctx.provide('workspaces', { list } as never)
+  const sessions = createSnapshotStore<SessionListState>({ ids: [], byId: {}, phase: 'ready', projectionsBySession: {} })
+  ctx.provide('sessions', { list: sessions } as never)
   const permissions = new Map<string, ReturnType<typeof createSnapshotStore<boolean>>>()
   const access = (action: string) => {
     let source = permissions.get(action)
@@ -33,7 +36,7 @@ function bench() {
   const fiber = ctx.plugin({ apply: (plugin: Context) => { registerSessionMenus(plugin, actions) } })
   const target = { kind: 'session' as const, value: { sessionId: SessionId('background'), displayTitle: 'Background' } }
   const open = () => registry.resolve(target)
-  return { ctx, fiber, registry, locale, list, access, actions, target, open }
+  return { ctx, fiber, registry, locale, list, sessions, access, actions, target, open }
 }
 
 it('preserves built-in order, groups, icons, command identities, and captured action targets', async () => {
@@ -110,5 +113,23 @@ it.each(['single-vm', 'single-docker'] as const)('removes fork and archive from 
   menu.select('session.fork/fork'); menu.select('session.archive/archive')
   expect(b.actions.forkSession).not.toHaveBeenCalled(); expect(b.actions.archiveSession).not.toHaveBeenCalled()
   b.list.set({ ...b.list.getSnapshot(), archivedSessionIds: [b.target.value.sessionId] })
+  expect(menu.source.getSnapshot().some(item => item.id === 'session.archive/archive')).toBe(false)
+})
+
+
+it('withdraws forbidden descendant actions when parent metadata arrives while its menu is open', async () => {
+  const b = bench(); await b.fiber.await()
+  const id = 'single-descendant' as WorkspaceId
+  const parent = SessionId('parent')
+  b.list.set({ ...b.list.getSnapshot(), items: [{ workspaceId: id, title: 'Single', path: '/single', sessionIds: [],
+    createdAt: '2026-11-07T00:00:00Z', updatedAt: '2026-11-07T00:00:00Z',
+    modeConfig: { workspaceId: id, mode: 'single-docker', revision: 2, operationState: 'ready', modeLocked: true,
+      lockReason: 'first-session-created', firstSessionId: parent } }] })
+  const menu = b.open()
+  expect(menu.source.getSnapshot().some(item => item.id === 'session.fork/fork')).toBe(true)
+  const sessionId = b.target.value.sessionId
+  b.sessions.set({ ...b.sessions.getSnapshot(), ids: [sessionId], byId: { [sessionId]: {
+    id: sessionId, displayTitle: 'Child', blank: false, running: false, updatedAt: 0, retainedBy: {}, parentId: parent } } })
+  expect(menu.source.getSnapshot().some(item => item.id === 'session.fork/fork')).toBe(false)
   expect(menu.source.getSnapshot().some(item => item.id === 'session.archive/archive')).toBe(false)
 })

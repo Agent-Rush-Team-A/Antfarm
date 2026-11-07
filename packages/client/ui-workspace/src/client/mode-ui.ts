@@ -1,31 +1,9 @@
 /** Registration-owned configuration gestures and settled Remote operations. */
 import type { Context } from '@deepseek-ai/cordis'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
-import type { IWorkspaces, WorkspaceModeCommandError, WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
-import type { WorkspaceKey } from './locales.ts'
+import type { IWorkspaces, WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import { modeFailureKey } from './mode-errors.ts'
 import { ModeOverlay, type ModeDialogInjected, type ModeSelection } from './ModeDialog.tsx'
-
-/** @param error - Structured mode or Session failure. @returns Localized safe next action. */
-export function modeFailureKey(error: unknown): WorkspaceKey {
-  const failure = error instanceof Error && 'rpcError' in error
-    ? (error as WorkspaceModeCommandError).rpcError : remoteErrorOf(error)
-  switch (failure?.code) {
-    case 'workspace/mode-locked': return 'mode.locked'
-    case 'workspace/mode-revision-conflict': return 'mode.conflict'
-    case 'workspace/mode-unsupported': return 'mode.unsupported'
-    case 'workspace/mode-runtime-unavailable': return 'mode.runtime'
-    case 'workspace/mode-recovery-required': return 'mode.recovery-required'
-    case 'workspace/session-limit': case 'session/reuse-unavailable': return 'mode.singleLimit'
-    case 'workspace/session-operation-forbidden': return 'mode.forbidden'
-    case 'remote-access/denied': return 'mode.denied'
-    case 'gateway/cancelled': return 'mode.unknown'
-    case 'workspace/mode-switch-failed':
-      return failure.details.outcomeUnknown ? 'mode.unknown'
-        : failure.details.recoveryRequired ? 'mode.recovery-required' : 'mode.failed'
-    default: return 'mode.failed'
-  }
-}
 
 /** Configuration request capability consumed by Workspace navigation. */
 export interface ModeControls {

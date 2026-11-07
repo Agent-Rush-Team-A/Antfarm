@@ -3,18 +3,27 @@ import type { WorkspaceId, WorkspaceView, WorkspaceSnapshot } from '@deepseek-ai
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
-/** @param workspace - Authoritative row. @returns Whether it permits multiple ordinary Sessions. */
+/**
+ * Identify the two modes that admit multiple ordinary Sessions.
+ * @param workspace - Authoritative row.
+ * @returns Whether it permits multiple ordinary Sessions.
+ */
 export function multipleSessions(workspace: WorkspaceView): boolean {
   return workspace.modeConfig.mode === 'multi-vm' || workspace.modeConfig.mode === 'multi-docker'
 }
 
-/** @param workspace - Authoritative row. @returns Whether a new ordinary Session may be offered. */
+/**
+ * Offer creation only while admission is ready and single-mode capacity remains unused.
+ * @param workspace - Authoritative row.
+ * @returns Whether a new ordinary Session may be offered.
+ */
 export function canCreateSession(workspace: WorkspaceView): boolean {
   return workspace.modeConfig.operationState === 'ready'
     && (multipleSessions(workspace) || workspace.modeConfig.firstSessionId === null)
 }
 
 /**
+ * Resolve permanent membership before following descendant ancestry.
  * @param workspaces - Current Workspace rows.
  * @param id - Session identity.
  * @param sessions - Optional catalog for descendants whose Workspace belongs to an ancestor.
@@ -34,7 +43,12 @@ export function sessionWorkspace(workspaces: readonly WorkspaceView[], id: Sessi
   return undefined
 }
 
-/** @param workspaces - Current rows. @param sessions - Catalog activity. @returns Most recent Workspace, retaining Host order on ties. */
+/**
+ * Select a Workspace by Session activity, falling back to its registration time.
+ * @param workspaces - Current rows.
+ * @param sessions - Catalog activity.
+ * @returns Most recent Workspace, retaining Host order on ties.
+ */
 export function recentWorkspace(workspaces: readonly WorkspaceView[], sessions: SessionListState['byId']): WorkspaceId | undefined {
   let selected: WorkspaceId | undefined
   let selectedTime = Number.NEGATIVE_INFINITY
@@ -54,6 +68,7 @@ export function recentWorkspace(workspaces: readonly WorkspaceView[], sessions: 
 }
 
 /**
+ * Evaluate global New Session admission from the current or most recent Workspace.
  * @param workspaces - Authoritative Workspace snapshot.
  * @param sessions - Current Session catalog and selection.
  * @returns Whether the current or most recent Workspace admits New Session.

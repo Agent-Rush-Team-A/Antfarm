@@ -18,6 +18,7 @@ type Actions = Omit<PinSessionInjected & ArchiveSessionInjected, 'hooks'>
  */
 export function registerSessionMenus(ctx: Context, actions: Actions): void {
   const t = ctx.locale.bind('workspace')
+  const sessions = ctx.get('sessions')
   const register = (
     id: string,
     order: number,
@@ -29,12 +30,13 @@ export function registerSessionMenus(ctx: Context, actions: Actions): void {
       observe: ({ sessionId }) => [
         ctx.workspaces.list, ctx.locale,
         ...endpoints.map(action => ctx.remoteAccess.source('session', sessionId, action)),
+        ...sessions === undefined ? [] : [sessions.list],
       ],
       resolve,
     }), `ui-workspace: ${id} menu`)
   }
   const allowed = (target: ContextMenuTargetMap['session'], action: RemoteEndpoint): boolean => {
-    const row = sessionWorkspace(ctx.workspaces.list.getSnapshot().items, target.sessionId, ctx.get('sessions')?.list.getSnapshot().byId)
+    const row = sessionWorkspace(ctx.workspaces.list.getSnapshot().items, target.sessionId, sessions?.list.getSnapshot().byId)
     if (row !== undefined && !multipleSessions(row)
       && (action === 'session/fork' || action === 'workspace/archiveSession' || action === 'workspace/unarchiveSession')) return false
     return ctx.remoteAccess.source('session', target.sessionId, action).getSnapshot()

@@ -1599,3 +1599,15 @@ describe('UiWorkspaceService', () => {
     })
   })
 })
+
+
+it('localizes permanent single-session refusal without exposing backend diagnostics', async () => {
+  const b = bench({ workspaces: workspaceState([workspace('a')]), sessions: sessionState() })
+  await vi.waitFor(() => { expect(b.sessions.retain).toHaveBeenCalledOnce() })
+  const error = new SessionCreateError(new RemoteError('workspace/session-limit', 'private admission diagnostic', {
+    workspaceId: wid('a'), firstSessionId: sid('first') }), undefined)
+  b.sessions.create.mockRejectedValueOnce(error)
+  await expect(b.uiWorkspace.openWorkspace(wid('a'))).rejects.toBe(error)
+  expect(b.notify).toHaveBeenLastCalledWith({ kind: 'createFailed',
+    message: 'This workspace already has its only session. Continue in that session.' })
+})

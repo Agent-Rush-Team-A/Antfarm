@@ -199,11 +199,12 @@ test('an opening response from a lost connection cannot publish running or retry
 
 
 test.each([
-  { code: 'workspace/session-operation-forbidden', reason: 'mode_forbidden', details: {
-    workspaceId, sessionId: 'single-session' as SessionId, operation: 'archive' } },
-  { code: 'workspace/mode-recovery-required', reason: 'mode_recovery', details: { workspaceId } },
-] as const)('preserves stable workspace admission guidance for $code', async ({ code, reason, details }) => {
+  { reason: 'mode_forbidden', error: new RemoteError('workspace/session-operation-forbidden', 'private diagnostic', {
+    workspaceId, sessionId: 'single-session' as SessionId, operation: 'archive' }) },
+  { reason: 'mode_recovery', error: new RemoteError('workspace/mode-recovery-required', 'private diagnostic', {
+    workspaceId, operation: 'create-session' }) },
+] as const)('preserves stable workspace admission guidance for $reason', async ({ error, reason }) => {
   const f = fixture()
-  f.api.open.mockResolvedValue({ ok: false, error: new RemoteError(code, 'private diagnostic', details) })
+  f.api.open.mockResolvedValue({ ok: false, error })
   expect(await f.model.change(workspaceId, 'open')).toEqual({ reason, operation: 'open', outcomeUnknown: false })
 })
