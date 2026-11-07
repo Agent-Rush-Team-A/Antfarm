@@ -37,6 +37,11 @@ Through `ctx.fs`, resolve paths, read text or bounded bytes, list direct childre
 
 `watch(target, changed, signal)` reports invalidations for one file or a directory's direct entries. It resolves once observation is ready with an asynchronous close function that the caller must await. The signal cancels initialization; unsupported providers reject without polling.
 
+<a id="workspace-binary-access"></a>
+### Workspace binary access
+
+The `./workspace-access` entry defines `WorkspaceFileAccess` as `ctx.workspaceFileAccess` for authorized HTTP file consumers. Providers receive the original Workspace id, registered project path, cancellation signal and authority recheck, and return bounded listings, exclusive streamed upload publication, or pinned download streams with settlement. This service does not replace `ctx.fs`, choose a user, or register model tools. Deployments explicitly select it through the upload and artifact APIs; missing providers refuse startup.
+
 -----
 
 <a id="understand-the-implementation"></a>

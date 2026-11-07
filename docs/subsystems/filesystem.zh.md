@@ -619,6 +619,44 @@ Types: [SandboxExecutionPolicy](sandbox.zh.md)
 
 Source: [`packages/fs/fs/src/index.ts`](../../packages/fs/fs/src/index.ts)
 
+<a id="ctxworkspacefileaccess--workspacefileaccess-abstract-seam"></a>
+
+### `ctx.workspaceFileAccess` — `WorkspaceFileAccess` (abstract seam)
+
+Providers retain original authority and generation until all streams settle.
+
+```ts cordis-catalog
+/**
+ * Read a directory in the selected execution world or a completed read-only copy.
+ * @param scope - Original authorized workspace.
+ * @param path - Relative path; empty names the root.
+ * @param maxEntries - Inclusive inspected-entry bound.
+ * @returns Metadata only, without deployment coordinates.
+ */
+abstract list(scope: WorkspaceFileScope, path: string, maxEntries: number): Promise<WorkspaceFileListing>
+
+/**
+ * Open one regular file without following symlinks; transfer resources to the body.
+ * @param scope - Original authorized workspace.
+ * @param path - Relative file path.
+ * @param maxBytes - Complete-file byte limit.
+ * @returns Stream retaining its original file identity through settlement.
+ */
+abstract download(scope: WorkspaceFileScope, path: string, maxBytes: number): Promise<WorkspaceFileDownload>
+
+/**
+ * Exclusively publish one streamed file in the live execution workspace.
+ * @param scope - Original authorized workspace.
+ * @param name - Exact validated root leaf name.
+ * @param chunks - Bounded-memory incoming bytes.
+ * @param maxBytes - Complete-file byte limit.
+ * @returns Published name and extent; failures retain their publication fact.
+ */
+abstract upload(scope: WorkspaceFileScope, name: string, chunks: AsyncIterable<Uint8Array>, maxBytes: number): Promise<WorkspaceFileUpload>
+```
+
+Source: [`packages/fs/fs/src/workspace-access.ts`](../../packages/fs/fs/src/workspace-access.ts)
+
 <a id="fs-events"></a>
 
 ### `fs/*` events
@@ -702,3 +740,5 @@ Single-slot decision for the next FileSystem.writeText. Calling `next()` yields 
 
 Source: [`packages/fs/fs/src/index.ts`](../../packages/fs/fs/src/index.ts)
 <!-- END GENERATED cordis-surface -->
+
+[dsh-fs](../../packages/fs/fs/README.zh.md#workspace-binary-access) 的 `./workspace-access` 入口为网页二进制文件定义独立的 `WorkspaceFileAccess` 服务。每个请求保留原 Workspace 权限与取消状态；提供方返回受限的 `WorkspaceFileListing`、独占发布的 `WorkspaceFileUpload`、以及带资源收束的固定 `WorkspaceFileDownload`。它不改变 `ctx.fs` 或模型工具参数。

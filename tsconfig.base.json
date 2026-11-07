@@ -28,6 +28,7 @@
     // not declaration path aliases, keep each package/vendor source compiled
     // under its own tsconfig boundary.
     "paths": {
+      "@deepseek-ai/dsh-fs/workspace-access": ["./packages/fs/fs/src/workspace-access.ts"],
       "@deepseek-ai/dsh-harness-sandbox/backend": ["./packages/sandbox/harness-sandbox/src/backend.ts"],
       "@deepseek-ai/dsh-harness-sandbox/files": ["./packages/sandbox/harness-sandbox/src/files.ts"],
       "@deepseek-ai/dsh-harness-sandbox/ssh": ["./packages/sandbox/harness-sandbox/src/ssh.ts"],
