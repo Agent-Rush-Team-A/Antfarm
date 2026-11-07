@@ -63,7 +63,8 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
     const username = 'spreadsheet-acceptance'
     const nodeImport = pathToFileURL(createRequire(join(REPO_ROOT, 'package.json')).resolve('tsx/esm')).href
     const env = { ...process.env, DSH_HOME: home, DSH_AGENTS_HOME: agents,
-      DSH_MULTIUSER_WORKSPACE_ROOT: join(root, 'workspaces'), DSH_VULTR_CONFIG_JSON: JSON.stringify(settings) }
+      DSH_MULTIUSER_WORKSPACE_ROOT: join(root, 'workspaces'), DSH_VULTR_CONFIG_JSON: JSON.stringify(settings),
+      TSX_TSCONFIG_PATH: join(REPO_ROOT, 'tsconfig.json') }
     const events: { step: string; at: string; details?: unknown }[] = []
     const failures: unknown[] = []
     let server: { child: ChildProcess; done: Promise<void>; base: string } | undefined
@@ -129,20 +130,23 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
       void done.catch(() => {}) // The owning startup or teardown awaits and reports this failure.
       server = { child, done, base: '' }
       let output = ''
-      const collect = (chunk: Buffer): void => { output += chunk.toString() }
+      const ready = Promise.withResolvers<string>()
+      const deadline = setTimeout(() => { ready.reject(new Error('Web startup exceeded three minutes')) }, 180_000)
+      const collect = (chunk: Buffer): void => {
+        output += chunk.toString()
+        const address = /dsh web: (http:\/\/[^\s]+)/u.exec(output)?.[1]
+        if (address !== undefined) ready.resolve(address)
+      }
       child.stdout?.on('data', collect)
       child.stderr?.on('data', collect)
+      void done.then(() => { ready.reject(new Error('Web process exited before startup completed')) }, (error: unknown) => { ready.reject(error) })
       try {
-        await expect.poll(() => {
-          if (child.exitCode !== null) throw new Error('Web process exited during startup')
-          return /dsh web: (http:\/\/[^\s]+)/u.exec(output)?.[1]
-        }, { timeout: 180_000, interval: 200 }).toBeDefined()
-        const address = /dsh web: (http:\/\/[^\s]+)/u.exec(output)?.[1]
-        if (address === undefined) throw new Error('Web address is missing')
+        const address = await ready.promise
         server.base = new URL(address).origin + '/'
         await record('server-ready', { origin: server.base, idleTimeoutMs })
         return server.base
       } finally {
+        clearTimeout(deadline)
         await writeFile(join(runDir, `startup-${idleTimeoutMs}.log`), output.replace(/token=[^\s&]+/gu, 'token=<redacted>'))
       }
     }
@@ -257,7 +261,7 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
       expect((await download('isolation.txt')).toString().trim()).toBe('WORKSPACE_ISOLATED')
       for (const name of ['销售明细.csv', '月度汇总.csv', '年度汇总.json']) {
         const missing = await currentContext.request.get(new URL('api/workspace/downloadFileBinary?'
-          + new URLSearchParams({ workspaceId: b.workspaceId, path: name }), base).href)
+          + new URLSearchParams({ workspaceId: b.workspaceId, path: name }).toString(), base).href)
         expect(missing.status()).toBe(404)
       }
       expect((await stateOf(b.workspaceId)).instanceId).not.toBe(original.instanceId)
