@@ -24,6 +24,15 @@ pnpm run start:web --patch apps/cli/config/examples/harness-sandbox.patch.yml --
 
 Antfarm 默认 Web 入口提供账号登录和工作区文件服务，overlay 增加沙箱管理，以及已认证用户向所属工作区会话发送消息时的自动准备。准备失败会拒绝消息。其 standard preset 只暴露前台 Runner Bash；宿主文件工具与终端交接仍被拒绝。有 Docker 权限的 Runner 仍独立于 Web。缺少必需配置时启动失败。直接使用 `pnpm dsh web` 时，需在此 overlay 之前加载 `apps/cli/config/antfarm-web.patch.yml`。
 
+<a id="use-the-web-controls"></a>
+## 使用网页操作
+
+启用 overlay 后，从工作区操作菜单选择 **工作区沙箱**，或点击对话输入栏的盾牌按钮。两个入口打开该工作区的同一面板；打开面板只查询状态。
+
+点击 **开启沙箱** 启动沙箱，面板先显示 **正在开启…**，确认成功后显示 **运行中**。点击 **关闭沙箱**，再点击 **确认关闭** 停止沙箱；面板先显示 **正在关闭…**，确认移除后显示 **已关闭**。取消确认或关闭面板会保持沙箱运行。关闭沙箱保留文件和对话，但会终止正在处理和等待的任务。
+
+两个名额都占用时，面板提示 **沙箱已满，请关闭一个或稍后重试**。关闭一个运行中的沙箱，再重试失败的开启操作。刷新状态不会重试开启或关闭。查询失败时标明最近观察到的状态，并禁用修改操作，直到查询成功；操作结果未知时禁止开启，需要管理员处理。连接或工作区权限丢失时关闭面板；恢复访问后重新打开。
+
 <a id="call-the-management-methods"></a>
 ## 调用管理方法
 
@@ -43,7 +52,18 @@ Connection 使用普通 Typert 请求封装、登录 cookie 和 Host/Origin 检�
 
 移除工作区登记前先关闭其沙箱。删除会查询 Runner 并要求 `closed`；正在开启或活跃的沙箱返回 `workspace/sandbox-active`，Runner 不可用时保留工作区。管理服务卸载或重载期间同样拒绝删除，服务恢复后可重试。目录移动或丢失后仍可查询和关闭，不会阻止清理。
 
+<a id="automatic-idle-reclamation"></a>
+## 自动空闲回收
+
+overlay 在应用层加载一个 `sandbox-idle` 插件。运行中的工作区必须结束所有准备、排队输入、模型工作、命令和清理，并连续空闲 30 分钟，才具备回收资格。新接纳请求会在其工作结束后重新计时。状态轮询和查看持久文件不为容器保活。每轮结束后才开始下一次 10 秒等待，因此实际关闭可能晚于阈值。
+
+后端在接纳关闭前再次检查当前归属、原容器和活动。先被接纳的工作使旧扫描跳过；关闭开始后的消息收到既有正在关闭错误。回收成功只移除容器，文件、Session 和工作区登记保留；下一条新消息通过普通准备流程重开工作区。模型不增加管理工具或倒计时。
+
+调整时间时，在沙箱 overlay 后应用部署 patch，以 `id: sandbox-idle` 为目标设置 `config.idleTimeoutMs` 和 `config.sweepIntervalMs`。数值和限制见[空闲插件参考](../../../packages/sandbox/harness-sandbox/README.zh.md#idle-reclamation)。禁用该入口会停止后续扫描并等待已接纳关闭收束，不会关闭所有容器。入口应放在应用层，不能放进每个 Session 的 preset。
+
+失败观察保留供后续有界重查。进程重启或管理恢复后，为可靠运行的容器重新给予完整区间。失败或不明的 DELETE 保留 `closing`，空闲扫描不重试。停用账号、缺失所有者和待清理状态需要授权维护；扫描器不自行扩展清理权限。
+
 <a id="continue-the-integrations"></a>
 ## 继续接入
 
-可选 overlay 准备消息并将 Bash 转发给 Runner。模型看到 `/workspace`、命令输出与退出码，不接收沙箱管理参数。输出使用 Runner 的有界尾部；模型无法访问宿主溢出文件，因此禁用宿主结果溢出存储。[接入交接](../../../packages/sandbox/harness-sandbox/README.zh.md#integration-handoff)说明授权内部方法、活动查询和浏览器 API。空闲回收属 #8，浏览器控件属 #9；其他工具须分别完成隔离。
+可选 overlay 准备消息、将 Bash 转发给 Runner，并回收空闲容器。模型看到 `/workspace`、命令输出与退出码，不接收沙箱管理参数。输出使用 Runner 的有界尾部；模型无法访问宿主溢出文件，因此禁用宿主结果溢出存储。[接入交接](../../../packages/sandbox/harness-sandbox/README.zh.md#integration-handoff)说明授权内部方法、活动查询和浏览器 API。其他工具须分别完成隔离。

@@ -1,0 +1,8 @@
+- dialog "Workspace sandbox":
+  - heading "Workspace sandbox" [level=2]
+  - button "Close panel"
+  - paragraph: Workspace
+  - status: Running
+  - paragraph: Closing retains workspace files and conversations.
+  - button "Close sandbox"
+  - button "Refresh status"

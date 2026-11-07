@@ -134,7 +134,10 @@ it('removes an echoed request credential from provider failure output', async ()
   const result = await assemble(ctx, { model: 'deepseek-flash', messages: [] })
   expect(result.finish.kind).toBe('error')
   expect(JSON.stringify(result)).not.toContain('test-key')
-  expect(JSON.stringify(result)).toContain('[redacted]')
+  expect(result.finish).toEqual({ kind: 'error', failure: {
+    code: 'AUTH',
+    message: 'The model service rejected the credential. Check your personal API key and its permissions.',
+  } })
 })
 
 describe('PiAiAdapter provider routing', () => {

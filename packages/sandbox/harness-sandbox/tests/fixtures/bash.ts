@@ -33,9 +33,9 @@ export class BashModel extends LlmAdapter {
   }
 }
 
-export async function bashFixture(execTimeoutMs = 1000) {
+export async function bashFixture(execTimeoutMs = 1000, queryTimeoutMs?: number) {
   const model = new BashModel()
-  const f = await conversationFixture(model, execTimeoutMs)
+  const f = await conversationFixture(model, execTimeoutMs, queryTimeoutMs)
   const fiber = f.ctx.plugin(Bash)
   await fiber
   const results: Array<{ exec: ToolExecution; result: ToolExecutionResult }> = []

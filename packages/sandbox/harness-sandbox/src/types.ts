@@ -29,7 +29,7 @@ export interface SandboxActivity {
   readonly closing: boolean
 }
 
-/** Stable management failures; an unconfirmed modification requires a fresh query. */
+/** Stable management failures; unknown modifications retain the local closing barrier and require maintenance. */
 export type SandboxFailureReason = 'sandbox_not_ready' | 'sandbox_capacity' | 'sandbox_closing' | 'sandbox_cleanup_required'
   | 'sandbox_workspace_conflict' | 'sandbox_name_conflict' | 'sandbox_outcome_unknown' | 'invalid_workspace_directory'
   | 'docker_unavailable' | 'runner_unavailable' | 'runner_outcome_unknown' | 'cloud_open_failed' | 'cloud_save_failed'

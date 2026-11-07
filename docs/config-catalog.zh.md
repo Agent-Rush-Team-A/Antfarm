@@ -828,6 +828,22 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-client-ui-trajectory -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-client-ui-workspace-sandbox -->
+<a id="deepseek-aidsh-client-ui-workspace-sandbox"></a>
+
+## `@deepseek-ai/dsh-client-ui-workspace-sandbox`
+
+- `source`: [`packages/client/ui-workspace-sandbox/src/config.ts:5`](../packages/client/ui-workspace-sandbox/src/config.ts)
+
+```ts config-catalog
+/** Deployment-configurable status polling interval. */
+export interface Config {
+  /** Delay in milliseconds after a completed query while the panel is open. */
+  pollIntervalMs: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-client-ui-workspace-sandbox -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-compaction-basic -->
 <a id="deepseek-aidsh-compaction-basic"></a>
 
@@ -1718,7 +1734,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-harness-sandbox`
 
 - `inject`: `multiuser` · `remoteAccess` · `typert` · `workspaceRegistry`
-- `source`: [`packages/sandbox/harness-sandbox/src/index.ts:37`](../packages/sandbox/harness-sandbox/src/index.ts)
+- `source`: [`packages/sandbox/harness-sandbox/src/index.ts:46`](../packages/sandbox/harness-sandbox/src/index.ts)
 
 ```ts config-catalog
 /** Registered project root and deployment-selected local Runner or separately loaded backend. */

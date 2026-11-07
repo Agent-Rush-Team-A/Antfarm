@@ -11,7 +11,7 @@ test('native read preserves line windows, durable output and prompt guidance', a
   await writeFile(join(root, 'text'), 'first\nsecond\nthird\n')
   const { result } = await f.run('read', { file_path: '/workspace/text', offset: 2, limit: 1 })
   expect(result).toMatchObject({ isError: false, value: { path: join(root, 'text'), offset: 2, lines: [{ number: 2, text: 'second' }], totalLines: 3 } })
-  expect(result.content).toEqual([{ type: 'text', text: `<path>${root}/text</path>\n<type>file</type>\n<content>\n2: second\n\n(Showing lines 2-2 of 3. Use offset=3 to continue.)\n</content>` }])
+  expect(result.content).toEqual([{ type: 'text', text: `<path>${join(root, 'text')}</path>\n<type>file</type>\n<content>\n2: second\n\n(Showing lines 2-2 of 3. Use offset=3 to continue.)\n</content>` }])
   expect(f.logged[0]?.data.message.content).toEqual(result.content)
   expect(f.model.requests[1]?.messages.some(message => message.role === 'tool' && JSON.stringify(message.content) === JSON.stringify(result.content))).toBe(true)
   const assembly = await f.ctx.systemPrompt.assemble({ scope: f.agent })
@@ -55,10 +55,14 @@ test.each(['write', 'edit'])('%s keeps the observed version check when another w
 
 test.each(['read', 'write', 'edit'])('%s refuses lexical and symlink escapes before touching outside bytes', async (name) => {
   const f = await filesFixture()
-  const outside = join(f.home, 'outside')
+  const directory = join(f.home, 'outside-files')
+  await mkdir(directory)
+  const outside = join(directory, 'secret')
   await writeFile(outside, 'secret')
-  await symlink(outside, join(f.worlds[0]!.root, 'escape'))
-  for (const file_path of ['../outside', '/etc/passwd', '/workspace/escape']) {
+  // Windows directory junctions exercise the escape without requiring file-symlink privilege.
+  const windows = process.platform === 'win32'
+  await symlink(windows ? directory : outside, join(f.worlds[0]!.root, 'escape'), windows ? 'junction' : 'file')
+  for (const file_path of ['../outside-files/secret', '/etc/passwd', windows ? '/workspace/escape/secret' : '/workspace/escape']) {
     const args = name === 'write' ? { file_path, content: 'bad' } : name === 'edit' ? { file_path, old_string: 'secret', new_string: 'bad' } : { file_path }
     expect((await f.run(name, args)).result).toMatchObject({ isError: true, error: { info: { code: 'SANDBOX_INVALID_PATH' } } })
   }
@@ -74,7 +78,7 @@ test('write rechecks a symlink ancestor changed after its first path resolution'
   await writeFile(join(outside, 'file'), 'outside original')
   f.ctx.on('fs/write-intent', async (_target, _actor, next) => {
     await rename(join(root, 'sub'), join(root, 'original-sub'))
-    await symlink(outside, join(root, 'sub'))
+    await symlink(outside, join(root, 'sub'), process.platform === 'win32' ? 'junction' : 'dir')
     return next()
   })
   expect((await f.run('write', { file_path: 'sub/file', content: 'bad' })).result)

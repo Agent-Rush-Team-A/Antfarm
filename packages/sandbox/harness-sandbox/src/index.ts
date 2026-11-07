@@ -12,12 +12,12 @@ import { z } from 'zod'
 import { RunnerConfig } from './config.ts'
 import SandboxRunnerClient from './transport.ts'
 import type { SandboxExecutionBackend } from './backend.ts'
-import WorkspaceSandboxState from './lifecycle.ts'
-import { RunnerRequestError, RunnerResponseError, type RunnerRunningSandbox, type RunnerClosedSandbox,
-  type RunnerSandboxStatus } from './runner-client.ts'
-import type { SandboxRequest, SandboxValue, SandboxFailureReason, SandboxActivity } from './types.ts'
+import WorkspaceSandboxState, { type SandboxIdleActivity } from './lifecycle.ts'
+import { RunnerRequestError, RunnerResponseError, type RunnerRunningSandbox, type RunnerClosedSandbox, type RunnerSandboxStatus } from './runner-client.ts'
+import type { SandboxRequest, SandboxValue, SandboxFailureReason } from './types.ts'
 
 export type * from './types.ts'
+export type { SandboxIdleActivity, SandboxObservation } from './lifecycle.ts'
 export type { RunnerRunningSandbox, RunnerClosedSandbox, RunnerSandboxStatus, SandboxContainerId } from './runner-client.ts'
 export { RunnerExecutionError, RunnerRequestError, RunnerResponseError } from './runner-client.ts'
 export type { default as SandboxRunnerClient } from './transport.ts'
@@ -30,8 +30,17 @@ export interface SandboxCloseTarget {
   readonly containerId: import('./runner-client.ts').SandboxContainerId
   readonly version: number
 }
-export type { RunnerCancellationResult, RunnerExecutionFailure, RunnerExecutionIdentity, RunnerExecutionRequest,
-  RunnerExecutionResult, RunnerExecutionId } from './execution.ts'
+
+/** Server-observed idle interval and original container, never supplied by a remote caller. */
+export interface SandboxIdleCloseTarget extends SandboxCloseTarget {
+  readonly revision: number
+  readonly idleSince: number
+}
+
+/** Confirmed closure, or an idle condition that expired without revoking work or sending DELETE. */
+export type SandboxIdleCloseResult = RunnerClosedSandbox | { readonly state: 'skipped' }
+
+export type { RunnerCancellationResult, RunnerExecutionFailure, RunnerExecutionIdentity, RunnerExecutionRequest, RunnerExecutionResult, RunnerExecutionId } from './execution.ts'
 
 /** Registered project root and deployment-selected local Runner or separately loaded backend. */
 export type Config = {
@@ -196,32 +205,56 @@ export default class WorkspaceSandbox extends TypertRemoteService {
    * Observe a sandbox for an authenticated backend initiator.
    * @param userId - Authenticated initiating user.
    * @param workspaceId - Native workspace id.
+   * @param signal - Optional observer lifetime; abort suppresses history updates without cancelling the bounded query.
+   * Omitted queries record normally.
    * @returns Local closing barrier, or fresh Runner state with internal container identity.
    */
-  async statusForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerSandboxStatus> {
+  async statusForUser(userId: UserId, workspaceId: WorkspaceId, signal?: AbortSignal): Promise<RunnerSandboxStatus> {
     this.authorize(userId, workspaceId, 'status')
     this.available()
     if (this.state.closing(workspaceId)) return Promise.resolve({ state: 'closing' })
-    return this.runner(() => this.client.status(workspaceId))
+    return this.state.query(workspaceId, async () => {
+      const result = await this.runner(() => this.client.status(workspaceId))
+      this.authorize(userId, workspaceId, 'status')
+      this.available()
+      return result
+    }, signal)
   }
 
   /**
    * Inspect local work before an authorized idle-reclamation decision; does not query Runner or close anything.
    * @param userId - Authenticated initiating user.
    * @param workspaceId - Native workspace id.
-   * @returns Outstanding input, openings, executions and closure; unavailable management throws rather than reporting idle.
+   * @returns Work counts, activity revision, monotonic idle start and reliable container observation; unavailable management throws.
    */
-  activityForUser(userId: UserId, workspaceId: WorkspaceId): SandboxActivity {
+  activityForUser(userId: UserId, workspaceId: WorkspaceId): SandboxIdleActivity {
     this.authorize(userId, workspaceId, 'status')
     this.available()
-    const local = this.state.activity(workspaceId)
-    const provider = this.client.activity(workspaceId)
-    if (provider === undefined) return local
-    const openings = local.openings + provider.openings
-    const executions = local.executions + provider.executions
-    const closing = local.closing || provider.closing
-    return { requests: local.requests, openings, executions, closing, busy: local.requests > 0 || openings > 0
-      || executions > 0 || closing }
+    return this.activity(workspaceId)
+  }
+
+  /**
+   * Query the original container and synchronously admit closure only while the observed interval is still idle.
+   * @param userId - Authenticated backend owner; native authorization failures are preserved.
+   * @param workspaceId - Native workspace id.
+   * @param target - Original running identity, close version, activity revision and non-null idle start.
+   * @param idleTimeoutMs - Positive idle threshold from validated deployment configuration.
+   * @param signal - Scan lifetime, synchronously aborted on unload; does not cancel an already admitted close.
+   * @returns Skipped without revocation or DELETE, or confirmed closure; management and Runner failures reject.
+   */
+  async closeIfIdleForUser(
+    userId: UserId, workspaceId: WorkspaceId, target: SandboxIdleCloseTarget,
+    idleTimeoutMs: number, signal: AbortSignal,
+  ): Promise<SandboxIdleCloseResult> {
+    this.available()
+    this.authorize(userId, workspaceId, 'close')
+    if (!this.matchesIdle(workspaceId, target, idleTimeoutMs, signal)) return { state: 'skipped' }
+    const observed = await this.statusForUser(userId, workspaceId, signal)
+    this.available()
+    this.authorize(userId, workspaceId, 'close')
+    if (observed.state !== 'running' || observed.containerId !== target.containerId
+      || !this.matchesIdle(workspaceId, target, idleTimeoutMs, signal)) return { state: 'skipped' }
+    return this.closeForUser(userId, workspaceId, target)
   }
 
   /**
@@ -256,6 +289,30 @@ export default class WorkspaceSandbox extends TypertRemoteService {
     const parsed = requestSchema.safeParse(request)
     if (!parsed.success) throw new RemoteError('gateway/bad-request', 'Expected only a valid workspaceId', {})
     return WorkspaceId(parsed.data.workspaceId)
+  }
+
+  private matchesIdle(id: WorkspaceId, target: SandboxIdleCloseTarget, idleTimeoutMs: number, signal: AbortSignal): boolean {
+    const current = this.activity(id)
+    return !signal.aborted && !current.busy && current.sandbox.state === 'running'
+      && current.sandbox.containerId === target.containerId && current.version === target.version
+      && current.revision === target.revision && current.idleSince === target.idleSince
+      && performance.now() - target.idleSince >= idleTimeoutMs
+  }
+
+  private activity(id: WorkspaceId): SandboxIdleActivity {
+    let local = this.state.activity(id)
+    const provider = this.client.activity(id)
+    if (provider === undefined) return local
+    if (provider.openings > 0 || provider.executions > 0 || provider.closing) {
+      // Preparation can outlive its caller; a later running query must start a fresh idle interval.
+      this.state.invalidateObservation(id, local.revision)
+      local = this.state.activity(id)
+    }
+    const openings = local.openings + provider.openings
+    const executions = local.executions + provider.executions
+    const closing = local.closing || provider.closing
+    return { ...local, openings, executions, closing,
+      busy: local.requests > 0 || openings > 0 || executions > 0 || closing }
   }
 
   private caller(operation: string): UserId {

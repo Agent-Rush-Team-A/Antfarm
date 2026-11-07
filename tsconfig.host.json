@@ -10,6 +10,7 @@
   "include": [
     "apps/web/tests/workspace-upload.e2e.ts",
     "apps/web/tests/workspace-artifacts.e2e.ts",
+    "apps/web/tests/workspace-sandbox.e2e.ts",
     "apps/web/tests/multiuser.e2e.ts",
     "apps/web/tests/sidebar-drawer.e2e.ts",
     "apps/web/tests/creation-recommendations.e2e.ts",

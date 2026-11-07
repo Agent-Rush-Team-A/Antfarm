@@ -33,6 +33,9 @@ export class SandboxPermits {
   private readonly cancelled = new Map<SessionId, Set<SessionRequestId>>()
   private readonly turns = new WeakMap<Agent, Map<number, SandboxPermit[]>>()
 
+  /** @param changed - Synchronous notification after a request is actually inserted or removed. */
+  constructor(private readonly changed: (id: WorkspaceId) => void) {}
+
   /**
    * Count outstanding admissions and accepted input through turn settlement, including revoked work still draining.
    * @param id - Workspace whose original input is inspected.
@@ -75,6 +78,7 @@ export class SandboxPermits {
     const requests = this.requests.get(input.sessionId) ?? new Map<SessionRequestId, SandboxPermit>()
     requests.set(input.requestId, permit)
     this.requests.set(input.sessionId, requests)
+    this.changed(input.workspaceId)
     caller.addEventListener('abort', disconnected, { once: true })
     if (caller.aborted) disconnected()
     return permit.result
@@ -206,7 +210,10 @@ export class SandboxPermits {
 
   /** Revoke in-memory work when the application ends; no execution is reconstructed on reload. */
   dispose(): void {
-    for (const permits of this.requests.values()) for (const permit of permits.values()) this.cancel(permit)
+    for (const permits of this.requests.values()) for (const permit of permits.values()) {
+      this.cancel(permit)
+      this.release(permit)
+    }
     this.requests.clear()
     this.cancelled.clear()
   }
@@ -235,7 +242,10 @@ export class SandboxPermits {
     permit.controller.abort()
     permit.stopCaller()
     const requests = this.requests.get(permit.sessionId)
-    if (requests?.get(permit.requestId) === permit) requests.delete(permit.requestId)
+    if (requests?.get(permit.requestId) === permit) {
+      requests.delete(permit.requestId)
+      this.changed(permit.workspaceId)
+    }
     delete permit.agent
   }
 

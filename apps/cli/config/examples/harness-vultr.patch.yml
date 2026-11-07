@@ -1,5 +1,7 @@
 # Optional on-demand Vultr Workspace VMs over the default Antfarm Web composition.
 # Configure private deployment files and a verified standalone helper archive before launch.
+- id: ui-workspace-sandbox
+  disabled: false
 - insert:
     - id: workspace-vultr-backend
       name: '@deepseek-ai/dsh-harness-sandbox/vultr'
@@ -12,6 +14,11 @@
         workspaceRoot: !!js process.env.DSH_MULTIUSER_WORKSPACE_ROOT
     - id: sandbox-conversation
       name: '@deepseek-ai/dsh-harness-sandbox/conversation'
+    - id: sandbox-idle
+      name: '@deepseek-ai/dsh-harness-sandbox/idle'
+      config:
+        idleTimeoutMs: 1800000
+        sweepIntervalMs: 10000
 
 - id: working-directory
   config:

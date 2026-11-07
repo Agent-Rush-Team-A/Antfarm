@@ -179,7 +179,11 @@ interface ConfinedArgv {
 
 内部通信服务 `ctx.sandboxRunnerClient` 接收绑定原始 `RunnerExecutionIdentity` 的完整 `RunnerExecutionRequest`；`RunnerExecutionResult` 保留已确认的退出码与输出尾部。`RunnerCancellationResult` 仅表示接纳，`RunnerExecutionError.execution` 则保留 `RunnerExecutionFailure` 的清理状态和已知 Bash 状态。本机中止与通信期限到达都不确认远端清理。通信层不增加用户授权或模型工具；请求上限、独立预算与安全重取由[包参考](../../packages/sandbox/harness-sandbox/README.zh.md#execution-transport)说明。
 
-`SandboxActivity` 包含 `requests`（直到 turn 结算的未结束原始输入）、`openings`、`executions`（含取消与清理）、`closing` 及派生的 `busy`。经授权的 `activityForUser` 查询观察这些本地拥有者，不预留关闭决定；管理不可用时抛错。它不代替 Runner 状态，也不实现空闲计时器。
+`SandboxActivity` 包含 `requests`（直到 turn 结算的未结束原始输入）、`openings`、`executions`（含取消与清理）、`closing` 及派生的 `busy`。经授权的 `activityForUser` 返回 `SandboxIdleActivity`，增加活动 `revision`、关闭 `version`、进程内单调起点 `idleSince` 或 null，以及区分已确认运行代次、已确认关闭和待确认状态的 `SandboxObservation`。这些内部字段不进入 `SandboxValue`。查询不刷新空闲历史、不预留关闭决定，也不代替 Runner 状态；管理不可用时抛错。观察有效性、结算及重载行为见[包参考](../../packages/sandbox/harness-sandbox/README.zh.md#runner-bash)。
+
+`SandboxIdleCloseTarget` 在 `SandboxCloseTarget` 上增加观察到的活动编号和非空单调起点。内部 `closeIfIdleForUser` 接收该目标、已校验的空闲阈值及扫描生命周期信号，拥有当前 Runner 查询与最后的同步关闭接纳。`SandboxIdleCloseResult` 区分不撤销/DELETE 的跳过与确认关闭；既有授权及管理失败仍作为错误返回。时序、重复调用和失败归属见[空闲条件关闭](../../packages/sandbox/harness-sandbox/README.zh.md#conditional-idle-close)。
+
+可选 `@deepseek-ai/dsh-harness-sandbox/idle` 插件发现原生所属候选，通过现有管理器串行安排检查。沙箱 Web overlay 在应用层加载它一次。它保留失败观察、沿用关闭屏障，卸载时等待自身工作收束。默认值、候选归属与失败行为见[空闲回收参考](../../packages/sandbox/harness-sandbox/README.zh.md#idle-reclamation)。
 
 ## Workspace 远程文件
 
@@ -443,17 +447,30 @@ async openForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerRunni
  * Observe a sandbox for an authenticated backend initiator.
  * @param userId - Authenticated initiating user.
  * @param workspaceId - Native workspace id.
+ * @param signal - Optional observer lifetime; abort suppresses history updates without cancelling the bounded query.
+ * Omitted queries record normally.
  * @returns Local closing barrier, or fresh Runner state with internal container identity.
  */
-async statusForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerSandboxStatus>
+async statusForUser(userId: UserId, workspaceId: WorkspaceId, signal?: AbortSignal): Promise<RunnerSandboxStatus>
 
 /**
  * Inspect local work before an authorized idle-reclamation decision; does not query Runner or close anything.
  * @param userId - Authenticated initiating user.
  * @param workspaceId - Native workspace id.
- * @returns Outstanding input, openings, executions and closure; unavailable management throws rather than reporting idle.
+ * @returns Work counts, activity revision, monotonic idle start and reliable container observation; unavailable management throws.
  */
-activityForUser(userId: UserId, workspaceId: WorkspaceId): SandboxActivity
+activityForUser(userId: UserId, workspaceId: WorkspaceId): SandboxIdleActivity
+
+/**
+ * Query the original container and synchronously admit closure only while the observed interval is still idle.
+ * @param userId - Authenticated backend owner; native authorization failures are preserved.
+ * @param workspaceId - Native workspace id.
+ * @param target - Original running identity, close version, activity revision and non-null idle start.
+ * @param idleTimeoutMs - Positive idle threshold from validated deployment configuration.
+ * @param signal - Scan lifetime, synchronously aborted on unload; does not cancel an already admitted close.
+ * @returns Skipped without revocation or DELETE, or confirmed closure; management and Runner failures reject.
+ */
+async closeIfIdleForUser( userId: UserId, workspaceId: WorkspaceId, target: SandboxIdleCloseTarget, idleTimeoutMs: number, signal: AbortSignal, ): Promise<SandboxIdleCloseResult>
 
 /**
  * Ends all commands in this container without deleting workspace files or sessions.
