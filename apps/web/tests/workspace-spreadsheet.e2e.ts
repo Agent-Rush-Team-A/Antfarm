@@ -200,8 +200,11 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
         await currentPage.getByRole('button', { name: 'New session in ' + title, exact: true }).waitFor()
         return { ...createdWorkspace, title }
       }
-      async function choose(title: string): Promise<void> {
-        await workspaceRow(title).click()
+      async function choose(title: string, sessionId: string): Promise<void> {
+        const row = workspaceRow(title)
+        if (await row.getAttribute('aria-expanded') !== 'true') await row.click()
+        await currentPage.locator(`[data-row-key="session:${sessionId}"]`).click()
+        await currentPage.locator(`[data-conversation-session="${sessionId}"]`).waitFor()
       }
       async function prompt(text: string, done: string): Promise<void> {
         const input = currentPage.locator('[data-composer-input][contenteditable="true"]').first()
@@ -250,11 +253,14 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
       await workspaceRow(a.title).hover()
       await currentPage.getByRole('button', { name: 'New session in ' + a.title, exact: true }).click()
       await expect.poll(() => currentPage.locator('[data-conversation-session]').first().getAttribute('data-conversation-session')).not.toBe(firstSession)
+      const sharedSession = await currentPage.locator('[data-conversation-session]').first().getAttribute('data-conversation-session')
+      if (sharedSession === null) throw new Error('The shared Workspace Session is missing')
       await prompt('请使用 bash 读取工作区已有的月度汇总.csv，合计所有月份，生成年度汇总.json，键名为 orders、quantity、amount；前两项为整数，amount 为保留两位小数的字符串。不要重新生成月度汇总.csv。完成后只回复：同工作区续接已完成', '同工作区续接已完成')
       expect(JSON.parse((await download('年度汇总.json')).toString())).toEqual({ orders: 9, quantity: 16, amount: '1719.50' })
       expect((await stateOf(a.workspaceId)).instanceId).toBe(original.instanceId)
       await record('second-session-shares-files-and-vm')
       await prompt('请测试 bash 超时：执行 echo $$ > timeout.pid; sleep 20，timeoutMs 必须设为 1000。收到超时错误后，再用 bash 检查 timeout.pid 中的进程已经退出，并创建 timeout-confirmed.txt，内容为 TIMEOUT_PROCESS_GONE。不要重复 sleep 命令。检查成功后只回复：超时清理已确认', '超时清理已确认')
+      await currentPage.getByRole('button', { name: /^Completed in /u }).last().click()
       const timeout = currentPage.locator('[data-tool="bash"][data-state="error"]').filter({ hasText: 'Command timed out after 1000ms.' }).first()
       await timeout.waitFor()
       await timeout.scrollIntoViewIfNeeded()
@@ -280,7 +286,7 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
       await screenshot('capacity-full')
       await record('capacity-rejected', { workspaceId: c.workspaceId })
       await currentPage.keyboard.press('Escape')
-      await choose(a.title)
+      await choose(a.title, sharedSession)
       const closing = await panel()
       await closing.getByRole('button', { name: 'Close sandbox', exact: true }).click()
       await closing.getByRole('button', { name: 'Confirm close', exact: true }).click()
@@ -307,7 +313,7 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
       await stopServer()
       base = await startServer(5000)
       await login()
-      await choose(a.title)
+      await choose(a.title, sharedSession)
       await prompt('请使用 bash 执行 true，成功后只回复：空闲计时已开始', '空闲计时已开始')
       const idle = await panel()
       await expect.poll(async () => (await stateOf(a.workspaceId)).state, { timeout: 2_400_000, interval: 1000 }).toBe('closed')
