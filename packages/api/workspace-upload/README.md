@@ -27,19 +27,24 @@ Load the [upload guide and opt-in overlay](../../../docs/user/workspace-upload.m
 | Config | Default | Meaning |
 |---|---|---|
 | `maxBytes` | `33554432` | Positive safe integer; inclusive maximum bytes per file. |
+| `storage` | `local` | Select local descriptor-based storage or an injected `provided` backend. |
 
 `workspaceUpload/limits({ workspaceId })` returns the byte limit. Send raw bytes with `Content-Type: application/octet-stream` to `POST /api/workspace/uploadFileBinary?workspaceId=…&name=…`. Neither request accepts a host path. Owner-local calls use owner authority; multiuser accounts require the workspace ownership binding. Anonymous calls and other workspaces are denied.
 
 Names are single leaves of at most 255 UTF-8 bytes. Directory separators, control characters, drive prefixes, blank names, `.` and `..` are refused. Empty files are allowed. Existing files, directories and symlinks return `exists`; rename the selected file before retrying.
+### Remote Workspace storage
+
+Select `storage: provided` and inject `workspaceFileAccess` to use the [cloud Workspace provider](../../sandbox/harness-sandbox/README.md#workspace-vultr). Missing providers refuse startup; remote errors do not fall back to the registered host directory. Requests retain original workspace authority and cancellation through upload publication or download settlement. With `storage: local`, the existing descriptor-based local behavior remains available.
+
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
 The service opens the trusted registered root without following its final symlink, stages bytes in a private sibling directory, checks the size during streaming, and syncs the file before publishing an exclusive hard link through the open directory descriptor. It rechecks permission and workspace registration before publication. The deployment must keep the workspace parent trusted and place staging on the same filesystem.
 
-The published file inherits the workspace directory's group and uses mode `0660`. Provision the workspace directory's group and access for the non-root sandbox account as described in [Runner deployment](../../../team-docs/SANDBOX-RUNNER.md). File upload does not create or configure a sandbox.
+The published file inherits the workspace directory's group and uses mode `0660`. Provision the workspace directory's group and access for the non-root sandbox account as described in [Runner deployment](../../../team-docs/SANDBOX-RUNNER.md). Local file upload does not create or configure a sandbox; the cloud provider opens or restores the VM before a remote upload.
 
-Success returns `{ ok: true, value: { name, bytes } }` after cleanup. Failures return `{ ok: false, error: { reason, stored } }`; internal paths and causes stay in Host logs. `stored` becomes true only after publication. A cleanup failure can therefore report a committed file. The browser reports lost confirmations as unknown and asks the user to check the workspace before retrying. Existing entries are never replaced.
+Success returns `{ ok: true, value: { name, bytes } }` after cleanup. Failures return `{ ok: false, error: { reason, stored } }`; internal paths and causes stay in Host logs. `stored` becomes true only after confirmed publication. A cleanup failure can therefore report a committed file. A lost remote commit acknowledgement returns `unknown`; `stored: false` then does not establish that the file is absent. The browser reports lost confirmations as unknown and asks the user to check the workspace before retrying. Existing entries are never replaced.
 
 The Client provider exposes `ctx.workspaceUploads.uploadFile(workspaceId, file, signal)` only while this plugin is mounted. The workspace UI consumes this service rather than treating a generated Remote stub as capability availability. Limit reads and byte transfers share caller and provider cancellation. Cancellation during the limit read returns `cancelled` before sending bytes, including when the Gateway returns a failure result. The document-relative HTTP route preserves deployment URL prefixes. Browser withdrawal aborts and drains its transfers.
 

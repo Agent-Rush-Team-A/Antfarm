@@ -1,6 +1,7 @@
 /** Authorized workspace-root uploads over a bounded streaming HTTP route. */
 import { type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import type { WorkspaceFileAccess } from '@deepseek-ai/dsh-fs/workspace-access'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type {} from '@deepseek-ai/dsh-api-remote-access'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller'
@@ -17,6 +18,8 @@ export type * from './types.ts'
 export interface Config {
   /** Inclusive maximum size of one uploaded file; uploads are never truncated. */
   readonly maxBytes?: number
+  /** Explicit file provider; provided refuses startup when no remote provider is loaded. */
+  readonly storage?: 'local' | 'provided'
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -30,10 +33,12 @@ declare module '@deepseek-ai/cordis' {
 export class WorkspaceUpload extends TypertRemoteService {
   static inject = ['connection', 'remoteAccess', 'typert', 'workspaceRegistry', 'workspaceController']
   static Config = z.object({
+    storage: z.union([z.const('local'), z.const('provided')]).default('local'),
     maxBytes: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(32 * 1024 * 1024),
   })
 
   private readonly maxBytes: number
+  private readonly storage: WorkspaceFileAccess | undefined
   private readonly lifetime = new AbortController()
   private readonly operations = new Set<Promise<Response>>()
 
@@ -44,7 +49,10 @@ export class WorkspaceUpload extends TypertRemoteService {
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'workspaceUpload')
     if (process.platform !== 'linux') throw new Error('workspace upload requires Linux descriptor paths')
-    this.maxBytes = WorkspaceUpload.Config(config).maxBytes
+    const settings = WorkspaceUpload.Config(config)
+    this.maxBytes = settings.maxBytes
+    this.storage = settings.storage === 'provided' ? ctx.get('workspaceFileAccess') : undefined
+    if (settings.storage === 'provided' && this.storage === undefined) throw new Error('Provided workspace file access did not load')
     ctx.effect(() => ctx.connection.fetch.register({
       path: '/api/workspace/uploadFileBinary',
       methods: ['POST'],
@@ -118,13 +126,14 @@ export class WorkspaceUpload extends TypertRemoteService {
       if (declared !== null && Number(declared) > this.maxBytes) throw new UploadFailure('too-large')
       const workspace = this.ctx.workspaceRegistry.get(workspaceId)
       if (workspace === undefined) throw new UploadFailure('unavailable')
-      const value = await storeWorkspaceUpload(
-        workspace.path, name, bodyChunks(request.body, signal), this.maxBytes, signal,
-        () => {
-          if (!this.authorized(request, peer)
-            || this.ctx.workspaceRegistry.get(workspaceId) !== workspace) throw new UploadFailure('denied')
-        },
-      )
+      const admit = (): void => {
+        signal.throwIfAborted()
+        if (!this.authorized(request, peer) || this.ctx.workspaceRegistry.get(workspaceId) !== workspace) throw new UploadFailure('denied')
+      }
+      const chunks = bodyChunks(request.body, signal)
+      const value = this.storage === undefined
+        ? await storeWorkspaceUpload(workspace.path, name, chunks, this.maxBytes, signal, admit)
+        : await this.storage.upload({ workspaceId, project: workspace.path, signal, admit }, name, chunks, this.maxBytes)
       result = { ok: true, value }
     } catch (cause) {
       const error = cause instanceof UploadFailure ? cause : new UploadFailure(
@@ -133,7 +142,7 @@ export class WorkspaceUpload extends TypertRemoteService {
       result = { ok: false, error: { reason: error.reason, stored: error.stored } }
       status = error.reason === 'too-large' ? 413 : error.reason === 'denied' ? 403
         : error.reason === 'exists' ? 409 : error.reason === 'unavailable' ? 404
-          : error.reason === 'io' || error.reason === 'cleanup' ? 500 : 400
+          : error.reason === 'io' || error.reason === 'cleanup' || error.reason === 'unknown' ? 500 : 400
       if (error.reason === 'io' || error.reason === 'cleanup') {
         this.ctx.logger.warn('workspace upload failed (' + error.reason + ', stored=' + String(error.stored) + ')', error)
       }

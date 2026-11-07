@@ -1,6 +1,7 @@
 /** Authorized workspace listings and descriptor-pinned binary downloads. */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import type { WorkspaceFileAccess } from '@deepseek-ai/dsh-fs/workspace-access'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type {} from '@deepseek-ai/dsh-api-remote-access'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller'
@@ -15,6 +16,8 @@ export type * from './types.ts'
 
 /** Limits for bounded listing metadata and complete browser downloads. */
 export interface Config {
+  /** Explicit file provider; provided refuses startup when no remote provider is loaded. */
+  readonly storage?: 'local' | 'provided'
   /** Maximum directory entries inspected per request, including omitted entries. */
   readonly maxEntries?: number
   /** Inclusive byte cap for one download; larger files are refused. */
@@ -32,19 +35,26 @@ declare module '@deepseek-ai/cordis' {
 export class WorkspaceArtifacts extends TypertRemoteService {
   static inject = ['connection', 'remoteAccess', 'typert', 'workspaceRegistry', 'workspaceController']
   static Config = z.object({
+    storage: z.union([z.const('local'), z.const('provided')]).default('local'),
     maxEntries: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(2000),
     maxDownloadBytes: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(32 * 1024 * 1024),
   })
 
   private readonly config: Required<Config>
+  private readonly storage: WorkspaceFileAccess | undefined
   private readonly lifetime = new AbortController()
   private readonly operations = new Set<Promise<unknown>>()
 
-  /** @param ctx - authoritative workspaces and authenticated Connection. @param config - deployment limits. */
+  /**
+   * @param ctx - authoritative workspaces and authenticated Connection.
+   * @param config - deployment limits.
+   */
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'workspaceArtifacts')
     if (process.platform !== 'linux') throw new Error('workspace artifacts require Linux descriptor paths')
     this.config = WorkspaceArtifacts.Config(config)
+    this.storage = this.config.storage === 'provided' ? ctx.get('workspaceFileAccess') : undefined
+    if (this.config.storage === 'provided' && this.storage === undefined) throw new Error('Provided workspace file access did not load')
     ctx.effect(() => ctx.connection.fetch.register({
       path: '/api/workspace/downloadFileBinary', methods: ['GET'], requestBody: 'buffered',
       authorize: (request, peer) => this.authorized(this.workspaceId(request), peer, 'download'),
@@ -74,7 +84,15 @@ export class WorkspaceArtifacts extends TypertRemoteService {
         artifactComponents(path)
         const workspace = this.ctx.workspaceRegistry.get(request.workspaceId)
         if (workspace === undefined) throw new ArtifactFailure('not-found')
-        const listing = await listArtifacts(workspace.path, path, this.config.maxEntries, lifetime)
+        const admit = (): void => {
+          lifetime.throwIfAborted()
+          if (peer !== undefined && !this.authorized(request.workspaceId, peer, 'list')) throw new ArtifactFailure('denied')
+          if (this.ctx.workspaceRegistry.get(request.workspaceId) !== workspace) throw new ArtifactFailure('not-found')
+        }
+        const listing = this.storage === undefined
+          ? await listArtifacts(workspace.path, path, this.config.maxEntries, lifetime)
+          : await this.storage.list({ workspaceId: request.workspaceId, project: workspace.path, signal: lifetime,
+            admit }, path, this.config.maxEntries)
         lifetime.throwIfAborted()
         if (peer !== undefined && !this.authorized(request.workspaceId, peer, 'list')) throw new ArtifactFailure('denied')
         if (this.ctx.workspaceRegistry.get(request.workspaceId) !== workspace) throw new ArtifactFailure('not-found')
@@ -82,7 +100,8 @@ export class WorkspaceArtifacts extends TypertRemoteService {
       } catch (cause) {
         const failure = artifactFailure(cause, lifetime)
         if (failure.reason === 'io') this.ctx.logger.warn('workspace artifact listing failed', failure)
-        throw new RemoteError('workspace-artifact/failed', 'Workspace files are unavailable', { reason: failure.reason }, { cause: failure })
+        throw new RemoteError('workspace-artifact/failed', 'Workspace files are unavailable',
+          { reason: failure.reason }, { cause: failure })
       }
     })())
   }
@@ -119,20 +138,25 @@ export class WorkspaceArtifacts extends TypertRemoteService {
       artifactComponents(path)
       const workspace = this.ctx.workspaceRegistry.get(workspaceId)
       if (workspace === undefined) throw new ArtifactFailure('not-found')
-      const file = await openArtifact(workspace.path, path, false, signal)
-      let bytes: number
-      try {
-        bytes = (await file.stat()).size
+      const admit = (): void => {
         signal.throwIfAborted()
-        if (bytes > this.config.maxDownloadBytes) throw new ArtifactFailure('too-large')
-      } catch (cause) {
-        await file.close()
-        throw cause
-      }
-      const stream = streamArtifact(file, bytes, signal, () => {
         if (!this.authorized(workspaceId, peer, 'download')
           || this.ctx.workspaceRegistry.get(workspaceId) !== workspace) throw new ArtifactFailure('denied')
-      })
+      }
+      const stream = await (async () => {
+        if (this.storage !== undefined) return this.storage.download(
+          { workspaceId, project: workspace.path, signal, admit }, path, this.config.maxDownloadBytes,
+        )
+        const file = await openArtifact(workspace.path, path, false, signal)
+        let bytes: number
+        try {
+          bytes = (await file.stat()).size
+          admit()
+          if (bytes > this.config.maxDownloadBytes) throw new ArtifactFailure('too-large')
+        } catch (cause) { await file.close(); throw cause }
+        return { bytes, ...streamArtifact(file, bytes, signal, admit) }
+      })()
+      const { bytes } = stream
       void this.track(stream.settled).catch((cause: unknown) => { this.ctx.logger.warn('workspace download descriptor cleanup failed', cause) })
       const name = encodeURIComponent(path.slice(path.lastIndexOf('/') + 1))
         .replace(/[!'()*]/gu, character => '%' + character.charCodeAt(0).toString(16))

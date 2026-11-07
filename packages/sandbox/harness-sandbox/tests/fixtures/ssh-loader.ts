@@ -19,7 +19,7 @@ import { z } from 'zod'
 export const name = 'workspace-ssh-loader-acceptance'
 export const inject = ['workspaceSshFixture', 'sandboxRunnerClient', 'workspaceSandbox', 'sandboxConversation', 'tools', 'agentLoop', 'sessionController', 'llm', 'webServer']
 
-class Model extends LlmAdapter {
+export class WorkspaceFixtureModel extends LlmAdapter {
   private readonly progress = new Map<string, number>()
   readonly requests: GenerateOptions[] = []
   override resolveModel(provider: string, model: string) { return Promise.resolve({ provider, id: model, name: model }) }
@@ -64,7 +64,7 @@ async function run(ctx: Context, signal: AbortSignal) {
   const check = (ok: boolean, text: string): void => { if (!ok) throw new Error(text); checks.push(text) }
   const [a, b] = ctx.workspaceSshFixture.accounts
   if (a === undefined || b === undefined) throw new Error('Accounts did not load')
-  const model = new Model()
+  const model = new WorkspaceFixtureModel()
   ctx.llm.registerAdapter(['ssh-fixture'], model)
   const base = `http://127.0.0.1:${ctx.webServer.port}`
   const login = async (account: typeof a) => {

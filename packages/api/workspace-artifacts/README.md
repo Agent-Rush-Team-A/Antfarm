@@ -38,6 +38,10 @@ Load the [file guide and opt-in overlay](../../../docs/user/workspace-artifacts.
 
 Paths use `/` between exact components. Absolute paths, drive prefixes, `.` or `..` components, empty interior components, backslashes, control bytes, components above 255 UTF-8 bytes and paths above 4095 UTF-8 bytes are refused. Symlinks and special files are omitted from listings and never downloaded.
 
+### Remote Workspace storage
+
+Select `storage: provided` and inject `workspaceFileAccess` to use the [cloud Workspace provider](../../sandbox/harness-sandbox/README.md#workspace-vultr). Missing providers refuse startup; remote errors do not fall back to the registered host directory. Requests retain original workspace authority and cancellation through upload publication or download settlement. With `storage: local`, the existing descriptor-based local behavior remains available.
+
 -----
 
 <a id="understand-the-implementation"></a>

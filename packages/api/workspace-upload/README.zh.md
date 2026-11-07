@@ -27,19 +27,24 @@ kind: "package-reference"
 | 配置 | 默认值 | 含义 |
 |---|---|---|
 | `maxBytes` | `33554432` | 正安全整数；单文件字节数的包含式上限。 |
+| `storage` | `local` | 选择基于本地描述符的存储，或注入的 `provided` 后端。 |
 
 `workspaceUpload/limits({ workspaceId })` 返回字节数上限。以 `Content-Type: application/octet-stream` 将原始字节发送到 `POST /api/workspace/uploadFileBinary?workspaceId=…&name=…`。两个请求均不接受主机路径。本地 owner 调用使用 owner 权限；多用户账号必须具有工作区所有权绑定。匿名请求和其他工作区均被拒绝。
 
 文件名必须是单一名称，最多 255 个 UTF-8 字节。拒绝目录分隔符、控制字符、盘符前缀、空白名称、`.` 和 `..`。允许空文件。现有文件、目录和符号链接均返回 `exists`；重试前先重命名所选文件。
+### 远程工作区存储
+
+设置 `storage: provided` 并注入 `workspaceFileAccess`，即可使用[云工作区提供方](../../sandbox/harness-sandbox/README.zh.md#workspace-vultr)。提供方缺失时拒绝启动，远程错误不回退到登记的宿主目录。上传发布或下载收束之前，请求持续保留原工作区权限与取消信号。设置 `storage: local` 时，继续提供原有基于描述符的本地行为。
+
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
 服务打开可信注册根目录时不跟随末端符号链接，将字节暂存到私有兄弟目录，在接收过程中检查大小，发布前同步文件，再通过已打开的目录描述符创建排他硬链接。发布前重新检查权限和工作区注册。部署必须保证工作区父目录可信，并将暂存位置放在同一文件系统。
 
-发布文件继承工作区目录的组，权限为 `0660`。按 [Runner 部署](../../../team-docs/SANDBOX-RUNNER.md)为工作区目录配置非 root 沙箱账号所需的组和访问权限。上传不创建或配置沙箱。
+发布文件继承工作区目录的组，权限为 `0660`。按 [Runner 部署](../../../team-docs/SANDBOX-RUNNER.md)为工作区目录配置非 root 沙箱账号所需的组和访问权限。本地上传不创建或配置沙箱；云提供方会在远程上传前开启或恢复 VM。
 
-成功清理后返回 `{ ok: true, value: { name, bytes } }`。失败返回 `{ ok: false, error: { reason, stored } }`；内部路径和原因仅记录在 Host 日志中。`stored` 只在发布后变为 true，因此清理失败可能对应已提交文件。浏览器将丢失确认的结果报告为未知，并要求用户检查工作区后再重试。始终不替换现有目录项。
+成功清理后返回 `{ ok: true, value: { name, bytes } }`。失败返回 `{ ok: false, error: { reason, stored } }`；内部路径和原因仅记录在 Host 日志中。`stored` 只在确认发布后变为 true，因此清理失败可能对应已提交文件。远程提交确认丢失时返回 `unknown`，此时 `stored: false` 不能证明文件不存在。浏览器将丢失确认的结果报告为未知，并要求用户检查工作区后再重试。始终不替换现有目录项。
 
 Client 服务只在本插件挂载时提供 `ctx.workspaceUploads.uploadFile(workspaceId, file, signal)`。工作区界面消费此服务，不将生成的 Remote 调用存根视为能力可用性。限制查询与文件传输共享调用者和 provider 的取消信号。限制查询期间取消会在发送字节前返回 `cancelled`，包括 Gateway 返回失败结果的情况。相对文档的 HTTP 路径保留部署 URL 前缀。浏览器端卸载会中止并等待上传结束。
 
