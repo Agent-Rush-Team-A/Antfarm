@@ -122,9 +122,10 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
     async function startServer(idleTimeoutMs: number): Promise<string> {
       await writeFile(overlay, `- id: sandbox-idle\n  config:\n    idleTimeoutMs: ${idleTimeoutMs}\n    sweepIntervalMs: 1000\n`)
       const child = spawn(process.execPath, ['--import', nodeImport, join(REPO_ROOT, 'apps/cli/src/bin.ts'),
-        'web', '--no-open', '--port', '0', '--patch', join(REPO_ROOT, 'apps/cli/config/antfarm-web.patch.yml'),
+        'web', '--patch', join(REPO_ROOT, 'apps/cli/config/antfarm-web.patch.yml'),
         '--patch', join(REPO_ROOT, 'apps/cli/config/examples/harness-vultr.patch.yml'),
-        '--patch', join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml'), '--patch', overlay],
+        '--patch', join(REPO_ROOT, 'apps/web/tests/pin-browse-picker.overlay.yml'), '--patch', overlay,
+        '--no-open', '--port', '0'],
       { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] })
       const done = completion(child)
       void done.catch(() => {}) // The owning startup or teardown awaits and reports this failure.
