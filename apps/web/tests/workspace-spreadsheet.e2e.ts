@@ -6,6 +6,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { zstdDecompressSync } from 'node:zlib'
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright'
 import { expect, test } from 'vitest'
 import { z } from 'zod'
@@ -206,7 +207,11 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
         const input = currentPage.locator('[data-composer-input][contenteditable="true"]').first()
         await writeComposerDraft(currentPage, input, text)
         await input.press('Enter')
-        await currentPage.getByText(done, { exact: true }).last().waitFor({ timeout: 600_000 })
+        await Promise.race([
+          currentPage.getByText(done, { exact: true }).last().waitFor({ timeout: 600_000 }),
+          currentPage.getByText('The model service rejected the credential. Check your personal API key and its permissions.', { exact: true })
+            .waitFor({ timeout: 600_000 }).then(() => { throw new Error('Real inference rejected the configured personal credential') }),
+        ])
       }
       async function panel() {
         await currentPage.getByRole('button', { name: 'Workspace sandbox', exact: true }).click()
@@ -313,9 +318,12 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
       expect(await download('月度汇总.csv')).toEqual(monthly)
       await record('idle-reclaimed-and-download-preserved')
       const logs: string[] = []
-      for await (const path of glob('**/*.jsonl', { cwd: root })) logs.push(await readFile(join(root, path), 'utf8'))
+      for await (const path of glob(['**/*.jsonl', '**/*.jsonl.zstd'], { cwd: root })) {
+        const bytes = await readFile(join(root, path))
+        logs.push((path.endsWith('.zstd') ? zstdDecompressSync(bytes) : bytes).toString('utf8'))
+      }
       await writeFile(join(runDir, 'sessions.jsonl'), logs.join('\n'))
-      expect(logs.join('\n')).toContain('execution_timeout')
+      expect(logs.join('\n')).toContain('SANDBOX_EXECUTION_TIMEOUT')
       success = true
     } catch (error) {
       failures.push(error)
