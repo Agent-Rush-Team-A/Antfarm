@@ -1,0 +1,11 @@
+.dialog { width: min(480px, 100%); }
+.body { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.body p { margin: 0; color: var(--dsw-alias-label-primary); }
+.workspace { overflow-wrap: anywhere; font-weight: 500; }
+.identity { overflow-wrap: anywhere; font-size: 13px; }
+.choices { display: flex; flex-direction: column; gap: 12px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.choices legend { padding: 0; margin-bottom: 12px; }
+.choice { display: flex; align-items: center; gap: 8px; min-height: 32px; cursor: pointer; }
+.choice input { accent-color: var(--dsw-alias-label-primary); }
+.choices:disabled .choice { cursor: default; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }

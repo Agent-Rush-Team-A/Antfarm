@@ -4,6 +4,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { RemoteError, type RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { ConnectionGeneration } from '@deepseek-ai/dsh-client-connection/client'
 import type { SandboxValue } from '@deepseek-ai/dsh-harness-sandbox/types'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import { SandboxModel, type SandboxApi, type SandboxView } from '../src/client/model.ts'
 
@@ -194,4 +195,16 @@ test('an opening response from a lost connection cannot publish running or retry
   await flush()
   expect(f.seen.at(-1)).toMatchObject({ connected: false, state: undefined })
   expect(f.api.open).toHaveBeenCalledTimes(1)
+})
+
+
+test.each([
+  { reason: 'mode_forbidden', error: new RemoteError('workspace/session-operation-forbidden', 'private diagnostic', {
+    workspaceId, sessionId: 'single-session' as SessionId, operation: 'archive' }) },
+  { reason: 'mode_recovery', error: new RemoteError('workspace/mode-recovery-required', 'private diagnostic', {
+    workspaceId, operation: 'create-session' }) },
+] as const)('preserves stable workspace admission guidance for $reason', async ({ error, reason }) => {
+  const f = fixture()
+  f.api.open.mockResolvedValue({ ok: false, error })
+  expect(await f.model.change(workspaceId, 'open')).toEqual({ reason, operation: 'open', outcomeUnknown: false })
 })

@@ -12,7 +12,7 @@ import type { SandboxModel } from './model.ts'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type { IWorkspaces } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { failureKey } from './failure-key.ts'
-import { sandboxAllowed, sandboxPermission } from './access.ts'
+import { sandboxAllowed, sandboxPermission, sandboxModeAllows } from './access.ts'
 import type { UiWorkspace } from '@deepseek-ai/dsh-client-ui-workspace/client'
 
 /**
@@ -51,7 +51,8 @@ export function mountUi(ctx: Context, model: SandboxModel): void {
     dismiss,
     refresh: (workspaceId) => { model.refresh(workspaceId) },
     change: (workspaceId, operation) => {
-      if (!active || !sandboxAllowed(workspace, workspaceId, operation)) return
+      const row = workspaces.list.getSnapshot().items.find(row => row.workspaceId === workspaceId)
+      if (!active || !sandboxAllowed(workspace, workspaceId, operation) || !sandboxModeAllows(row?.modeConfig, operation)) return
       const initiatingEpoch = epoch
       const name = workspaces.list.getSnapshot().items.find(row => row.workspaceId === workspaceId)?.title || t('untitled')
       void model.change(workspaceId, operation).then((problem) => {

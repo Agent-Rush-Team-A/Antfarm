@@ -29,7 +29,9 @@ Antfarm's default Web entry provides account login and workspace file services; 
 
 With the overlay enabled, choose **Workspace sandbox** from the workspace actions menu, or use the shield button in a conversation's input bar. Both entries open the same panel for that workspace; opening the panel only queries status.
 
-Click **Open sandbox** to start it. The panel shows **Starting…**, then **Running** after confirmation. Click **Close sandbox**, then **Confirm close** to stop it; the panel shows **Closing…**, then **Closed** after removal. Cancelling the confirmation or dismissing the panel keeps the sandbox running. Closing retains files and conversations, but stops active and queued tasks.
+Workspace configuration is available from each workspace row and menu. Choose its mode before starting the first Session; this permanently locks that workspace. Single-session modes show status with automatic-management guidance and hide manual sandbox controls. Multi-session modes retain manual controls while configuration is ready.
+
+In multi-session modes, click **Open sandbox** to start it. The panel shows **Starting…**, then **Running** after confirmation. Click **Close sandbox**, then **Confirm close** to stop it; the panel shows **Closing…**, then **Closed** after removal. Cancelling the confirmation or dismissing the panel keeps the sandbox running. Closing retains files and conversations, but stops active and queued tasks.
 
 When both slots are occupied, the panel says **Sandbox capacity is full. Close one or try again later.** Close a running sandbox before retrying the failed opening. Status refresh does not retry opening or closing. A failed query labels the last observed status and disables mutations until a successful query; an unknown operation result blocks opening and requires administrator assistance. Loss of connection or workspace permission dismisses the panel; reopen it after access returns.
 

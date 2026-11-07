@@ -1,0 +1,18 @@
+- dialog "Workspace configuration":
+  - heading "Workspace configuration" [level=2]
+  - button "Close"
+  - paragraph: Workspace A
+  - status: Ready
+  - paragraph: The first session has been created. The mode is permanently locked.
+  - code: <first-session>
+  - group "Workspace mode":
+    - text: Workspace mode
+    - radio "Single session · VM" [checked] [disabled]
+    - text: Single session · VM
+    - radio "Multiple sessions · VM" [disabled]
+    - text: Multiple sessions · VM
+    - radio "Single session · Docker" [disabled]
+    - text: Single session · Docker
+    - radio "Multiple sessions · Docker" [disabled]
+    - text: Multiple sessions · Docker
+  - button "Refresh configuration"

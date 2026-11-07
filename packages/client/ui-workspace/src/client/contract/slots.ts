@@ -243,6 +243,8 @@ export type DirectoryPickingHooks = PropsHooks<DirectoryPickingInjected['hooks']
  * browsing region drives.
  */
 export type WorkspaceBrowserInjected = {
+  /** Open configuration for a captured Workspace without creating a Session. */
+  configureWorkspace?: ((workspaceId: WorkspaceId) => void) | undefined
   /** Open the registered Workspace actions without changing expansion or selection. */
   openWorkspaceMenu: (workspaceId: WorkspaceId, path: string, displayTitle: string, point: { x: number; y: number }, mode?: 'toggle') => void
   /** Dismiss the settled Workspace dialog. */

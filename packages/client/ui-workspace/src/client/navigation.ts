@@ -1,3 +1,5 @@
+import { modeFailureKey } from './mode-errors.ts'
+import { multipleSessions, recentWorkspace } from './mode-policy.ts'
 /** Workspace archive and directory UI capability. */
 
 import { Service, type Context } from '@deepseek-ai/cordis'
@@ -49,7 +51,8 @@ export interface UiWorkspace {
    * @param beforeOpen - optional synchronous preparation for the selected Session,
    * skipped after supersession; a throw aborts the open and releases the retained reference.
    * @param options - choices for the Session the connection creates or reuses.
-   * @returns completion; a superseded request may create a Session but does not open it.
+   * @returns completion, or acceptance of the configuration dialog for a fresh Workspace.
+   * Its first Session is created only after explicit confirmation; later navigation can supersede opening.
    * @throws on failure; a refused creation is also shown through the Workspace
    * notice unless a later navigation or disposal superseded the request.
    */
@@ -81,8 +84,8 @@ export interface UiWorkspace {
    */
   connectWorkspace(workspaceId: WorkspaceId, options?: Pick<StartSessionOptions, 'agentPreset'>): Promise<SessionId>
   /**
-   * Open the Workspace blank `connectWorkspace` resolves, so New Session returns to that blank's
-   * unsent draft. A creation the Host refuses is shown through the Workspace notice and leaves the
+   * Open the Workspace blank or its permanent single-mode Session. Fresh Workspaces first show
+   * configuration and wait for explicit confirmation. A creation the Host refuses is shown through the Workspace notice and leaves the
    * selection as it was.
    * @param workspaceId - explicit target; absent inherits the current or most recent Workspace.
    * @param options - initial content, the blank's preset, and `whenDraftExists`, which decides
@@ -183,6 +186,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
    * @param sessions - pure Session Controller.
    * @param view - the browser's viewing-store write set (one instance shared with its registration).
    * @param notify - show one notice through the Workspace notice channel.
+   * @param configureMode - Offer mode choices before an explicit first-Session continuation.
    */
   constructor(
     ctx: Context,
@@ -191,6 +195,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     private readonly sessions: ISessions,
     private readonly view: Pick<WorkspaceViewStoreActions, 'pinSessionOrder'>,
     private readonly notify: (toast: RowToast) => void,
+    private readonly configureMode: (workspaceId: WorkspaceId, begin: () => void) => void,
   ) {
     super(ctx, 'uiWorkspace')
     ctx.effect(() => {
@@ -235,6 +240,12 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   private createInWorkspace(workspace: WorkspaceView, options: Pick<StartSessionOptions, 'agentPreset'>): Promise<SessionId> {
     const archived = this.workspaces.list.getSnapshot().archivedSessionIds
     const sessions = this.sessions.list.getSnapshot()
+    const first = workspace.modeConfig.firstSessionId
+    if (!multipleSessions(workspace) && first !== null) {
+      return sessions.byId[first]?.blank === true
+        ? this.createNamed({ workspaceId: workspace.workspaceId, sessionId: first })
+        : Promise.resolve(first)
+    }
     const blank = sessions.ids.find((id) => {
       const summary = sessions.byId[id]
       const listed = summary?.projectionValues?.agentPreset
@@ -299,6 +310,15 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     beforeOpen?: (sessionId: SessionId) => void,
     options: Pick<StartSessionOptions, 'agentPreset'> = {},
   ): Promise<void> {
+    const row = this.workspaces.list.getSnapshot().items.find(item => item.workspaceId === workspaceId)
+    if (row?.modeConfig.firstSessionId === null) {
+      let opening: Promise<void> | undefined
+      this.configureMode(workspaceId, () => {
+        opening = this.openWorkspaceSession(workspaceId, beforeOpen, options)
+        void opening.catch((error: unknown) => { console.warn('configured Session creation failed:', error) })
+      })
+      return opening ?? Promise.resolve()
+    }
     return this.openWorkspaceSession(workspaceId, beforeOpen, options)
   }
 
@@ -314,7 +334,11 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     } catch (error: unknown) {
       // Reported here, not in connectWorkspace: startup restoration calls that
       // directly and stays console-only.
-      if (!navigation.aborted) this.notify({ kind: 'createFailed', message: creationFailureMessage(error) })
+      if (!navigation.aborted) {
+        const guidance = modeFailureKey(error, 'toast.createFailed')
+        this.notify({ kind: 'createFailed', message: guidance === 'toast.createFailed' ? creationFailureMessage(error)
+          : this.ctx.locale.bind('workspace')(guidance) })
+      }
       throw error
     }
     if (navigation.aborted) return
@@ -357,14 +381,16 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       this.clearMain()
       return
     }
-    const opening = this.openWorkspace(target, initializeDraft ? (id) => {
-      const binding = this.sessions.binding(id)
-      if (binding === undefined) this.draftPreparationFailed()
-      this.prepareDraft(binding, draftOptions)
-    } : undefined, agentPreset === undefined ? {} : { agentPreset })
-    void opening.catch(
-      (reason: unknown) => { console.warn('new session failed:', reason) },
-    )
+    const begin = (): void => {
+      if (this.lifetime.signal.aborted) return
+      const opening = this.openWorkspace(target, initializeDraft ? (id) => {
+        const binding = this.sessions.binding(id)
+        if (binding === undefined) this.draftPreparationFailed()
+        this.prepareDraft(binding, draftOptions)
+      } : undefined, agentPreset === undefined ? {} : { agentPreset })
+      void opening.catch((reason: unknown) => { console.warn('new session failed:', reason) })
+    }
+    begin()
   }
 
   private prepareDraft(binding: SessionBinding, options: DraftInitializationOptions): void {
@@ -489,7 +515,11 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       if (navigation.aborted) return
       target = prepared?.workspaceId
     }
-    if (sessionId === undefined && target !== undefined) sessionId = await this.connectWorkspace(target)
+    if (sessionId === undefined && target !== undefined) {
+      const row = this.workspaces.list.getSnapshot().items.find(item => item.workspaceId === target)
+      // Fresh Workspaces remain configurable until the user starts the first Session.
+      if (row !== undefined && row.modeConfig.firstSessionId !== null) sessionId = await this.connectWorkspace(target)
+    }
     if (sessionId !== undefined && !navigation.aborted) {
       this.replaceMain(sessionId, navigation, 'preserve')
     }
@@ -572,28 +602,6 @@ function creationFailureMessage(error: unknown): string {
   const refused = sessionCreateErrorOf(error)
   if (refused !== undefined) return `${refused.rpcError.code}: ${refused.rpcError.message}`
   return error instanceof Error ? error.message : String(error)
-}
-
-/** Stable tie-breaking follows Host Workspace order. */
-function recentWorkspace(
-  workspaces: readonly WorkspaceView[],
-  sessions: SessionListState['byId'],
-): WorkspaceId | undefined {
-  let selected: WorkspaceId | undefined
-  let selectedTime = Number.NEGATIVE_INFINITY
-  for (const workspace of workspaces) {
-    let latest = Number.NEGATIVE_INFINITY
-    for (const sessionId of workspace.sessionIds) {
-      const session = sessions[sessionId]
-      if (session !== undefined) latest = Math.max(latest, session.updatedAt)
-    }
-    if (latest === Number.NEGATIVE_INFINITY) latest = Date.parse(workspace.createdAt)
-    if (selected === undefined || latest > selectedTime) {
-      selected = workspace.workspaceId
-      selectedTime = latest
-    }
-  }
-  return selected
 }
 
 export { UiWorkspaceService }

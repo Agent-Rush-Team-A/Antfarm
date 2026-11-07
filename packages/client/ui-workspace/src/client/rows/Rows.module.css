@@ -347,8 +347,7 @@
   /* Only update timestamps disappear; pending-interaction labels remain visible. */
   .sessionRow .timestamp,
   .sessionRow:has(.pinnedAction) .pinIndicator,
-  .sessionRow .rowQuickActions > :global([data-slot]) > :not(.pinnedAction),
-  .projectRow[aria-expanded='false'] .rowActions {
+  .sessionRow .rowQuickActions > :global([data-slot]) > :not(.pinnedAction) {
     display: none;
   }
 

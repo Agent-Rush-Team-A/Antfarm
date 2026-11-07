@@ -1,3 +1,4 @@
+import { multipleSessions, sessionWorkspace } from '../mode-policy.ts'
 /** Structured Session actions over the workspace owner's existing callbacks. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { RemoteEndpoint } from '@deepseek-ai/dsh-api-remote-access/client'
@@ -17,6 +18,7 @@ type Actions = Omit<PinSessionInjected & ArchiveSessionInjected, 'hooks'>
  */
 export function registerSessionMenus(ctx: Context, actions: Actions): void {
   const t = ctx.locale.bind('workspace')
+  const sessions = ctx.get('sessions')
   const register = (
     id: string,
     order: number,
@@ -28,12 +30,17 @@ export function registerSessionMenus(ctx: Context, actions: Actions): void {
       observe: ({ sessionId }) => [
         ctx.workspaces.list, ctx.locale,
         ...endpoints.map(action => ctx.remoteAccess.source('session', sessionId, action)),
+        ...sessions === undefined ? [] : [sessions.list],
       ],
       resolve,
     }), `ui-workspace: ${id} menu`)
   }
-  const allowed = (target: ContextMenuTargetMap['session'], action: RemoteEndpoint): boolean =>
-    ctx.remoteAccess.source('session', target.sessionId, action).getSnapshot()
+  const allowed = (target: ContextMenuTargetMap['session'], action: RemoteEndpoint): boolean => {
+    const row = sessionWorkspace(ctx.workspaces.list.getSnapshot().items, target.sessionId, sessions?.list.getSnapshot().byId)
+    if (row !== undefined && !multipleSessions(row)
+      && (action === 'session/fork' || action === 'workspace/archiveSession' || action === 'workspace/unarchiveSession')) return false
+    return ctx.remoteAccess.source('session', target.sessionId, action).getSnapshot()
+  }
   const archived = (target: ContextMenuTargetMap['session']): boolean =>
     ctx.workspaces.list.getSnapshot().archivedSessionIds.includes(target.sessionId)
   register('pin', 100, ['workspace/pinSession', 'workspace/unpinSession'], (target) => {

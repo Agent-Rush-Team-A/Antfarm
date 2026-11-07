@@ -3,7 +3,7 @@ import { contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, createEvent, fireEvent, render, screen } from '@testing-library/react'
 import type { ComponentProps } from 'react'
-import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { WorkspaceSnapshot, WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { allowAllAccess, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
@@ -63,10 +63,18 @@ function SessionNodeItem({ renderSlot = renderNoRowEntries, onRenameRequest = ()
 // Direct header specs hold every access answer unless the case refuses one.
 function ProjectRowItem({
   useRemoteAccess = allowAllAccess.useRemoteAccess, useWorkspaceAccess = allowAllAccess.useWorkspaceAccess,
-  openWorkspaceMenu = vi.fn(), useContextMenuTarget = select => select(null), ...props
-}: Omit<ProjectRowItemProps, 'useRemoteAccess' | 'useWorkspaceAccess' | 'openWorkspaceMenu' | 'useContextMenuTarget' | 'useContextMenu'>
-  & Partial<Pick<ProjectRowItemProps, 'useRemoteAccess' | 'useWorkspaceAccess' | 'openWorkspaceMenu' | 'useContextMenuTarget' | 'useContextMenu'>>) {
-  return <ProjectRowItemComponent {...props} useRemoteAccess={useRemoteAccess} useWorkspaceAccess={useWorkspaceAccess}
+  openWorkspaceMenu = vi.fn(), useContextMenuTarget = select => select(null),
+  useWorkspaces = select => select({ items: [{ workspaceId: props.group.workspaceId ?? wid('group'),
+    title: 'Group', path: '/project', sessionIds: [], createdAt: '2026-11-07T00:00:00Z', updatedAt: '2026-11-07T00:00:00Z',
+    modeConfig: { workspaceId: props.group.workspaceId ?? wid('group'), mode: 'multi-vm', revision: 0,
+      modeLocked: false, lockReason: null, operationState: 'ready', firstSessionId: null } }],
+  pinnedSessionIds: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null } satisfies WorkspaceSnapshot), ...props
+}: Omit<ProjectRowItemProps,
+  'useRemoteAccess' | 'useWorkspaceAccess' | 'openWorkspaceMenu' | 'useContextMenuTarget' | 'useContextMenu' | 'useWorkspaces'>
+  & Partial<Pick<ProjectRowItemProps,
+  'useRemoteAccess' | 'useWorkspaceAccess' | 'openWorkspaceMenu' | 'useContextMenuTarget' | 'useContextMenu' | 'useWorkspaces'>>) {
+  return <ProjectRowItemComponent {...props} useWorkspaces={useWorkspaces}
+    useRemoteAccess={useRemoteAccess} useWorkspaceAccess={useWorkspaceAccess}
     useContextMenu={props.useContextMenu ?? contextMenuHook((target, point) => { if (target.kind === 'workspace') openWorkspaceMenu(target.value.workspaceId, target.value.path, target.value.displayTitle, point) })} openWorkspaceMenu={openWorkspaceMenu} useContextMenuTarget={useContextMenuTarget} />
 }
 

@@ -1,0 +1,18 @@
+- dialog "Workspace configuration":
+  - heading "Workspace configuration" [level=2]
+  - button "Close"
+  - paragraph: Workspace A
+  - status: Ready
+  - paragraph: Choose a mode before starting the first session.
+  - group "Workspace mode":
+    - text: Workspace mode
+    - radio "Single session · VM" [checked]
+    - text: Single session · VM
+    - radio "Multiple sessions · VM"
+    - text: Multiple sessions · VM
+    - radio "Single session · Docker"
+    - text: Single session · Docker
+    - radio "Multiple sessions · Docker"
+    - text: Multiple sessions · Docker
+  - button "Save mode" [disabled]
+  - button "Refresh configuration"

@@ -29,6 +29,8 @@ The Web bundle includes this plugin disabled by default. Enable it through the [
 
 The workspace menu and conversation input action open the same panel for the selected workspace. It displays current state, prevents repeated pending operations, refreshes explicitly and asks for confirmation before closing. Dismissing the panel leaves the sandbox running.
 
+Single-session modes show live sandbox status and explain automatic startup and reclamation; they offer no manual open, close, or cleanup. Multi-session modes retain those controls while mode admission is ready. The model checks the latest mode again before dispatch, so a stale panel cannot send a forbidden operation.
+
 Capacity exhaustion asks the user to close a sandbox or retry later. Unknown operation results disable new mutations; a failed status query marks the last observed state as stale. Workspace access revocation removes the panel and menu entry, and connection replacement or plugin disposal suppresses delayed feedback.
 
 Cloud startup failures request a status refresh before retrying; unsafe closure failures request administrator assistance before reopening.

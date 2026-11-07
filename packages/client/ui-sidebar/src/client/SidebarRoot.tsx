@@ -157,7 +157,7 @@ export function SidebarRoot({
   selectPanel,
   setPinned,
   trackEntryClick,
-  useRemoteAccess,
+  sessionCreationAllowed, useWorkspaces, useSessions, useRemoteAccess,
   usePanels,
   useEntryPins,
   useEntryActions,
@@ -174,7 +174,10 @@ export function SidebarRoot({
   const shortcut = useShortcuts(rows => rows.find(row => row.id === 'sidebar.left.toggle'))
   const newShortcut = useShortcuts(rows => rows.find(row => row.id === 'session.new'))
   // A page whose access snapshot excludes starting a Session offers no New Session affordance.
-  const canStartSession = useRemoteAccess('session/create')
+  const workspaces = useWorkspaces(snapshot => snapshot)
+  const sessions = useSessions(snapshot => snapshot)
+  const modeAllowsCreation = sessionCreationAllowed?.(workspaces, sessions) ?? true
+  const canStartSession = useRemoteAccess('session/create') && modeAllowsCreation
   const toggleLabel = collapsed ? t('toggle.open') : t('toggle.collapse')
   // Wide content stays mounted while the collapse animates (fading via
   // .collapsed .wide), unmounts at settle, and remounts right away on expand.

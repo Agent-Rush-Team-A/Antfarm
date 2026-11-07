@@ -1,3 +1,4 @@
+import { enModes, zhModes, jaModes, esModes, frModes, deModes, ruModes, ptModes } from './locales/modes.ts'
 /**
  * `workspace` namespace dictionaries: the browsing region (section header,
  * search, tree rows, dialogs) and the pick/add flow. Runtime failure
@@ -6,6 +7,7 @@
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
+  ...zhModes,
   'files.action': '工作区文件',
   'files.root': '工作区根目录',
   'files.up': '上一级',
@@ -164,6 +166,7 @@ export type WorkspaceKey = keyof typeof zh
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
+  ...enModes,
   'files.action': 'Workspace files',
   'files.root': 'Workspace root',
   'files.up': 'Parent folder',
@@ -319,6 +322,7 @@ export const en = {
 
 /** Japanese copy, checked against the English keys. */
 export const ja = {
+  ...jaModes,
   'files.action': 'ワークスペースのファイル',
   'files.root': 'ワークスペースのルート',
   'files.up': '上のフォルダー',
@@ -474,6 +478,7 @@ export const ja = {
 
 /** Spanish dictionary, checked against the English keys. */
 export const es = {
+  ...esModes,
   'files.action': 'Archivos del espacio de trabajo',
   'files.root': 'Raíz del espacio de trabajo',
   'files.up': 'Carpeta superior',
@@ -629,6 +634,7 @@ export const es = {
 
 /** French dictionary, checked against the English keys. */
 export const fr = {
+  ...frModes,
   'files.action': 'Fichiers de l’espace de travail',
   'files.root': 'Racine de l’espace de travail',
   'files.up': 'Dossier parent',
@@ -784,6 +790,7 @@ export const fr = {
 
 /** German dictionary, checked against the English keys. */
 export const de = {
+  ...deModes,
   'files.action': 'Arbeitsbereichsdateien',
   'files.root': 'Arbeitsbereichswurzel',
   'files.up': 'Übergeordneter Ordner',
@@ -939,6 +946,7 @@ export const de = {
 
 /** Russian dictionary, checked against the English keys. */
 export const ru = {
+  ...ruModes,
   'files.action': 'Файлы рабочего пространства',
   'files.root': 'Корень рабочего пространства',
   'files.up': 'Родительская папка',
@@ -1094,6 +1102,7 @@ export const ru = {
 
 /** Portuguese dictionary, checked against the English keys. */
 export const pt = {
+  ...ptModes,
   'files.action': 'Arquivos do espaço de trabalho',
   'files.root': 'Raiz do espaço de trabalho',
   'files.up': 'Pasta superior',

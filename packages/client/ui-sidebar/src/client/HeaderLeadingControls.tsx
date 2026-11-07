@@ -22,10 +22,13 @@ export type HeaderLeadingControlsProps =
  * @returns the sidebar toggle, plus New Session on Desktop while access allows `session/create`.
  */
 export function HeaderLeadingControls({
-  toggleSidebar, startSession, trackEntryClick, useRemoteAccess, useShortcuts, t,
+  toggleSidebar, startSession, trackEntryClick, sessionCreationAllowed, useWorkspaces, useSessions, useRemoteAccess, useShortcuts, t,
 }: HeaderLeadingControlsProps) {
   // A page whose access snapshot excludes starting a Session keeps only the sidebar toggle here.
-  const canStartSession = useRemoteAccess('session/create')
+  const workspaces = useWorkspaces(snapshot => snapshot)
+  const sessions = useSessions(snapshot => snapshot)
+  const modeAllowsCreation = sessionCreationAllowed?.(workspaces, sessions) ?? true
+  const canStartSession = useRemoteAccess('session/create') && modeAllowsCreation
   const desktop = document.documentElement.hasAttribute('data-platform')
   const shortcut = useShortcuts(rows => rows.find(row => row.id === 'sidebar.left.toggle'))
   const newShortcut = useShortcuts(rows => rows.find(row => row.id === 'session.new'))

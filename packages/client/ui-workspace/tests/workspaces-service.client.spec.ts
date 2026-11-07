@@ -55,7 +55,7 @@ function workspace(
 ): WorkspaceView {
   return {
     modeConfig: { workspaceId: wid(id), mode: 'multi-vm', revision: 0, operationState: 'ready',
-      modeLocked: false, lockReason: null, firstSessionId: null },
+      modeLocked: true, lockReason: 'first-session-created', firstSessionId: sessionIds[0] ?? sid('prior-' + id) },
     workspaceId: wid(id),
     path: `/w/${id}`,
     title: id,
@@ -275,6 +275,7 @@ class FakeDirectoryPicker {
 }
 
 interface BenchOptions {
+  readonly configureMode?: (id: WorkspaceId, begin: () => void) => void
   readonly conversation?: boolean
   readonly configureWorkspaces?: (workspaces: FakeWorkspaces) => void
   readonly workspaces?: WorkspaceSnapshot
@@ -313,6 +314,7 @@ function bench(options: BenchOptions = {}) {
     sessions,
     view.actions,
     notify,
+    options.configureMode ?? ((_id, begin) => { begin() }),
   )
   return { ctx, directoryPicker, sessions, uiWorkspace, workspaces, layout, selectPanel, view, notify, requestDraftInitialization }
 }
@@ -324,6 +326,31 @@ function lastOpening(open: MockInstance<UiWorkspaceService['openWorkspace']>): P
 }
 
 describe('UiWorkspaceService', () => {
+  it('leaves a fresh Workspace unlocked on startup and starts only after explicit mode confirmation', async () => {
+    const base = workspace('fresh')
+    const fresh = { ...base, modeConfig: { ...base.modeConfig, firstSessionId: null, modeLocked: false, lockReason: null } }
+    const configureMode = vi.fn<(id: WorkspaceId, begin: () => void) => void>()
+    const b = bench({ workspaces: workspaceState([fresh]), sessions: sessionState([]), configureMode })
+    await setImmediate()
+    expect(b.sessions.create).not.toHaveBeenCalled()
+    expect(configureMode).not.toHaveBeenCalled()
+    b.uiWorkspace.startSession(wid('fresh'))
+    expect(configureMode).toHaveBeenCalledOnce()
+    expect(b.sessions.create).not.toHaveBeenCalled()
+    configureMode.mock.calls[0]![1]()
+    await setImmediate()
+    expect(b.sessions.create).toHaveBeenCalledWith({ workspaceId: wid('fresh') })
+  })
+
+  it.each(['single-vm', 'single-docker'] as const)('opens the permanent %s Session without creating a replacement', async (mode) => {
+    const base = workspace('single')
+    const value = { ...base, modeConfig: { ...base.modeConfig, mode, firstSessionId: sid('first') } }
+    const b = bench({ workspaces: workspaceState([value]), sessions: sessionState([], 'pending') })
+    await b.uiWorkspace.openWorkspace(wid('single'))
+    expect(b.sessions.create).not.toHaveBeenCalled()
+    expect(b.sessions.retain).toHaveBeenCalledWith(sid('first'), { source: 'mainView' })
+  })
+
   it('prepares and selects the default Workspace after both startup baselines', async () => {
     const b = bench({ configureWorkspaces: (workspaces) => {
       workspaces.initializeDefault.mockImplementation(async () => {
@@ -1571,4 +1598,16 @@ describe('UiWorkspaceService', () => {
       rpcError: { code: 'directory-picker/exists' },
     })
   })
+})
+
+
+it('localizes permanent single-session refusal without exposing backend diagnostics', async () => {
+  const b = bench({ workspaces: workspaceState([workspace('a')]), sessions: sessionState() })
+  await vi.waitFor(() => { expect(b.sessions.retain).toHaveBeenCalledOnce() })
+  const error = new SessionCreateError(new RemoteError('workspace/session-limit', 'private admission diagnostic', {
+    workspaceId: wid('a'), firstSessionId: sid('first') }), undefined)
+  b.sessions.create.mockRejectedValueOnce(error)
+  await expect(b.uiWorkspace.openWorkspace(wid('a'))).rejects.toBe(error)
+  expect(b.notify).toHaveBeenLastCalledWith({ kind: 'createFailed',
+    message: 'This workspace already has its only session. Continue in that session.' })
 })

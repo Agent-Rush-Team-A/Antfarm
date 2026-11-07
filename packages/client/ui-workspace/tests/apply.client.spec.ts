@@ -21,6 +21,7 @@ import {
   type RowToastInjected, type SessionArchiveConfirmInjected, type SessionRenameDialogInjected,
   type WorkspaceViewStoreHandle,
 } from '../src/client/contract/slots.ts'
+import { ModeOverlay } from '../src/client/ModeDialog.tsx'
 import { WorkspaceBrowser } from '../src/client/rows/WorkspaceBrowser.tsx'
 import { ArchiveSessionRowButton, SessionArchiveConfirmDialog } from '../src/client/session-actions/ArchiveSession.tsx'
 import { PinSessionRowButton } from '../src/client/session-actions/PinSession.tsx'
@@ -71,7 +72,7 @@ async function bench(access: 'fake' | 'static' = 'fake') {
   })
   const menuRegistry = new MenuRegistry(vi.fn())
   onTestFinished(() => { menuRegistry.dispose() })
-  ctx.provide('contextMenus', { register: menuRegistry.register.bind(menuRegistry), resolve: menuRegistry.resolve.bind(menuRegistry), active: createSnapshotStore(null), open: vi.fn(), close: vi.fn() } as never)
+  ctx.provide('contextMenus', { register: menuRegistry.register.bind(menuRegistry), resolve: menuRegistry.resolve.bind(menuRegistry), active: createSnapshotStore(null), open: vi.fn(), close: vi.fn(), notify: vi.fn() } as never)
   ctx.provide('uiConversation', {})
   await ctx.plugin(SlotRegistry).await()
   const accessSource = vi.fn((_kind: string, _id: string, _action: string): HostObservable<boolean> => ALLOWED)
@@ -313,7 +314,7 @@ describe('ui-workspace apply', () => {
     // The row actions follow the browser's own declaration, whenever it lands.
     expect(after.slots.entries(MENU_ITEM)).toHaveLength(0)
     expect(after.slots.entries(ROW_ACTION)).toHaveLength(2)
-    expect(after.slots.entries('shell.overlay')).toHaveLength(3)
+    expect(after.slots.entries('shell.overlay')).toHaveLength(4)
   })
 
   it('declares the two Session row lists and registers the shipped actions and overlay surfaces into them', async () => {
@@ -337,6 +338,7 @@ describe('ui-workspace apply', () => {
       ['pin', 200, PinSessionRowButton, 'workspace'],
     ])
     expect(rows('shell.overlay')).toEqual([
+      ['workspace.mode', undefined, ModeOverlay, 'workspace'],
       ['workspace.session-rename', undefined, SessionRenameDialog, 'workspace'],
       ['workspace.session-archive', undefined, SessionArchiveConfirmDialog, 'workspace'],
       ['workspace.row-toast', undefined, RowActionToast, undefined],
@@ -559,7 +561,8 @@ describe('ui-workspace apply', () => {
     } finally {
       warn.mockRestore()
     }
-    // A rejected archive raises no notice.
+    // A rejected archive reports a localized application toast and retains the undo notice.
+    expect(b.ctx.contextMenus.notify).toHaveBeenCalledWith('操作失败，请刷新配置后重试', false)
     expect(toast.hooks.toast.getSnapshot()).toEqual({ kind: 'archived', sessionId: 'one', seq: 1 })
   })
 
@@ -920,7 +923,7 @@ describe('ui-workspace apply', () => {
     await fiber.await()
     expect(b.slots.entries(MENU_ITEM)).toHaveLength(0)
     expect(b.slots.entries(ROW_ACTION)).toHaveLength(2)
-    expect(b.slots.entries('shell.overlay')).toHaveLength(3)
+    expect(b.slots.entries('shell.overlay')).toHaveLength(4)
     await fiber.dispose()
     expect(b.slots.entries('sidebar.workspaces')).toHaveLength(0)
     expect(b.slots.entries('conversation.hero.workspace')).toHaveLength(0)
@@ -951,7 +954,7 @@ it('captures Workspace menu requests, rechecks mutable access, and withdraws reg
   expect(vi.spyOn(b.ctx.contextMenus, 'close')).toHaveBeenCalledOnce()
   const menu = b.ctx.contextMenus.resolve(target)
   await menu.ready
-  expect(menu.source.getSnapshot().map(item => item.id)).toEqual(['workspace.rename/rename', 'workspace.delete/delete'])
+  expect(menu.source.getSnapshot().map(item => item.id)).toEqual(['workspace.rename/rename', 'workspace.mode/configure', 'workspace.delete/delete'])
   menu.select('workspace.rename/rename')
   expect(browser.hooks.workspaceActionRequest.getSnapshot()).toEqual({ action: 'rename', workspaceId: 'alpha', displayTitle: 'Alpha', storedTitle: 'alpha' })
   browser.settleWorkspaceAction()

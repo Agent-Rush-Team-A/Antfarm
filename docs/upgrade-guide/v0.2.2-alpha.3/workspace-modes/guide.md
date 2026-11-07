@@ -18,3 +18,4 @@ The workspace domain advances from version 2 to version 3 and requires mode, rev
 3. Runtime providers import `WorkspaceModeRuntime` and `IWorkspaceModes` from `@deepseek-ai/dsh-workspace/types` and register through `ctx.workspaceRegistry.modes.registerRuntime` before changing modes.
 4. Update external Workspace mocks and wire consumers to include `WorkspaceView.modeConfig`; implement `IWorkspaces.getMode` and `IWorkspaces.setMode`, preserving `WorkspaceModeCommandError.rpcError` for failures.
 5. Verify that a newly registered Workspace reports revision 0 and an unlocked mode configuration.
+6. In the Web interface, choose the Workspace mode before selecting **Start session**. A fresh Workspace no longer creates its first Session during startup or immediately after directory registration; existing Workspace locks remain permanent.

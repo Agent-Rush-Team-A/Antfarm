@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
+import type { WorkspaceId, WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionListState, SessionSummary, SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
 import { SessionForkError } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -229,3 +230,28 @@ it('opens an empty rename draft for unnamed history instead of its directory lab
   if (command.status === 'handled') command.run()
   expect(b.controls.state.getSnapshot().renameTarget).toEqual({ sessionId: 'a', currentTitle: '' })
 })
+
+
+it.each(['single-vm', 'single-docker', 'multi-vm', 'multi-docker'] as const)(
+  'captures mode admission for New Session, fork and archive in %s', async (mode) => {
+    const b = await bench(); const id = 'mode-target' as WorkspaceId
+    const list = createSnapshotStore<WorkspaceSnapshot>({ items: [{ workspaceId: id, title: 'Target', path: '/target',
+      sessionIds: [], createdAt: '2026-11-07T00:00:00Z', updatedAt: '2026-11-07T00:00:00Z',
+      modeConfig: { workspaceId: id, mode, revision: 2, operationState: 'ready', modeLocked: true,
+        lockReason: 'first-session-created', firstSessionId: sid('a') } }], pinnedSessionIds: [], archivedSessionIds: [],
+    state: 'idle', phase: 'ready', error: null })
+    b.ctx.provide('workspaces', { list })
+    for (const name of ['session.new', 'session.fork', 'session.archive']) {
+      const decision = b.commands.get(name)?.resolve(context)
+      expect(decision?.status).toBe(mode.startsWith('single') ? 'blocked' : 'handled')
+      if (name === 'session.new' && decision?.status === 'handled') {
+        b.select('none'); decision.run()
+        expect(b.navigation.startSession).toHaveBeenCalledWith(id)
+        b.select('a')
+      }
+    }
+    list.set({ ...list.getSnapshot(), items: list.getSnapshot().items.map(row => ({ ...row,
+      modeConfig: { ...row.modeConfig, operationState: 'switching', firstSessionId: null } })) })
+    expect(b.commands.get('session.new')?.resolve(context).status).toBe('blocked')
+  },
+)
