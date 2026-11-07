@@ -39,6 +39,7 @@ kind: "package-reference"
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `host` | 必填 | 已有的 OpenSSH 主机别名 |
+| `configFile` | 省略 | 所有主连接和转发命令使用的绝对私有 OpenSSH 配置路径 |
 | `launch` | 必填 | `{ kind: "executable" }`，或 `{ kind: "node-script", node: "/absolute/node" }` |
 | `helper`、`workspace` | 必填 | 远端 helper 入口和默认工作区的绝对路径 |
 | `helperHash` | 必填 | 已安装辅助程序入口的小写 SHA-256 |
@@ -49,6 +50,10 @@ kind: "package-reference"
 | `leaseMs` | `30000` | 辅助进程心跳租期，范围为 3000 至 600000 毫秒 |
 
 将验证后的 `ctx.ssh.ptcLaunch` 作为 [`NodePtcRuntime`](../../ptc-runtime/ptc-runtime-node/README.zh.md) 的 `launch` 配置。可执行文件部署包含 worker；脚本部署使用 PTC 时需要两个引导字段，仅使用文件系统和 Bash 时可以省略。脚本引导未配置时，getter 会拒绝访问。客户端在就绪前拒绝不匹配的协议版本、运行形式和 helper 摘要。
+
+### 工作区二进制文件
+
+`./workspace-files` 入口在握手工作区内提供受限列表与二进制流式上传、下载。路径保持相对形式，通过目录描述符拒绝符号链接；上传独占发布一个叶文件，读取保留初始描述符和字节范围。传输使用受限的 64 KiB 块，取消后关闭远程句柄。云保存前，`workspace.quiesce` 拒绝新写入和进程启动、撤销上传发布、停止托管进程并等待已接收效果收束；读取继续可用，以便复制最终文件。
 
 -----
 

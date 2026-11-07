@@ -16,6 +16,7 @@ import type { SandboxExecutionPolicy, SandboxPolicy } from '@deepseek-ai/dsh-san
 import { z } from 'zod'
 import { SshRpcPeer, RemoteOperationError, SSH_MAX_PROCESS_HANDLES, SSH_MAX_TEXT_STREAMS, SSH_PROTOCOL_VERSION } from './protocol.ts'
 import { RemoteProcesses } from './helper-processes.ts'
+import { WorkspaceBinaryHandles } from './helper-workspace-files.ts'
 import { streamWorkspaceText } from './helper-workspace-text.ts'
 import { hunkSchema, moveOptionsSchema, versionGuardSchema, editSchema, environmentSchema, intentSchema, policySchema, processIdSchema, remotePath, targetSchema, textStreamIdSchema } from './schemas.ts'
 import type { SshTextStreamId } from './schemas.ts'
@@ -67,12 +68,16 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
   let leaseMs = 30_000
   let initialized = false
   let workspace = process.cwd()
+  let binary: WorkspaceBinaryHandles | undefined
+  let quiescing = false
+  const writeLifetime = new AbortController()
   let cleanup: Promise<void> | undefined
   const operations = new Set<Promise<unknown>>()
   const close = (): Promise<void> => {
     cleanup ??= (async () => {
       if (lease !== undefined) clearTimeout(lease)
       lifetime.abort(new Error('SSH helper is closing'))
+      writeLifetime.abort(lifetime.signal.reason)
       for (const record of iterators.values()) record.controller.abort(lifetime.signal.reason)
       await Promise.allSettled([...iterators.values()].map(async record => record.iterator.return?.()))
       iterators.clear()
@@ -80,7 +85,7 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
       finally {
         // A cancelled filesystem request can still be committing; close acknowledges quiescence.
         await Promise.allSettled(operations)
-        try { await runtime.close() }
+        try { await binary?.close(); await runtime.close() }
         finally { await rm(root, { recursive: true, force: true }) }
       }
     })()
@@ -103,7 +108,9 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
   }
   const asTarget = (raw: unknown): FsTarget => targetSchema.parse(raw) as FsTarget
   const dispatch = async (method: string, raw: unknown, requestSignal: AbortSignal): Promise<unknown> => {
-    const signal = AbortSignal.any([requestSignal, lifetime.signal])
+    const mutation = ['fs.write', 'fs.edit', 'fs.patch', 'fs.delete', 'fs.move', 'workspace.uploadOpen', 'workspace.uploadChunk', 'workspace.uploadCommit', 'workspace.mkdir', 'process.prepare', 'process.start'].includes(method)
+    if (mutation && quiescing) throw new RemoteOperationError('Workspace is read-only during preservation', 'FS_SANDBOX_DENIED')
+    const signal = AbortSignal.any([requestSignal, lifetime.signal, ...mutation ? [writeLifetime.signal] : []])
     if (method === 'hello') {
       if (initialized) throw new Error('SSH helper handshake already completed')
       const input = z.object({
@@ -113,6 +120,7 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
       if (transport.kind === 'executable' && input.bootstrapPath !== undefined) throw new Error('Executable SSH helper uses its embedded PTC bootstrap')
       workspace = ctx.fs.processPath(await ctx.fs.resolve(input.workspace, { signal }))
       leaseMs = input.leaseMs
+      binary = new WorkspaceBinaryHandles(workspace, lifetime.signal, root)
       initialized = true
       touchLease()
       return {
@@ -122,6 +130,10 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
       }
     }
     if (!initialized || cleanup !== undefined) throw new Error('SSH helper is not accepting operations')
+    if (method.startsWith('workspace.')) {
+      if (binary === undefined) throw new Error('Workspace binary service did not initialize')
+      return binary.dispatch(method, raw, signal)
+    }
     if (method === 'heartbeat') { object.parse(raw); touchLease(); return null }
     if (method === 'process.prepare') return processes.prepare(raw)
     if (method === 'process.start') return processes.start(processIdRequest.parse(raw).id, signal)
@@ -286,6 +298,15 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
   const peer = new SshRpcPeer(transport.input, transport.output, MAX_FRAME_BYTES, 128, async (method, raw, requestSignal) => {
     if (!initialized && method !== 'hello' || cleanup !== undefined) throw new Error('SSH helper is not accepting operations')
     if (method === 'close') { object.parse(raw); await close(); return null }
+    if (method === 'workspace.quiesce') {
+      object.parse(raw)
+      quiescing = true
+      writeLifetime.abort(new Error('Workspace preservation revoked writes'))
+      await binary?.quiesce()
+      await processes.close()
+      await Promise.allSettled([...operations])
+      return null
+    }
     const operation = dispatch(method, raw, requestSignal)
     operations.add(operation)
     try { return await operation }

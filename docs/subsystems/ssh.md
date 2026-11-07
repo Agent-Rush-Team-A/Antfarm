@@ -54,6 +54,8 @@ type HelperLaunch = {
 interface Config {
   /** OpenSSH host alias, including its existing user, key and known-host configuration. */
   host: string
+  /** Absolute deployment-owned OpenSSH configuration, isolated from user-global aliases. */
+  configFile?: string
   /** Explicit script or self-contained executable invocation. */
   launch: HelperLaunch
   /** Absolute path to the installed, bundled helper entry. */

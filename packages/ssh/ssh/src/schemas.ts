@@ -1,8 +1,13 @@
 /** Strict JSON validation for SSH helper requests and remote observations. */
 import { z } from 'zod'
 import { FS_ERROR_CODES } from '@deepseek-ai/dsh-fs'
-import type { Branded } from '@deepseek-ai/dsh-brand'
+import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import { SSH_PROTOCOL_VERSION } from './protocol.ts'
+
+/** Identity of one workspace binary descriptor or upload in its original helper. */
+export type SshWorkspaceHandleId = Branded<'SshWorkspaceHandleId'>
+/** Admit one workspace handle from the private helper protocol. */
+export const workspaceHandleIdSchema = z.uuid().transform(value => brandString<SshWorkspaceHandleId>(value))
 
 /** Identity of one prepared or running process in its owning SSH helper. */
 export type SshProcessId = Branded<'SshProcessId'>
