@@ -26,11 +26,11 @@ export class WorkspaceModeCopyError extends Error {
  * @param destination - New private staging directory, absent on entry.
  * @param limits - Aggregate entry and byte budgets.
  * @param signal - Transition owner's cancellation.
- * @param ownership - Omitted for private checkpoints; destination publication can select its existing uid/gid.
+ * @param ownership - Omitted for private checkpoints; publication retains destination uid/gid and root permissions.
  * @returns A fully synchronized copy; partial staging remains owned by the caller on rejection.
  */
 export async function copyWorkspaceDirectory(source: string, destination: string, limits: WorkspaceModeCopyLimits,
-  signal: AbortSignal, ownership?: { readonly uid: number; readonly gid: number }): Promise<void> {
+  signal: AbortSignal, ownership?: { readonly uid: number; readonly gid: number; readonly rootMode?: number }): Promise<void> {
   let entries = 0
   let total = 0
   const scan = async (directory: FileHandle, output: string): Promise<void> => {
@@ -82,7 +82,7 @@ export async function copyWorkspaceDirectory(source: string, destination: string
     const target = await open(output, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
     try {
       if (ownership !== undefined) await target.chown(ownership.uid, ownership.gid)
-      await target.chmod(info.mode & 0o3777)
+      await target.chmod(output === destination ? ownership?.rootMode ?? (info.mode & 0o3777) : info.mode & 0o3777)
       await target.sync()
     } finally { await target.close() }
   }

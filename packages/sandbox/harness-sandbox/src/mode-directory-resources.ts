@@ -30,7 +30,8 @@ const journalSchema = z.strictObject({
   previousRevision: z.number().int().nonnegative(), root: z.string(),
   role: z.discriminatedUnion('kind', [
     z.strictObject({ kind: z.literal('source'), phase: z.enum(['checkpointing', 'checkpointed', 'restored', 'retired']), wasRunning: z.boolean() }),
-    z.strictObject({ kind: z.literal('target'), phase: z.enum(['staging', 'staged', 'publishing', 'published', 'discarded']), uid: z.number().int().nonnegative(), gid: z.number().int().nonnegative() }),
+    z.strictObject({ kind: z.literal('target'), phase: z.enum(['staging', 'staged', 'publishing', 'published', 'discarded']),
+      uid: z.number().int().nonnegative(), gid: z.number().int().nonnegative(), rootMode: z.number().int().min(0).max(0o3777) }),
   ]),
 })
 type Journal = z.infer<typeof journalSchema>
@@ -75,7 +76,9 @@ export class WorkspaceModeDirectoryResources implements WorkspaceModeResources {
     if (journal === undefined) {
       const info = await lstat(directory.root)
       if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('Mode destination directory is unavailable')
-      journal = this.record(change, directory.root, { kind: 'target', phase: 'staging', uid: info.uid, gid: info.gid })
+      journal = this.record(change, directory.root, {
+        kind: 'target', phase: 'staging', uid: info.uid, gid: info.gid, rootMode: info.mode & 0o3777,
+      })
       await this.save(change, journal)
     }
     if (journal.root !== directory.root || journal.role.kind !== 'target') throw new Error('Mode staging journal conflicts')

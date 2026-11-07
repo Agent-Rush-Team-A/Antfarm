@@ -31,9 +31,14 @@ async function fixture(targetBytes = 4096, sourceFiles = 100) {
   const sourceConfig = { stateRoot: join(home, 'state'), mode: 'multi-docker' as const, backend,
     maxBytes: 4096, maxFiles: sourceFiles, directory: async () => ({ root, assertCurrent: () => {} }) }
   const targetConfig = { ...sourceConfig, mode: 'single-docker' as const, maxBytes: targetBytes }
-  const build = (published?: (change: WorkspaceModeChange, signal: AbortSignal) => Promise<void>) => {
+  const build = (
+    published?: (change: WorkspaceModeChange, signal: AbortSignal) => Promise<void>, targetRoot = root,
+  ) => {
     const source = new WorkspaceModeDirectoryResources(sourceConfig)
-    const target = new WorkspaceModeDirectoryResources({ ...targetConfig, ...published === undefined ? {} : { published } })
+    const target = new WorkspaceModeDirectoryResources({
+      ...targetConfig, directory: async () => ({ root: targetRoot, assertCurrent: () => {} }),
+      ...published === undefined ? {} : { published },
+    })
     const runtime = new WorkspaceModeRuntimeAdapter(new Map([['multi-docker', source], ['single-docker', target]]))
     return { source, target, runtime }
   }
@@ -65,6 +70,18 @@ describe.runIf(process.platform === 'linux')('Linux mode directory transitions',
     await restarted.target.collect(f.change, f.ready)
     expect(await readdir(join(f.home, 'state'))).toEqual([])
     expect((await readdir(f.home)).filter(name => name.startsWith('.workspace.mode-'))).toEqual([])
+  })
+
+  test('publishing into another directory preserves the target root access mode', async () => {
+    const f = await fixture()
+    const targetRoot = join(f.home, 'target-workspace')
+    await chmod(f.root, 0o700)
+    await mkdir(targetRoot)
+    await chmod(targetRoot, 0o2770)
+    await f.build(undefined, targetRoot).runtime.prepare(f.change, f.signal)
+    await f.build(undefined, targetRoot).runtime.settle(f.change, 'commit', f.signal)
+    expect((await stat(targetRoot)).mode & 0o3777).toBe(0o2770)
+    expect(await readFile(join(targetRoot, 'uploaded.csv'), 'utf8')).toBe('amount\n32\n')
   })
 
   test('failed target preparation rolls back after restart and restores the original running source', async () => {
