@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
-  entry: ['lib/types/{index,conversation,bash,backend,ssh,files}.js'],
+  entry: ['lib/types/{index,conversation,bash,backend,ssh,files,idle}.js'],
   outDir: 'lib',
   format: ['esm'],
   platform: 'node',

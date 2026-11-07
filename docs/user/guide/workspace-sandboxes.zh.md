@@ -52,7 +52,18 @@ Connection 使用普通 Typert 请求封装、登录 cookie 和 Host/Origin 检�
 
 移除工作区登记前先关闭其沙箱。删除会查询 Runner 并要求 `closed`；正在开启或活跃的沙箱返回 `workspace/sandbox-active`，Runner 不可用时保留工作区。管理服务卸载或重载期间同样拒绝删除，服务恢复后可重试。目录移动或丢失后仍可查询和关闭，不会阻止清理。
 
+<a id="automatic-idle-reclamation"></a>
+## 自动空闲回收
+
+overlay 在应用层加载一个 `sandbox-idle` 插件。运行中的工作区必须结束所有准备、排队输入、模型工作、命令和清理，并连续空闲 30 分钟，才具备回收资格。新接纳请求会在其工作结束后重新计时。状态轮询和查看持久文件不为容器保活。每轮结束后才开始下一次 10 秒等待，因此实际关闭可能晚于阈值。
+
+后端在接纳关闭前再次检查当前归属、原容器和活动。先被接纳的工作使旧扫描跳过；关闭开始后的消息收到既有正在关闭错误。回收成功只移除容器，文件、Session 和工作区登记保留；下一条新消息通过普通准备流程重开工作区。模型不增加管理工具或倒计时。
+
+调整时间时，在沙箱 overlay 后应用部署 patch，以 `id: sandbox-idle` 为目标设置 `config.idleTimeoutMs` 和 `config.sweepIntervalMs`。数值和限制见[空闲插件参考](../../../packages/sandbox/harness-sandbox/README.zh.md#idle-reclamation)。禁用该入口会停止后续扫描并等待已接纳关闭收束，不会关闭所有容器。入口应放在应用层，不能放进每个 Session 的 preset。
+
+失败观察保留供后续有界重查。进程重启或管理恢复后，为可靠运行的容器重新给予完整区间。失败或不明的 DELETE 保留 `closing`，空闲扫描不重试。停用账号、缺失所有者和待清理状态需要授权维护；扫描器不自行扩展清理权限。
+
 <a id="continue-the-integrations"></a>
 ## 继续接入
 
-可选 overlay 准备消息并将 Bash 转发给 Runner。模型看到 `/workspace`、命令输出与退出码，不接收沙箱管理参数。输出使用 Runner 的有界尾部；模型无法访问宿主溢出文件，因此禁用宿主结果溢出存储。[接入交接](../../../packages/sandbox/harness-sandbox/README.zh.md#integration-handoff)说明授权内部方法、活动查询和浏览器 API。空闲回收属 #8；其他工具须分别完成隔离。
+可选 overlay 准备消息、将 Bash 转发给 Runner，并回收空闲容器。模型看到 `/workspace`、命令输出与退出码，不接收沙箱管理参数。输出使用 Runner 的有界尾部；模型无法访问宿主溢出文件，因此禁用宿主结果溢出存储。[接入交接](../../../packages/sandbox/harness-sandbox/README.zh.md#integration-handoff)说明授权内部方法、活动查询和浏览器 API。其他工具须分别完成隔离。

@@ -76,6 +76,7 @@ test.each(['close', 'disconnect', 'ownership'] as const)('%s during attachment p
 
 test('permit exists before Agent recovery and revoked recovery does not issue a PUT', async () => {
   const f = await conversationFixture()
+  const before = f.ctx.workspaceSandbox.activityForUser(f.alice.user.userId, f.alice.id)
   const entered = Promise.withResolvers<undefined>()
   const release = Promise.withResolvers<undefined>()
   const resolver = new ApiSessionAgentController(f.ctx)
@@ -85,6 +86,8 @@ test('permit exists before Agent recovery and revoked recovery does not issue a 
   })
   const result = Promise.allSettled([f.prompt('recovery')])
   await entered.promise
+  expect(f.ctx.workspaceSandbox.activityForUser(f.alice.user.userId, f.alice.id))
+    .toMatchObject({ requests: 1, openings: 0, idleSince: null, revision: before.revision + 1 })
   await f.ctx.workspaceSandbox.closeForUser(f.alice.user.userId, f.alice.id)
   release.resolve(undefined)
   expect((await result)[0]?.status).toBe('rejected')

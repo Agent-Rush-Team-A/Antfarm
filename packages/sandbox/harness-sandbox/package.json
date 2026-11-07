@@ -26,6 +26,10 @@
       "types": "./lib/types/conversation.d.ts",
       "default": "./lib/conversation.js"
     },
+    "./idle": {
+      "types": "./lib/types/idle.d.ts",
+      "default": "./lib/idle.js"
+    },
     "./src/*": "./src/*",
     "./locale/*.json": "./locale/*.json",
     "./package.json": "./package.json",
@@ -59,6 +63,7 @@
     "lib/index.js",
     "lib/conversation.js",
     "lib/bash.js",
+    "lib/idle.js",
     "lib/shared-*.js",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts",

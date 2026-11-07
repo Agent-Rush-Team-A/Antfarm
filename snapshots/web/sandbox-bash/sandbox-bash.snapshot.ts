@@ -22,7 +22,7 @@ const antfarmWeb = fileURLToPath(new URL('../../../apps/cli/config/antfarm-web.p
 const stdout = '中\0'.repeat(16_384)
 const stderr = `${'e'.repeat(65_525)}diagnostic\n`
 
-test('snapshot: Web sandbox Bash returns real results through the admitted product tool', async (t) => {
+test('snapshot: Web sandbox Bash retains its recorded Session through automatic idle reclamation', async (t) => {
   const refresh = process.env.DSH_SNAPSHOT === 'refresh'
   expect(existsSync(fixture), 'replay requires the committed Session fixture').toBe(true)
   const source = await readFile(fixture, 'utf8')
@@ -32,6 +32,7 @@ test('snapshot: Web sandbox Bash returns real results through the admitted produ
   const password = randomUUID()
   const patches = [antfarmWeb, overlay]
   const calls: Array<{ method: string | undefined; path: string; body: Record<string, unknown> }> = []
+  let running = false
   const socketPath = process.platform === 'win32' ? `\\\\.\\pipe\\dsh-sandbox-snapshot-${randomUUID()}` : `/tmp/dsh-sandbox-${randomUUID()}.sock`
   const server = createServer((request, response) => {
     let body = ''
@@ -39,11 +40,13 @@ test('snapshot: Web sandbox Bash returns real results through the admitted produ
     request.on('end', () => {
       const parsed = body === '' ? {} : JSON.parse(body) as Record<string, unknown>
       calls.push({ method: request.method, path: request.url!, body: parsed })
+      if (request.method === 'PUT') running = true
+      if (request.method === 'DELETE') running = false
       response.end(JSON.stringify(request.url?.endsWith('/exec') ? {
         executionId: parsed.executionId, exitCode: parsed.command === 'pwd' ? 0 : 7,
         stdout: { text: parsed.command === 'pwd' ? '/workspace\n' : stdout, truncated: parsed.command !== 'pwd' },
         stderr: { text: parsed.command === 'pwd' ? '' : stderr, truncated: parsed.command !== 'pwd' },
-      } : { state: 'running', containerId: 'a'.repeat(64) }))
+      } : running ? { state: 'running', containerId: 'a'.repeat(64) } : { state: 'closed' }))
     })
   })
   t.onTestFinished(async () => {
@@ -115,14 +118,27 @@ test('snapshot: Web sandbox Bash returns real results through the admitted produ
       if (refresh) await writeFile(join(directory, name), value)
       else expect(value, name).toBe(await readFile(join(directory, name), 'utf8'))
     }
+    const reclaimed = await post('/__test/sandbox-idle', { op: 'round', advance: 1_800_000, workspaceId: workspace.workspaceId })
+    expect(reclaimed.status, reclaimed.text).toBe(200)
+    expect(JSON.parse(reclaimed.text)).toMatchObject({ activity: { busy: false, sandbox: { state: 'closed' } } })
+    expect(calls.map(call => call.method)).toEqual(['PUT', 'POST', 'POST', 'GET', 'GET', 'DELETE'])
+    expect(await rpc('workspaceSandbox/status', { workspaceId: workspace.workspaceId })).toEqual({ workspaceId: workspace.workspaceId, state: 'closed' })
+    expect(await rpc('session/events', { address: { kind: 'session', sessionId }, maxMessages: 100 })).toEqual(events)
+    const afterClose = await post('/__test/sandbox-snapshot', {})
+    expect(afterClose.status, afterClose.text).toBe(200)
+    const afterLog = (JSON.parse(afterClose.text) as { log: string }).log
+    expect(normalizeSessionSnapshot(redactSessionSnapshotIds([afterLog])[0]!, context, { identityMode: 'preserve' })).toBe(actual)
     const beforeDuplicate = calls.length
     expect(await rpc('session/prompt', { sessionId, requestId, mode: 'queue', content: [{ type: 'text', text: task }] })).toMatchObject({ accepted: true })
     expect(calls).toHaveLength(beforeDuplicate)
   }, { patches, prepare: async (root) => {
     vi.stubEnv('DSH_MULTIUSER_WORKSPACE_ROOT', join(root, 'workspaces'))
     const patch = join(root, 'snapshot.patch.yml')
-    await writeFile(patch, JSON.stringify([{ insert: [{ id: 'sandbox-snapshot-control',
-      name: new URL('../../../apps/cli/tests/profiles/harness-sandbox/fixtures/snapshot-control.mjs', import.meta.url).href, config: { script } }] },
+    await writeFile(patch, JSON.stringify([
+      { id: 'sandbox-idle', inject: ['multiuser', 'workspaceRegistry', 'workspaceSandboxState', 'sandboxIdleTestClock'], config: { sweepIntervalMs: 60_001 } },
+      { insert: [{ id: 'sandbox-snapshot-control',
+        name: new URL('../../../apps/cli/tests/profiles/harness-sandbox/fixtures/snapshot-control.mjs', import.meta.url).href, config: { script } },
+      { id: 'sandbox-idle-clock', name: new URL('../../../apps/cli/tests/profiles/harness-sandbox/fixtures/idle-control.mjs', import.meta.url).href }] },
       { id: 'agent-default-model', config: { provider: 'sandbox-snapshot', model: 'fixture' } }, { id: 'session-title', disabled: true }]))
     patches.push(patch)
     const backend = new JsonStorageBackend(join(root, 'home', 'storages'))

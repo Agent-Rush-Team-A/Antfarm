@@ -11,6 +11,11 @@
         workspaceRoot: !!js process.env.DSH_MULTIUSER_WORKSPACE_ROOT
     - id: sandbox-conversation
       name: '@deepseek-ai/dsh-harness-sandbox/conversation'
+    - id: sandbox-idle
+      name: '@deepseek-ai/dsh-harness-sandbox/idle'
+      config:
+        idleTimeoutMs: 1800000
+        sweepIntervalMs: 10000
 
 - id: working-directory
   config:
