@@ -43,7 +43,18 @@ Closing revokes earlier preparations and cancels active and queued input in the 
 
 Close a workspace's sandbox before removing its workspace registration. Deletion queries the Runner and requires `closed`; an opening or active sandbox returns `workspace/sandbox-active`, and an unavailable Runner leaves the workspace intact. If the management service is unloaded or reloading, deletion is also refused and resumes after the service returns. A moved or missing directory still permits status and close operations, so it does not prevent cleanup.
 
+<a id="automatic-idle-reclamation"></a>
+## Automatic idle reclamation
+
+The overlay loads one application-level `sandbox-idle` plugin. A running workspace becomes eligible after all preparation, queued input, model work, commands and cleanup have settled and it remains continuously idle for 30 minutes. A new admitted request starts a new interval when its work finishes. Status polling and viewing persistent files do not keep the container alive. Each round finishes before the next 10-second delay begins, so actual closure may happen later than the threshold.
+
+The backend checks current ownership, the original container and activity again before admitting closure. Work admitted first makes the old scan skip; messages arriving after closure has begun receive the existing closing error. A successful reclamation removes only the container. Files, Sessions and workspace registration remain; the next new message reopens the workspace through the ordinary preparation path. The model receives no management tool or countdown.
+
+To change the timings, apply a deployment patch after the sandbox overlay, targeting `id: sandbox-idle` with `config.idleTimeoutMs` and `config.sweepIntervalMs`. Values and limits are documented in the [idle plugin reference](../../../packages/sandbox/harness-sandbox/README.md#idle-reclamation). Disabling that entry stops future scans and drains an already admitted close; it does not close every container. Keep the entry at application scope, outside per-Session presets.
+
+Failed observations are retained for later bounded queries. Restart or management recovery gives a reliably running container a fresh full interval. Failed or uncertain DELETE retains `closing` and is not retried by the idle scanner. Disabled accounts, missing owners and cleanup-required states require authorized maintenance; the scanner does not grant itself cleanup permission.
+
 <a id="continue-the-integrations"></a>
 ## Continue the integrations
 
-The optional overlay prepares messages and forwards Bash to the Runner. The model sees `/workspace`, command output and exit status, without sandbox-management parameters. Output uses the Runner's bounded tails; host result spilling is disabled because the model cannot access host spill files. Use the [integration handoff](../../../packages/sandbox/harness-sandbox/README.md#integration-handoff) for authorized internal methods, activity queries and browser APIs. Idle reclamation belongs to #8 and browser controls to #9; other tools require separate isolation.
+The optional overlay prepares messages, forwards Bash to the Runner and reclaims idle containers. The model sees `/workspace`, command output and exit status, without sandbox-management parameters. Output uses the Runner's bounded tails; host result spilling is disabled because the model cannot access host spill files. Use the [integration handoff](../../../packages/sandbox/harness-sandbox/README.md#integration-handoff) for authorized internal methods, activity queries and browser APIs. Browser controls belong to #9; other tools require separate isolation.

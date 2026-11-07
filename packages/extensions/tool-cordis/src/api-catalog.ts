@@ -4918,16 +4918,22 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Full running identity for trusted execution integration.',
       },
       {
-        signature: 'async statusForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerSandboxStatus>',
+        signature: 'async statusForUser(userId: UserId, workspaceId: WorkspaceId, signal?: AbortSignal): Promise<RunnerSandboxStatus>',
         description: 'Observe a sandbox for an authenticated backend initiator.',
-        parameters: [{ name: 'userId', description: 'Authenticated initiating user.' }, { name: 'workspaceId', description: 'Native workspace id.' }],
+        parameters: [{ name: 'userId', description: 'Authenticated initiating user.' }, { name: 'workspaceId', description: 'Native workspace id.' }, { name: 'signal', description: 'Optional observer lifetime; abort suppresses history updates without cancelling the bounded query. Omitted queries record normally.' }],
         returns: 'Local closing barrier, or fresh Runner state with internal container identity.',
       },
       {
-        signature: 'activityForUser(userId: UserId, workspaceId: WorkspaceId): SandboxActivity',
+        signature: 'activityForUser(userId: UserId, workspaceId: WorkspaceId): SandboxIdleActivity',
         description: 'Inspect local work before an authorized idle-reclamation decision; does not query Runner or close anything.',
         parameters: [{ name: 'userId', description: 'Authenticated initiating user.' }, { name: 'workspaceId', description: 'Native workspace id.' }],
-        returns: 'Outstanding input, openings, executions and closure; unavailable management throws rather than reporting idle.',
+        returns: 'Work counts, activity revision, monotonic idle start and reliable container observation; unavailable management throws.',
+      },
+      {
+        signature: 'async closeIfIdleForUser( userId: UserId, workspaceId: WorkspaceId, target: SandboxIdleCloseTarget, idleTimeoutMs: number, signal: AbortSignal, ): Promise<SandboxIdleCloseResult>',
+        description: 'Query the original container and synchronously admit closure only while the observed interval is still idle.',
+        parameters: [{ name: 'userId', description: 'Authenticated backend owner; native authorization failures are preserved.' }, { name: 'workspaceId', description: 'Native workspace id.' }, { name: 'target', description: 'Original running identity, close version, activity revision and non-null idle start.' }, { name: 'idleTimeoutMs', description: 'Positive idle threshold from validated deployment configuration.' }, { name: 'signal', description: 'Scan lifetime, synchronously aborted on unload; does not cancel an already admitted close.' }],
+        returns: 'Skipped without revocation or DELETE, or confirmed closure; management and Runner failures reject.',
       },
       {
         signature: 'async closeForUser(userId: UserId, workspaceId: WorkspaceId, target?: SandboxCloseTarget): Promise<RunnerClosedSandbox>',
@@ -8466,8 +8472,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SandboxExecutionResult extends DockerExecResult {\n    readonly executionId: SandboxExecutionId;\n}',
   },
   {
+    name: 'SandboxIdleActivity',
+    declaration: 'export interface SandboxIdleActivity extends SandboxActivity {\n    readonly version: number;\n    readonly revision: number;\n    readonly idleSince: number | null;\n    readonly sandbox: SandboxObservation;\n}',
+  },
+  {
+    name: 'SandboxIdleCloseResult',
+    declaration: 'export type SandboxIdleCloseResult = RunnerClosedSandbox | {\n    readonly state: \'skipped\';\n};',
+  },
+  {
+    name: 'SandboxIdleCloseTarget',
+    declaration: 'export interface SandboxIdleCloseTarget extends SandboxCloseTarget {\n    readonly revision: number;\n    readonly idleSince: number;\n}',
+  },
+  {
     name: 'SandboxMode',
     declaration: 'export type SandboxMode = \'read-only\' | \'workspace-write\' | \'danger-full-access\';',
+  },
+  {
+    name: 'SandboxObservation',
+    declaration: 'export type SandboxObservation = RunnerClosedSandbox | RunnerRunningSandbox | {\n    readonly state: \'unconfirmed\';\n};',
   },
   {
     name: 'SandboxPolicy',

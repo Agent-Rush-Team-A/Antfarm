@@ -179,7 +179,11 @@ Provider selection, probing, caching, and backend-specific enforcement reports b
 
 The internal `ctx.sandboxRunnerClient` transport accepts a complete `RunnerExecutionRequest` bound to its original `RunnerExecutionIdentity`; `RunnerExecutionResult` retains the confirmed exit and output tails. `RunnerCancellationResult` is only an acknowledgement, while `RunnerExecutionError.execution` preserves `RunnerExecutionFailure` cleanup and known Bash status. Local aborts and transport deadlines never confirm remote cleanup. The transport adds neither user authorization nor model tools; the [package reference](../../packages/sandbox/harness-sandbox/README.md#execution-transport) owns request limits, independent budgets and safe result retrieval.
 
-`SandboxActivity` contains `requests` (outstanding original input through turn settlement), `openings`, `executions` (including cancellation and cleanup), `closing`, and derived `busy`. The authorized `activityForUser` query observes these local owners without reserving a close decision; unavailable management throws. It does not replace Runner status or implement an idle timer.
+`SandboxActivity` contains `requests` (outstanding original input through turn settlement), `openings`, `executions` (including cancellation and cleanup), `closing`, and derived `busy`. The authorized `activityForUser` returns `SandboxIdleActivity`, adding activity `revision`, closing `version`, a process-local monotonic `idleSince` or null, and a `SandboxObservation` distinguishing confirmed running identity, confirmed closed and unconfirmed state. These internal fields never enter `SandboxValue`. The query does not refresh idle history, reserve a close decision or replace Runner status; unavailable management throws. Observation validity, settlement and reload behavior belong to the [package reference](../../packages/sandbox/harness-sandbox/README.md#runner-bash).
+
+`SandboxIdleCloseTarget` combines `SandboxCloseTarget` with the observed activity revision and non-null monotonic idle start. The internal `closeIfIdleForUser` accepts that target, a validated idle threshold and the scan's lifetime signal; it owns the fresh Runner query and final synchronous close admission. `SandboxIdleCloseResult` distinguishes skipped without revocation/DELETE from confirmed closed; existing authorization and management failures remain errors. See [conditional idle close](../../packages/sandbox/harness-sandbox/README.md#conditional-idle-close) for ordering, duplicate calls and failure ownership.
+
+The optional `@deepseek-ai/dsh-harness-sandbox/idle` plugin discovers native-owned candidates and schedules serial checks through the existing manager. The sandbox Web overlay loads it once at application scope. It retains failed observations, preserves close barriers and drains its lifetime on unload. Defaults, candidate ownership and failure behavior belong to the [idle reference](../../packages/sandbox/harness-sandbox/README.md#idle-reclamation).
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -403,17 +407,30 @@ async openForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerRunni
  * Observe a sandbox for an authenticated backend initiator.
  * @param userId - Authenticated initiating user.
  * @param workspaceId - Native workspace id.
+ * @param signal - Optional observer lifetime; abort suppresses history updates without cancelling the bounded query.
+ * Omitted queries record normally.
  * @returns Local closing barrier, or fresh Runner state with internal container identity.
  */
-async statusForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerSandboxStatus>
+async statusForUser(userId: UserId, workspaceId: WorkspaceId, signal?: AbortSignal): Promise<RunnerSandboxStatus>
 
 /**
  * Inspect local work before an authorized idle-reclamation decision; does not query Runner or close anything.
  * @param userId - Authenticated initiating user.
  * @param workspaceId - Native workspace id.
- * @returns Outstanding input, openings, executions and closure; unavailable management throws rather than reporting idle.
+ * @returns Work counts, activity revision, monotonic idle start and reliable container observation; unavailable management throws.
  */
-activityForUser(userId: UserId, workspaceId: WorkspaceId): SandboxActivity
+activityForUser(userId: UserId, workspaceId: WorkspaceId): SandboxIdleActivity
+
+/**
+ * Query the original container and synchronously admit closure only while the observed interval is still idle.
+ * @param userId - Authenticated backend owner; native authorization failures are preserved.
+ * @param workspaceId - Native workspace id.
+ * @param target - Original running identity, close version, activity revision and non-null idle start.
+ * @param idleTimeoutMs - Positive idle threshold from validated deployment configuration.
+ * @param signal - Scan lifetime, synchronously aborted on unload; does not cancel an already admitted close.
+ * @returns Skipped without revocation or DELETE, or confirmed closure; management and Runner failures reject.
+ */
+async closeIfIdleForUser( userId: UserId, workspaceId: WorkspaceId, target: SandboxIdleCloseTarget, idleTimeoutMs: number, signal: AbortSignal, ): Promise<SandboxIdleCloseResult>
 
 /**
  * Ends all commands in this container without deleting workspace files or sessions.

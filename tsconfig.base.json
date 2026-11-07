@@ -423,6 +423,7 @@
       "@deepseek-ai/dsh-ptc-runtime-node/configuration": ["./packages/ptc-runtime/ptc-runtime-node/src/configuration.ts"],
       "@deepseek-ai/dsh-harness-sandbox/bash": ["./packages/sandbox/harness-sandbox/src/bash.ts"],
       "@deepseek-ai/dsh-harness-sandbox/conversation": ["./packages/sandbox/harness-sandbox/src/conversation.ts"],
+      "@deepseek-ai/dsh-harness-sandbox/idle": ["./packages/sandbox/harness-sandbox/src/idle.ts"],
       "@deepseek-ai/dsh-tool-bash/render": ["./packages/shell/tool-bash/src/render.ts"],
       // BEGIN generated package aliases — pnpm run gen-tsconfig-paths
       "@deepseek-ai/dsh-acp": ["./packages/acp/acp/src"],

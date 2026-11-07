@@ -31,8 +31,8 @@ class ControlledModel extends LlmAdapter {
   }
 }
 
-export async function conversationFixture(adapter: LlmAdapter = new ControlledModel(), execTimeoutMs?: number) {
-  const f = await fixture(1000, true, execTimeoutMs ?? 1000)
+export async function conversationFixture(adapter: LlmAdapter = new ControlledModel(), execTimeoutMs?: number, queryTimeoutMs?: number) {
+  const f = await fixture(1000, true, execTimeoutMs ?? 1000, queryTimeoutMs)
   const { ctx } = f
   await mountAgentLoopTestDependencies(ctx, { workingDirectory: true })
   ctx.llm.registerAdapter(['fixture'], adapter)

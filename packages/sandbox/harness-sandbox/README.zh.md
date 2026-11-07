@@ -80,7 +80,34 @@ Agent 步骤信号在异步工具策略前标识原 turn，工具在发送时重
 
 已确认的单次进程清理保留容器和其他命令。执行或清理未确认时，携带原容器及关闭版本组成的 `SandboxCloseTarget` 进入 `closeForUser`。版本变化时在撤销前拒绝；关闭操作等待开启收束，再在 DELETE 前检查 Runner 身份。代次不同或无法辨认时保留屏障，不删除该容器。错误及后端诊断保留不确定性；后续手动关闭可检查并清理工作区。`execution_limit` 明确报错。插件卸载会取消并收束活动调用，再释放监听器。
 
-`activityForUser(userId, workspaceId)` 返回本地 `SandboxActivity`：未结束请求、开启、执行、关闭及派生的忙碌状态。请求涵盖准备、排队和模型工作，直到 turn 结算；执行涵盖取消、重取及清理，即使许可已撤销。管理不可用时抛错，不报告空闲。删除保护覆盖这些期间；管理器卸载时仍有工作会保留关闭屏障。释放本地工作不会清除未确认关闭。消费方须在统一关闭前立即复核；查询不预留状态，也不增加空闲计时器。
+`activityForUser(userId, workspaceId)` 返回内部 `SandboxIdleActivity`，在 `SandboxActivity` 上增加活动 `revision`、关闭 `version`、`idleSince` 和 `sandbox`。请求涵盖准备、排队和模型工作，直到 turn 结算；执行涵盖取消、重取及清理，即使许可已撤销。实际登记与结算同步改变活动编号，与关闭版本独立。重复释放和重复输入不会产生额外活动变化。管理不可用时抛错，不报告空闲；删除保护覆盖在途工作及未确认关闭。
+
+`sandbox` 区分包含完整容器编号的已确认 `running`、已确认 `closed` 及 `unconfirmed`。`idleSince` 是进程内 `performance.now()` 时间戳，只在最后一份工作结算且可靠观察到容器运行时设置。成功开启或当前有效的状态观察建立容器代次；重复状态轮询不刷新起点。查询失败、非运行状态、换代及管理不可用使旧空闲段失效；迟到观察不能覆盖新活动或更新的观察。在途 PUT 期间的查询不用于确认该修改的最终状态。对话插件重载保留已结算的空闲历史；管理器重载需要重新观察，进程重启不复用时间戳。这些字段仅供可信后端使用，不进入浏览器结果。
+
+<a id="conditional-idle-close"></a>
+### 空闲条件关闭
+
+可信后端调用 `closeIfIdleForUser(userId, workspaceId, target, idleTimeoutMs, signal)`。`SandboxIdleCloseTarget` 组合观察到的运行容器 `containerId`、关闭 `version`、活动 `revision` 及非空 `idleSince`。阈值来自已校验的部署配置；必填信号归扫描生命周期所有，卸载时必须同步中止。方法先检查本地资格再查询 Runner，返回后重新核验原生归属、当前管理器、信号、完整观察和单调空闲时长。调用方无需另行发起关闭前状态查询。
+
+`SandboxIdleCloseResult` 在空闲段不再符合条件时为 `{ state: 'skipped' }`，确认关闭后为 `{ state: 'closed' }`。跳过不撤销消息许可、不调用 Agent.cancel，也不发送 DELETE。最后检查与进入既有同步关闭屏障之间没有 await。先被接纳的工作使回收跳过；屏障建立后的新消息沿用现有拒绝规则，不排队或自动重发。重复空闲调用会跳过已接纳的关闭屏障，普通关闭则复用既有 Promise。
+
+已接纳的关闭保留 DELETE 前的完整容器/关闭版本检查、工作区删除保护、文件与会话。接纳后中止扫描，不会取消这个由管理器拥有的操作。授权、管理不可用及 Runner 失败保留原有错误；接纳后失败继续保留关闭屏障，不返回跳过或关闭成功。
+
+<a id="idle-reclamation"></a>
+### 空闲回收
+
+可选 `@deepseek-ai/dsh-harness-sandbox/idle` 函数插件应在应用层加载一次。提供的 Web overlay 以 `sandbox-idle` 加载它，放在 Session preset 外；未加载此 overlay 的 Web 不要求 Runner，也不加载回收器。部署覆盖使用该入口已校验的配置。
+
+| 配置 | 默认值 | 有效值 |
+| --- | --- | --- |
+| `idleTimeoutMs` | 1800000 毫秒（30 分钟） | 毫秒数须为正的安全整数。 |
+| `sweepIntervalMs` | 10000 毫秒（10 秒） | 1 至 2147483647 的整数毫秒。 |
+
+启动发现有已存原生所有者的 Workspace Registry 记录。授权查询为缺少历史的运行容器建立新的完整空闲区间；已关闭容器移出候选。正常活动与开启通过应用状态登记候选。失败或失效观察保留待确认，后续使用有界查询；恢复时先建立区间，不在同轮关闭。原生工作区删除会移除其历史，迟到观察不能重新创建。
+
+每轮串行检查候选，整轮收束后才安排下一个计时器。忙碌和未到期候选无需 Runner 查询。到期候选交给 `closeIfIdleForUser`，由它负责关闭前查询与接纳。一个工作区出错不阻止其他候选。沿用既有查询和修改期限；扫描器不发 PUT、不绕过归属、不清除关闭屏障，也不重试失败的 DELETE。其警告无需其他日志插件即可输出到标准错误；关闭失败会说明保留 `closing`、不自动重试以及需要维护。卸载时警告输出保留到已接纳的管理操作收束，再移除；不转发其他日志名称或 debug 消息。待清理观察同样警告需要维护。
+
+卸载同步中止扫描生命期并清除计时器，然后等待当前轮及已接纳的管理关闭收束。`statusForUser` 可接收观察者信号：中止只抑制历史写入，不取消有界查询；省略时正常记录。只重载扫描器会保留可靠的应用历史。管理器替换通过自身提供方 token 作废历史，进程重启则重新发现。卸载不关闭其他容器。
 
 <a id="integration-handoff"></a>
 ### 接入交接
@@ -88,12 +115,19 @@ Agent 步骤信号在异步工具策略前标识原 turn，工具在发送时重
 | 使用方 | 可用入口 | 后续接入 |
 | --- | --- | --- |
 | 对话入口 | 可选 Web profile 接纳所属输入，只暴露 Runner Bash。 | 部署匹配的 Harness/Runner 构建、工作区路径与文件系统身份。 |
-| #8：空闲回收 | 针对持久记录中的所有者和工作区调用 `activityForUser`、`statusForUser`、`closeForUser`。 | 增加 30 分钟空闲判断。 |
+| #8：空闲回收 | 可选 Web overlay 发现所属候选，使用已校验的时间配置执行条件空闲关闭。 | 验证部署中的真实 Docker 删除、容量释放与持久文件续聊。 |
 | #9：网页控件 | 三个 Typert 方法、五种状态以及类型化的 `sandbox/failed` 原因。 | 增加按钮和展示。关闭失败时继续阻止重开；未知修改需要维护来确认收束，查询不能清除它。 |
 
 新增文件、搜索或浏览器工具，必须先实现各自的隔离执行、确切定义授权、原 turn 许可和取消处理，再由 overlay 展示。文件操作须在沙箱内按登记工作区解析路径，并将真实结果保留到日志、回放和展示。Bash 的例外不授权其他定义或同名宿主实现。
 
 内部显式用户方法只接收可信后端代码取得的身份，不会在缺失调用上下文时推断 owner。子服务 `sandboxRunnerClient` 仅负责通信，不能作为用户管理 API 暴露。服务卸载会中止本机等待，等待请求连接与期限计时器释放，并移除方法，不发送 DELETE 或 cancel；断线和超时都不代表远端已清理。
+
+<a id="web-control-handoff"></a>
+### 网页控件交接
+
+自动回收沿用现有 `SandboxValue`，只包含 `workspaceId` 和五种状态之一。`closed` 不标记关闭原因，`running` 不表示活动情况或空闲截止时间；接口不暴露倒计时、容器身份或后端时间戳。状态轮询和查看持久文件不保活。确认关闭后，新消息通过正常准备流程重新开启同一工作区，浏览器无需在每条消息前先调用开启。
+
+手动 `close` 会撤销已接纳和排队的输入，空闲回收则在接纳关闭前检查连续无活动。屏障之后的消息收到既有 `gateway/cancelled` 拒绝；该错误也用于其他撤销，不能据此认定发生空闲回收。已取消的原 requestId 继续无效，关闭后续聊使用新 requestId。`sandbox/failed` 保留类型化 `reason` 和 `outcomeUnknown`：`sandbox_capacity` 表示部署容量已满，不暴露其他用户容器；失败或不明的关闭不能展示为已确认 `closed`。查询和管理器重载都不能清除未知修改屏障。每次操作仍遵守原生归属和停用账号限制，后台检查也一样。
 
 <a id="execution-transport"></a>
 ### 执行通信
@@ -149,9 +183,10 @@ Agent 步骤信号在异步工具策略前标识原 turn，工具在发送时重
 <a id="known-limitations-and-deferred-work"></a>
 
 - **部署** — Runner 需要 Linux Unix socket 和单独配置的非 root 文件系统身份。Windows 命名管道仅用于通信测试。
-- **能力** — 只有 Runner Bash 拥有多用户执行例外。文件、搜索、PowerShell、后台、终端、浏览器和间接工具须先完成各自隔离；空闲计时器和网页管理控件仍由其他接入负责。
+- **能力** — 只有 Runner Bash 拥有多用户执行例外。文件、搜索、PowerShell、后台、终端、浏览器和间接工具须先完成各自隔离；网页管理控件仍需另外接入。
+- **空闲范围** — 回收面向单个应用实例管理独立 Runner，不合并多个 Harness 进程的活动，也不发现启动后直接通过 Runner 创建的容器。停用账号或缺失归属需要维护；后台循环不绕过原生授权。
 - **修改结果不明** — PUT/DELETE 响应丢失后需要部署维护确认旧 Runner 请求已收束。现有协议不能自动解除本进程阻止标记；仅重启 Harness 不能证明远端已收束。
-- **验证** — [可选 Docker 验收夹具](../../../apps/cli/tests/profiles/harness-sandbox/fixtures/docker-acceptance.mjs)使用可控模型及真实鉴权的 Web、Runner profile。它要求 Linux、用于测试准备的 root、当前构建产物及 Linux 依赖、Docker 访问权限，以及由 `M5_DATA_ROOT` 选择且 daemon 可见的专用 `/tmp/antfarm-issue7-m5` 绑定；`M5_EVIDENCE_DIR` 选择证据目录。其独立测试部署与容器为可丢弃资源，不证明真实模型或 Vultr 结果。
+- **验证** — 可选[对话 Docker 夹具](../../../apps/cli/tests/profiles/harness-sandbox/fixtures/docker-acceptance.mjs)和[空闲 Docker 夹具](../../../apps/cli/tests/profiles/harness-sandbox/fixtures/docker-idle-acceptance.mjs)使用可控模型及真实鉴权的 Web、Runner profile，要求 Linux、用于准备的 root、当前构建产物及 Linux 依赖和 Docker 权限。`M5_DATA_ROOT` 必须选择对应夹具的专用 daemon 可见绑定：对话用 `/tmp/antfarm-issue7-m5`，空闲用 `/tmp/antfarm-issue8-m5`；`M5_EVIDENCE_DIR` 选择证据输出。空闲夹具使用 5000 毫秒空闲、100 毫秒扫描配置，独立核对真实容器身份、容量和保留文件，并清理隔离部署；子进程非零退出或因信号退出会使验收失败。这些夹具不证明真实模型或 Vultr 结果。
 
 <a id="dev-note"></a>
 ### 开发备注

@@ -26,7 +26,7 @@ export const running = { state: 'running', containerId: 'a'.repeat(64) }
 export interface Call { method: string | undefined; path: string | undefined; body: unknown }
 export interface RpcResult { ok: boolean; value?: unknown; error?: { code: string; message: string; details: unknown } }
 
-export async function fixture(mutationTimeoutMs = 1000, persistentSessions = false, execTimeoutMs = 1000) {
+export async function fixture(mutationTimeoutMs = 1000, persistentSessions = false, execTimeoutMs = 1000, queryTimeoutMs = 1000) {
   const home = await mkdtemp(join(await realpath(tmpdir()), 'dsh-management-'))
   const workspaceRoot = join(home, 'workspaces')
   const socketPath = process.platform === 'win32' ? `\\\\.\\pipe\\dsh-management-${randomUUID()}` : join(home, 'runner.sock')
@@ -73,7 +73,7 @@ export async function fixture(mutationTimeoutMs = 1000, persistentSessions = fal
   await ctx.plugin(WorkspaceController, {})
   await ctx.plugin(Multiuser, { workspaceRoot })
   const sandboxFiber = ctx.plugin(WorkspaceSandbox, {
-    socketPath, workspaceRoot, mutationTimeoutMs, queryTimeoutMs: 1000, execTimeoutMs, cancelTimeoutMs: 1000,
+    socketPath, workspaceRoot, mutationTimeoutMs, queryTimeoutMs, execTimeoutMs, cancelTimeoutMs: 1000,
   })
   await sandboxFiber
   const base = `http://127.0.0.1:${String(ctx.webServer.port)}`

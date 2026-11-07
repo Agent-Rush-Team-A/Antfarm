@@ -20,6 +20,7 @@ const repoRoot = fileURLToPath(new URL('../../../../../../', import.meta.url))
 interface DefaultWeb {
   root: string
   url: string
+  output: () => { stdout: string; stderr: string }
   request: (command: 'roster' | 'mount-experimental' | 'mount-experimental-entry') => Promise<RuntimeRoster>
 }
 
@@ -155,7 +156,7 @@ export async function withDefaultWeb(
         return /dsh web: (http:\/\/[^\s]+)/u.exec(stdout)?.[1]
       }, { timeout: test.task.timeout }).toBeDefined()
       const url = /dsh web: (http:\/\/[^\s]+)/u.exec(stdout)![1]!
-      await inspect({ root, url, request })
+      await inspect({ root, url, request, output: () => ({ stdout, stderr }) })
     } finally {
       const result = await close()
       test.signal.removeEventListener('abort', abort)
