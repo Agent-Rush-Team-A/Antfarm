@@ -246,7 +246,7 @@ pi-ai 事件变成 harness 的推理、文本、工具调用、用量与 finish 
 
 ## 已知限制与延期工作
 
-使用发起账号凭证的路由配置 `credentialScope: request`，并安装 `llm-pi-ai/resolve-api-key` 的 Host 消费者。推理时消费者接收已解析模型的精确接口、会话身份和取消信号；模型列表只展示已配置的元数据，不解析凭证。缺失消费者时，在网络请求前以 `MISSING_CREDENTIAL` 拒绝，包括消费者卸载后，不查询部署密钥或原生环境发现。[个人凭证 Host](../../api/user-credentials/README.zh.md)提供这类消费者。请求作用域的服务错误在展示前遮蔽已解析密钥。这仅改变传输鉴权，密钥不属于模型消息。
+使用发起账号凭证的路由配置 `credentialScope: request`，并安装 `llm-pi-ai/resolve-api-key` 的 Host 消费者。推理时消费者接收已解析模型的精确接口、会话身份和取消信号；模型列表只展示已配置的元数据，不解析凭证。缺失消费者时，在网络请求前以 `MISSING_CREDENTIAL` 拒绝，包括消费者卸载后，不查询部署密钥或原生环境发现。[个人凭证 Host](../../api/user-credentials/README.zh.md)提供这类消费者。请求作用域的错误使用固定提示，保留错误码、可用的 HTTP 状态、重试延迟及图片省略数量。原始诊断、提供方请求标识和异常原因在进入流或持久化前被丢弃，包含部分回显或编码后的凭证。这仅改变传输鉴权，密钥不属于模型消息。
 
 <a id="known-limitations-and-deferred-work"></a>
 

@@ -1,7 +1,8 @@
 /** Default Antfarm model catalogs and credentials through real Web processes. */
 import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { zstdDecompressSync } from 'node:zlib'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -36,8 +37,10 @@ test.skipIf(process.platform !== 'linux')('default personal models stay visible 
     request.on('end', () => {
       requests.push({ authorization: request.headers.authorization ?? '', body: JSON.parse(Buffer.concat(chunks).toString('utf8')) })
       if (status !== 200) {
+        const key = request.headers.authorization?.slice('Bearer '.length) ?? ''
+        const echo = status === 401 ? `${key.slice(0, 3)}***${key.slice(-6)}` : Buffer.from(key).toString('base64')
         response.writeHead(status, { 'content-type': 'application/json' })
-        response.end(JSON.stringify({ error: { message: status === 401 ? 'Invalid inference credential' : 'Inference service unavailable' } }))
+        response.end(JSON.stringify({ error: { message: `Inference request rejected: ${echo}` } }))
         return
       }
       response.writeHead(200, { 'content-type': 'text/event-stream' })
@@ -140,7 +143,9 @@ test.skipIf(process.platform !== 'linux')('default personal models stay visible 
       }
     } finally { await backend.close() }
   } })
-  await withDefaultWeb(t, async ({ url }) => {
+  await withDefaultWeb(t, async ({ url, request }) => {
+    // The listener starts before all authentication plugins finish loading.
+    await request('roster')
     const { login, rpc, session, prompt } = api(url)
     const alice = await login('alice')
     const bob = await login('bob')
@@ -160,9 +165,27 @@ test.skipIf(process.platform !== 'linux')('default personal models stay visible 
     await prompt(bob, await session(bob), 'PERSONAL-MODEL-REPLY')
     expect(requests.at(-1)?.authorization).toBe('Bearer BOB-INFERENCE-CANARY')
     status = 401
-    await prompt(bob, await session(bob), 'AUTH')
+    const authSession = await session(bob)
+    await prompt(bob, authSession, 'AUTH')
+    const authEvents = JSON.stringify(await rpc<Events>(bob, 'session/events', { request: { address: { kind: 'session', sessionId: authSession } } }))
+    expect(authEvents).toContain('The model service rejected the credential. Check your personal API key and its permissions.')
+    expect(authEvents).not.toContain('BOB***CANARY')
     status = 503
-    await prompt(bob, await session(bob), 'SERVER')
+    const serverSession = await session(bob)
+    await prompt(bob, serverSession, 'SERVER')
+    const serverEvents = JSON.stringify(await rpc<Events>(bob, 'session/events', { request: { address: { kind: 'session', sessionId: serverSession } } }))
+    expect(serverEvents).toContain('The model service is unavailable. Try again later.')
+    expect(serverEvents).not.toContain(Buffer.from('BOB-INFERENCE-CANARY').toString('base64'))
     expect(requests).toHaveLength(5)
   }, { home, patches: [antfarmPatch, noTitlePatch, externalPatch] })
+  const sessionRoot = join(home, 'sessions')
+  const files = (await readdir(sessionRoot, { recursive: true })).filter(path => /\.jsonl(?:\.zstd)?$/.test(path))
+  const logs = (await Promise.all(files.map(async (path) => {
+    const bytes = await readFile(join(sessionRoot, path))
+    return (path.endsWith('.zstd') ? zstdDecompressSync(bytes) : bytes).toString('utf8')
+  }))).join('\n')
+  expect(logs).toContain('The model service rejected the credential. Check your personal API key and its permissions.')
+  expect(logs).toContain('The model service is unavailable. Try again later.')
+  expect(logs).not.toMatch(/ALICE-INFERENCE-CANARY|BOB-INFERENCE-CANARY|BOB\*\*\*CANARY/)
+  expect(logs).not.toContain(Buffer.from('BOB-INFERENCE-CANARY').toString('base64'))
 }, 120_000)

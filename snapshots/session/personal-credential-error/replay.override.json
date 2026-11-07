@@ -1,0 +1,8 @@
+[
+  {
+    "kind": "throw",
+    "chunks": [],
+    "message": "The model service rejected the credential. Check your personal API key and its permissions.",
+    "code": "AUTH"
+  }
+]
