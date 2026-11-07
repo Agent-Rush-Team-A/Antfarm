@@ -205,7 +205,7 @@ Agent 步骤信号在异步工具策略前标识原 turn，工具在发送时重
 <a id="workspace-modes"></a>
 ### 工作区模式
 
-可选 `./modes` 入口接收可信的工作区模式协调器、显式的执行/文件提供方映射以及切换运行时。先在隔离的 service realm 中加载各后端，再以 `backend: provided` 加载管理入口。模式入口还提供 `workspaceFileAccess`；HTTP 上传与产物入口使用 `storage: provided`。部署方负责这套组合。该入口不提供默认模式或后端。
+可选 `./modes` 入口接收可信的工作区模式协调器、显式的执行/文件提供方映射以及切换运行时。先在隔离的 service realm 中加载各后端，再以 `backend: provided` 加载管理入口。模式入口还提供 `workspaceFileAccess`；HTTP 上传与产物入口使用 `storage: provided`。[Loader 测试](tests/mode-loader.host.spec.ts)使用真实登记协调器和 Docker 验证显式目标组合。该入口不提供默认模式或后端。
 
 Docker 提供方使用 `./docker`，配置为 Runner 通信参数加 `workspaceRoot`，不会再创建嵌套容器。它为经过验证的绑定目录提供原生文本访问，显示路径为 `/workspace`。Harness 分配器、Runner 和容器的 uid/gid 必须预先匹配。持久化二进制文件通过经过验证的目录提供方访问，不依赖容器存活。
 

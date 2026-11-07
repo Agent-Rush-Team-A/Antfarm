@@ -205,7 +205,7 @@ The optional execute signal cancels only the local wait; without it, service lif
 <a id="workspace-modes"></a>
 ### Workspace modes
 
-The optional `./modes` entry receives a trusted workspace mode coordinator, an explicit map of execution/file targets, and a transition runtime. Load independent targets in isolated service realms, then use the management entry with `backend: provided`. The mode entry also supplies `workspaceFileAccess`; HTTP upload/artifact entries use `storage: provided`. Deployments own this composition. The entry supplies no mode or provider defaults.
+The optional `./modes` entry receives a trusted workspace mode coordinator, an explicit map of execution/file targets, and a transition runtime. Load independent targets in isolated service realms, then use the management entry with `backend: provided`. The mode entry also supplies `workspaceFileAccess`; HTTP upload/artifact entries use `storage: provided`. The [Loader test](tests/mode-loader.host.spec.ts) exercises explicit targets with the real registry coordinator and Docker. The entry supplies no mode or provider defaults.
 
 For Docker targets, `./docker` uses the Runner transport settings plus `workspaceRoot`, without creating a nested container. It supplies native text access to that verified bind directory and displays paths under `/workspace`. The Harness allocator, Runner and container uid/gid must already agree. Persistent binary files use the verified directory provider independently of container lifetime.
 
