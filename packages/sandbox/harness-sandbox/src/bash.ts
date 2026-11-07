@@ -57,11 +57,12 @@ export function apply(ctx: Context): void {
       command: parsed.data.command, workdir, timeoutMs: parsed.data.timeoutMs,
     }
     const signal = AbortSignal.any([exec.signal, permit.signal, authority.signal])
+    const release = await permit.resources.retain()
     const finish = ctx.workspaceSandboxState.beginExecution(permit.workspaceId)
     try {
       const result = await runBashExecution(ctx, permit, request, signal, () => { check() })
       return { cwd: posix.join('/workspace', workdir), exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr }
-    } finally { finish() }
+    } finally { try { await release() } finally { finish() } }
   }
   const definition: ToolDefinition = defineTool({
     name: 'bash',

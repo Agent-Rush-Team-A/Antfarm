@@ -52,10 +52,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     const violations = validateJsonSchemaValue(parameters, args, '')
     if (violations.length > 0) throw new ToolArgsError(violations)
     const signal = AbortSignal.any([exec.signal, permit.signal, authority.signal])
+    const release = await permit.resources.retain()
     const finish = ctx.workspaceSandboxState.beginExecution(permit.workspaceId)
     try {
       let files: WorkspaceRuntimeFiles
-      try { files = await ctx.sandboxRunnerClient.files(permit.workspaceId, permit.containerId, signal) }
+      try { files = await permit.resources.backend.files(permit.workspaceId, permit.containerId, signal) }
       catch (cause) {
         throw new HarnessError('Workspace files are unavailable. Check the sandbox status before continuing.', 'SANDBOX_FILES_UNAVAILABLE', { cause })
       }
@@ -76,7 +77,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         throw new HarnessError('Workspace directory changed. Check the sandbox status before continuing.', 'SANDBOX_INVALID_PATH')
       }
       return await adapter.run({ permit, files, project, root, check }, () => native.execute(args, { ...exec, signal }))
-    } finally { finish() }
+    } finally { try { await release() } finally { finish() } }
   }
   await remote.plugin({
     name: 'workspace-native-text-tools', inject: NativeFs.inject,

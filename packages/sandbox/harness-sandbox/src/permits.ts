@@ -7,6 +7,7 @@ import { RemoteError, remoteErrorOf, type UserId } from '@deepseek-ai/dsh-typert
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import type { SandboxContainerId } from './runner-client.ts'
 import type { SandboxEpoch } from './lifecycle.ts'
+import type { SandboxExecutionAdmission } from './backend.ts'
 
 /** Original trusted identities and generation for exactly one admitted message. */
 export interface SandboxPermit {
@@ -21,10 +22,12 @@ export interface SandboxPermit {
   agent?: Agent
   messageId?: UserMessage['id']
   containerId?: SandboxContainerId
+  resources?: SandboxExecutionAdmission
   accepted: boolean
   revoked: boolean
   released: boolean
   stopCaller: () => void
+  stopResources?: () => void
 }
 
 /** Owns active permits separately from cancelled, never-admitted request IDs. */
@@ -32,9 +35,11 @@ export class SandboxPermits {
   private readonly requests = new Map<SessionId, Map<SessionRequestId, SandboxPermit>>()
   private readonly cancelled = new Map<SessionId, Set<SessionRequestId>>()
   private readonly turns = new WeakMap<Agent, Map<number, SandboxPermit[]>>()
+  private readonly settlements = new Set<Promise<void>>()
 
   /** @param changed - Synchronous notification after a request is actually inserted or removed. */
-  constructor(private readonly changed: (id: WorkspaceId) => void) {}
+  constructor(private readonly changed: (id: WorkspaceId) => void,
+    private readonly failed: (id: WorkspaceId, error: unknown) => void = () => {}) {}
 
   /**
    * Count outstanding admissions and accepted input through turn settlement, including revoked work still draining.
@@ -64,10 +69,11 @@ export class SandboxPermits {
     if (this.cancelled.get(input.sessionId)?.has(input.requestId)) return Promise.reject(this.revoked())
     const existing = this.requests.get(input.sessionId)?.get(input.requestId)
     if (existing !== undefined) return existing.result
+    const result = Promise.withResolvers<SessionPromptValue>()
     const permit: SandboxPermit = {
       ...input, controller: new AbortController(), accepted: false, revoked: false, released: false,
       stopCaller: () => { caller.removeEventListener('abort', disconnected) },
-      result: Promise.resolve().then(() => run(permit)).catch((error: unknown) => {
+      result: result.promise.catch((error: unknown) => {
         if (remoteErrorOf(error)?.code === 'gateway/cancelled') this.cancel(permit)
         throw error
       }).finally(() => {
@@ -81,7 +87,23 @@ export class SandboxPermits {
     this.changed(input.workspaceId)
     caller.addEventListener('abort', disconnected, { once: true })
     if (caller.aborted) disconnected()
+    try { void run(permit).then(result.resolve, result.reject) }
+    catch (error) { result.reject(error) }
     return permit.result
+  }
+
+  /**
+   * Retain the captured provider until this message's true settlement.
+   * @param permit - Original registered input.
+   * @param resources - Prepared mode and execution reservation.
+   */
+  bindResources(permit: SandboxPermit, resources: SandboxExecutionAdmission): void {
+    if (permit.resources !== undefined) throw new Error('Sandbox input already has resources')
+    permit.resources = resources
+    const abort = () => { this.cancel(permit); permit.agent?.cancel({ kind: 'hook', reason: 'sandbox-provider-unloaded' }) }
+    resources.scope.signal.addEventListener('abort', abort, { once: true })
+    permit.stopResources = () => { resources.scope.signal.removeEventListener('abort', abort) }
+    if (resources.scope.signal.aborted) abort()
   }
 
   /**
@@ -194,8 +216,9 @@ export class SandboxPermits {
       if (permit.agent !== undefined) agents.add(permit.agent)
     }
     for (const agent of agents) agent.cancel({ kind: 'hook', reason: 'sandbox-conversation-unloaded' })
-    await Promise.allSettled(owned.map(permit => permit.result))
+    await Promise.allSettled([...owned.map(permit => permit.result), ...[...agents].map(agent => agent.whenIdle())])
     for (const permit of owned) this.release(permit)
+    await Promise.allSettled([...this.settlements])
   }
 
   /**
@@ -238,7 +261,9 @@ export class SandboxPermits {
   }
 
   private release(permit: SandboxPermit): void {
+    if (permit.released) return
     permit.released = true
+    permit.stopResources?.()
     permit.controller.abort()
     permit.stopCaller()
     const requests = this.requests.get(permit.sessionId)
@@ -247,6 +272,11 @@ export class SandboxPermits {
       this.changed(permit.workspaceId)
     }
     delete permit.agent
+    if (permit.resources !== undefined) {
+      const pending = permit.resources.release().finally(() => { this.settlements.delete(pending) })
+      this.settlements.add(pending)
+      void pending.catch((error: unknown) => { this.failed(permit.workspaceId, error) })
+    }
   }
 
   private revoked(): RemoteError<'gateway/cancelled'> {

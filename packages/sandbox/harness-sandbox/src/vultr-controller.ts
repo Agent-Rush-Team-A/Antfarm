@@ -19,6 +19,7 @@ import { VultrApiError, type VultrApi, type VultrInstance } from './vultr-api.ts
 import { CloudWorkspaceStore, type CloudRecord } from './vultr-storage.ts'
 import type { ResolvedConfig } from './vultr-config.ts'
 import { delay, type VultrProvisioning } from './vultr-provision.ts'
+import type { WorkspaceModeChange } from '@deepseek-ai/dsh-workspace/types'
 
 interface Slot {
   record: CloudRecord
@@ -383,6 +384,56 @@ export class VultrWorkspaceController {
     await this.commit(slot, { ...slot.record, instanceId: undefined, state: 'closed', phase: 'closed', failure: undefined,
       oldSnapshotId: undefined, resumePhase: undefined, mutation: undefined, generation, label })
     slot.revocation = new AbortController()
+  }
+
+  /**
+   * Resolve the source's complete saved files after exclusive mode preparation confirms closure.
+   * @param change - Original immutable workspace and transition identity.
+   * @param signal - Coordinator-owned preparation lifetime.
+   * @returns Completed cache directory, or original project files for a VM that was never allocated.
+   */
+  modeCheckpointRoot(change: WorkspaceModeChange, signal: AbortSignal): string {
+    signal.throwIfAborted()
+    const slot = this.slot(change.workspaceId, change.project)
+    if (slot.record.state !== 'closed' || slot.record.instanceId !== undefined) throw new RunnerResponseError('sandbox_closing', 409, true)
+    return slot.record.cache === undefined ? change.project : this.store.copyPath(change.workspaceId, slot.record.cache)
+  }
+
+  /**
+   * Publish complete target files for a fresh VM and retire previous saved snapshots without changing record fields.
+   * Exclusive mode admission owns this call; no live VM or concurrent resource operation may remain.
+   * @param change - Durable transition identity and canonical published project.
+   * @param caller - Coordinator-owned settlement lifetime.
+   * @returns A durable closed file view; lost deletion/metadata outcomes remain blocked for the same retry.
+   */
+  replaceModeFiles(change: WorkspaceModeChange, caller: AbortSignal): Promise<void> {
+    return this.track((async () => {
+      const slot = this.slot(change.workspaceId, change.project)
+      if (slot.operation !== undefined || slot.record.instanceId !== undefined) throw new RunnerResponseError('sandbox_closing', 409, true)
+      const signal = AbortSignal.any([caller, this.operationSignal()])
+      signal.throwIfAborted()
+      const copy = await this.store.copyLocal(slot.record, change.changeId, change.project,
+        { maxFiles: this.settings.maxSavedFiles, maxBytes: this.settings.maxSavedBytes }, signal)
+      await this.commit(slot, { ...slot.record, candidateCache: copy, state: 'closing', phase: 'deleting', failure: undefined })
+      try {
+        const snapshots = new Set([slot.record.snapshotId, slot.record.oldSnapshotId, slot.record.pendingSnapshotId]
+          .filter(value => value !== undefined))
+        const deleted = await Promise.allSettled([...snapshots].map(async (id) => {
+          await this.api.deleteSnapshot(id, signal)
+          if (await this.api.snapshot(id, signal) !== undefined) throw new Error('Mode source snapshot deletion is unconfirmed')
+        }))
+        const failures = deleted.filter(result => result.status === 'rejected')
+        if (failures.length > 0) throw new AggregateError(failures.map((result): unknown => result.reason),
+          'Mode snapshot retirement did not finish')
+        const generation = brandString<SandboxContainerId>(randomBytes(32).toString('hex'))
+        await this.commit(slot, { ...slot.record, cache: copy, candidateCache: undefined, seeded: false,
+          snapshotId: undefined, oldSnapshotId: undefined, pendingSnapshotId: undefined, snapshotDescription: undefined,
+          state: 'closed', phase: 'closed', failure: undefined, resumePhase: undefined, mutation: undefined,
+          generation, label: this.label(change.workspaceId, generation) })
+        slot.revocation.abort()
+        slot.revocation = new AbortController()
+      } catch (error) { await this.failed(slot, 'delete'); throw error }
+    })())
   }
 
   /**

@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto'
-import { mkdtemp, mkdir, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, test, vi } from 'vitest'
@@ -18,6 +18,7 @@ import { VultrWorkspaceController } from '../src/vultr-controller.ts'
 import type { VultrProvisioning } from '../src/vultr-provision.ts'
 import type { RunnerExecutionRequest, RunnerExecutionIdentity } from '../src/execution.ts'
 import { executionRequest } from '../src/execution.ts'
+import type { WorkspaceModeChange, WorkspaceModeChangeId } from '@deepseek-ai/dsh-workspace/types'
 
 const linuxTest = test.runIf(process.platform === 'linux')
 const roots: string[] = []
@@ -389,4 +390,61 @@ linuxTest('a connected helper without binary file support never publishes a read
   expect(f.controller.progress(f.a)).toMatchObject({ phase: 'failed', failure: 'connect' })
   expect(f.external.instances.size).toBe(1)
   expect(await f.controller.status(f.a)).toMatchObject({ state: 'cleanup_required' })
+})
+
+linuxTest('mode publication replaces the closed file view and seeds a fresh VM instead of an obsolete snapshot', async () => {
+  const f = await setup()
+  await f.controller.open(f.a, f.projectA)
+  await f.controller.close(f.a)
+  const old = (await f.store.load())[0]!
+  const change: WorkspaceModeChange = { workspaceId: f.a, project: f.projectA,
+    changeId: brandString<WorkspaceModeChangeId>(randomUUID()), from: 'multi-docker', to: 'multi-vm', previousRevision: 1 }
+  await writeFile(join(f.projectA, 'mode.csv'), 'new mode files\n')
+  await f.controller.replaceModeFiles(change, new AbortController().signal)
+  const record = (await f.store.load())[0]!
+  expect(record.snapshotId).toBeUndefined()
+  expect(record.seeded).toBe(false)
+  expect(f.external.snapshots.size).toBe(0)
+  expect(f.external.instances.size).toBe(0)
+  expect(await readFile(join(f.store.copyPath(f.a, record.cache!), 'mode.csv'), 'utf8')).toBe('new mode files\n')
+  expect(record.cache).not.toBe(old.cache)
+  const stream = await f.controller.download({ workspaceId: f.a, project: f.projectA, signal: new AbortController().signal, admit: () => {} }, 'mode.csv', 100)
+  expect(await new Response(stream.body).text()).toBe('new mode files\n')
+  await stream.settled
+  const uploaded: string[] = []
+  vi.spyOn(SshWorkspaceFiles.prototype, 'upload').mockImplementation(async (name, chunks) => {
+    const bytes: Buffer[] = []
+    for await (const chunk of chunks) bytes.push(Buffer.from(chunk))
+    uploaded.push(Buffer.concat(bytes).toString())
+    return { name, bytes: Buffer.concat(bytes).length }
+  })
+  await f.controller.open(f.a, f.projectA)
+  expect(uploaded).toEqual(['new mode files\n'])
+  const creation = f.external.requests.filter(request => request.method === 'POST' && request.path === '/instances').at(-1)!
+  expect(creation.body).toHaveProperty('os_id')
+  expect(creation.body).not.toHaveProperty('snapshot_id')
+})
+
+linuxTest('failed snapshot retirement retains mode recovery data and resumes after restarting the cloud owner', async () => {
+  const f = await setup()
+  await f.controller.open(f.a, f.projectA)
+  await f.controller.close(f.a)
+  const change: WorkspaceModeChange = { workspaceId: f.a, project: f.projectA,
+    changeId: brandString<WorkspaceModeChangeId>(randomUUID()), from: 'multi-vm', to: 'multi-docker', previousRevision: 1 }
+  await writeFile(join(f.projectA, 'mode.csv'), 'retained target\n')
+  vi.spyOn(VultrApi.prototype, 'deleteSnapshot').mockRejectedValueOnce(new Error('snapshot delete response lost'))
+  await expect(f.controller.replaceModeFiles(change, new AbortController().signal)).rejects.toThrow('retirement did not finish')
+  const interrupted = (await f.store.load())[0]!
+  expect(interrupted).toMatchObject({ state: 'cleanup_required', failure: 'delete' })
+  expect(interrupted.snapshotId).toBeDefined()
+  expect(interrupted.candidateCache).toBeDefined()
+  await f.controller.dispose()
+  const resumed = await setup(f)
+  await resumed.controller.replaceModeFiles(change, new AbortController().signal)
+  const complete = (await resumed.store.load())[0]!
+  expect(complete).toMatchObject({ state: 'closed', seeded: false })
+  expect(complete.snapshotId).toBeUndefined()
+  expect(complete.cache).toBe(interrupted.candidateCache)
+  expect(f.external.instances.size).toBe(0)
+  expect(f.external.snapshots.size).toBe(0)
 })

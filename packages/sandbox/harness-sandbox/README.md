@@ -121,7 +121,7 @@ The existing optional `fs-observation-policy` continues to supply no-clobber and
 <a id="conversation-admission"></a>
 ### Conversation admission
 
-The optional overlay also loads `@deepseek-ai/dsh-harness-sandbox/conversation`. It requires the native Session Controller, Agents and multiuser services. The `session/prompt-admission` listener captures the authenticated user and registered workspace before Agent recovery, opening or attachment waits. It rechecks native session/workspace ownership after preparation and immediately before synchronous inbox insertion. Preparation opens or reuses the workspace through `openForUser`; failure does not delete a shared container.
+The optional overlay also loads `@deepseek-ai/dsh-harness-sandbox/conversation`. It requires the native Session Controller, Agents and multiuser services. The `session/prompt-admission` listener captures the authenticated user and registered workspace before Agent recovery, opening or attachment waits. It rechecks native session/workspace ownership after preparation and immediately before synchronous inbox insertion. The validated readiness phase opens or reuses the captured backend; failure does not delete a shared multi-session environment.
 
 Pending duplicate `requestId` values share preparation. Accepted IDs remain deduplicated through durable inbox-insertion history, including inputs subsequently cleared from the queue. Cancelled, never-admitted IDs have separate process-local receipts and cannot restart on retry. Caller disconnect before insertion revokes preparation; disconnect after insertion leaves accepted work running. Ordinary Session stop retains its existing `keepInbox` behavior.
 
@@ -202,6 +202,17 @@ The optional execute signal cancels only the local wait; without it, service lif
 
 -----
 
+<a id="workspace-modes"></a>
+### Workspace modes
+
+The optional `./modes` entry receives a trusted workspace mode coordinator, an explicit map of execution/file targets, and a transition runtime. Load independent targets in isolated service realms, then use the management entry with `backend: provided`. The mode entry also supplies `workspaceFileAccess`; HTTP upload/artifact entries use `storage: provided`. The [Loader test](tests/mode-loader.host.spec.ts) exercises explicit targets with the real registry coordinator and Docker. The entry supplies no mode or provider defaults.
+
+For Docker targets, `./docker` uses the Runner transport settings plus `workspaceRoot`, without creating a nested container. It supplies native text access to that verified bind directory and displays paths under `/workspace`. The Harness allocator, Runner and container uid/gid must already agree. Persistent binary files use the verified directory provider independently of container lifetime.
+
+The mode entry reserves incoming work before coordinator or preparation waits, validates attachments before starting the environment, and retains the selected backend through inbox and turn settlement. Bash, native text tools, and binary streams retain their own cleanup under that same selection. The last single-session reservation destroys its captured environment; input received before deletion retains that generation, and input received during deletion waits for a fresh one. Manual lifecycle controls are refused for single-session modes. Multi-session modes keep manual and idle controls.
+
+-----
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
@@ -209,6 +220,11 @@ The optional execute signal cancels only the local wait; without it, service lif
 <summary>Implementation internals — click to expand</summary>
 
 The [management service](src/index.ts) owns authorization, directory validation and browser-safe projection. [Application state](src/lifecycle.ts) coordinates close barriers; [permits](src/permits.ts) bind [conversation admission](src/conversation.ts) to real inbox events. The [transport child](src/transport.ts) owns the [HTTP client](src/runner-client.ts) and ties request settlement to disposal. [Wire settings](src/config.ts) separate lifecycle, execution and cancellation budgets; [execution validation](src/execution.ts) checks identities and results, while [management types](src/types.ts) declare sanitized browser values and errors.
+
+
+The [mode backend](src/mode-backend.ts) retains shared mode admission through message and resource settlement. [Directory resources](src/mode-directory-resources.ts) save complete bounded checkpoints and private recovery journals, stage files beside the target directory, and publish with synchronized renames. Rollback attempts destination cleanup and source restoration independently. Linux directory copies preserve setgid and sticky bits; publication retains the destination root permissions. Symlinks and special entries refuse directory preservation; incomplete copies never replace the workspace. Journals and backups remain until a ready, later coordinator revision authorizes collection.
+
+The Vultr mode resource adapter preserves the source with the existing snapshot path before staging. Publication and source retirement replace its closed file view, remove obsolete snapshots with confirmed absence, and prepare fresh VM seeding from the published files. Failed deletion retains the original snapshot ids and candidate file copy for restart reconciliation. Ordinary multi-session VM close/reopen continues to use its saved snapshot.
 
 </details>
 
@@ -222,6 +238,7 @@ The [management service](src/index.ts) owns authorization, directory validation 
 - [Sandbox subsystem](../../../docs/subsystems/sandbox.md) — generated service reference.
 
 <a id="model-experience"></a>
+
 ## Model Experience
 
 ### Bash
@@ -243,6 +260,7 @@ The stable tool description can share the prompt prefix; results append as ordin
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Deployment** — the Runner requires Linux Unix sockets and a separately provisioned non-root filesystem identity. Windows named pipes support transport tests only.
+- **Mode composition** — Deployments provide the coordinator and explicit backend mappings; shipped profiles do not activate `./modes` automatically. Single-session VM also requires a verified shared-filesystem execution provider. Unknown creation or deletion outcomes block new task generations until provider reconciliation and mode admission reload.
 - **Capabilities** — The Runner overlay exposes only Bash. SSH text files require the separate `./files` entry and generation-bound backend access. Search, PowerShell, background, terminal, browser and indirect tools still require isolation before activation. The Runner overlay enables Web management controls.
 - **Cloud retention** — Workspace registration deletion does not remove retained cloud snapshots or private copies. Deployment operators manage retention for deleted workspaces. The provider preserves only regular files and directories in the closed download copy; symlinks and special entries remain available only in the full disk snapshot.
 - **Cloud acceptance** — `DSH_VULTR_TEST_CONFIG` selects a private deployment JSON for [the opt-in real-cloud Loader test](tests/vultr-loader.e2e.ts). Run it with `pnpm exec vitest run --config vitest.e2e.config.ts packages/sandbox/harness-sandbox/tests/vultr-loader.e2e.ts`; `DSH_VULTR_TEST_EVIDENCE` optionally selects its report path. It creates two billable VMs and disk snapshots, checks real SSH and authenticated HTTP with a scripted model, and removes its uniquely tagged resources. It does not verify a live model provider or browser controls.

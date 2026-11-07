@@ -1,19 +1,38 @@
 /** Workspace execution provider seam; authorization remains with the management and turn owners. */
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { FileSystem } from '@deepseek-ai/dsh-fs'
+import type { WorkspaceFileScope, WorkspaceFileAccess } from '@deepseek-ai/dsh-fs/workspace-access'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import { RunnerResponseError } from './runner-client.ts'
 import type { RunnerClosedSandbox, RunnerRunningSandbox, RunnerSandboxStatus, SandboxContainerId } from './runner-client.ts'
 import type { SandboxProgress, SandboxActivity } from './types.ts'
 import type { RunnerCancellationResult, RunnerExecutionIdentity, RunnerExecutionRequest, RunnerExecutionResult } from './execution.ts'
 
-/** Files and directory of one original execution generation, never the Harness project directory. */
+/** Files and directory retained for one original execution generation. */
 export interface WorkspaceRuntimeFiles {
   readonly fs: FileSystem
   readonly root: string
   readonly signal: AbortSignal
+  /** Optional model-visible root; omission retains the filesystem provider's own display paths. */
+  readonly displayRoot?: string
   /** Reject access after closure, disconnect or generation replacement. */
   assertCurrent(): void
+}
+
+/** One admitted selection, retained through preparation, inbox work and resource cleanup. */
+export interface SandboxExecutionAdmission {
+  readonly backend: Pick<SandboxExecutionBackend, 'open' | 'close' | 'status' | 'execute' | 'cancel' | 'files'>
+  readonly scope: WorkspaceFileScope
+  /** Mode facades include their captured binary provider; ordinary execution-only providers omit it. */
+  readonly files?: Pick<WorkspaceFileAccess, 'list' | 'download' | 'upload'>
+  /** Refuse user and idle lifecycle controls when task completion owns this environment. */
+  readonly taskManaged: boolean
+  /** Prepare the retained generation only after prompt and attachment validation. */
+  ready(): Promise<RunnerRunningSandbox>
+  /** Retain independent command/file cleanup; release it even when execution fails. */
+  retain(): Promise<() => Promise<void>>
+  /** Idempotent; release after the owning input or operation actually settles. */
+  release(): Promise<void>
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -27,6 +46,21 @@ declare module '@deepseek-ai/cordis' {
 export abstract class SandboxExecutionBackend extends Service {
   /** @param ctx - Provider owner; disposal must drain its accepted work. */
   constructor(ctx: Context) { super(ctx, 'sandboxRunnerClient') }
+
+  /**
+   * Capture execution before asynchronous preparation; ordinary providers need no mode coordinator.
+   * @param scope - Original workspace registration, authority and caller cancellation.
+   * @returns A lazy selection; mode providers override this to retain shared admission and task resources.
+   */
+  admit(scope: WorkspaceFileScope): SandboxExecutionAdmission | Promise<SandboxExecutionAdmission> {
+    scope.admit()
+    return {
+      backend: this, scope, taskManaged: false,
+      ready: async () => { scope.admit(); return this.open(scope.workspaceId, scope.project) },
+      retain: () => Promise.resolve(() => Promise.resolve()),
+      release: () => Promise.resolve(),
+    }
+  }
 
   /**
    * Open or reuse the authorized Workspace's execution generation.
@@ -69,6 +103,13 @@ export abstract class SandboxExecutionBackend extends Service {
    * @returns Provider-owned work that survives a cancelled caller, or persistent cleanup barriers.
    */
   activity(_workspaceId: WorkspaceId): Pick<SandboxActivity, 'openings' | 'executions' | 'closing'> | undefined { return undefined }
+
+  /**
+   * Inspect a locally owned closure barrier without queuing behind that closure.
+   * @param _workspaceId - Authorized workspace.
+   * @returns Closing or cleanup-required when owned locally; omission requires a fresh provider query.
+   */
+  barrier(_workspaceId: WorkspaceId): Extract<RunnerSandboxStatus, { state: 'closing' | 'starting' | 'cleanup_required' }> | undefined { return undefined }
 
   /**
    * Observe deployment progress without exposing cloud identities.

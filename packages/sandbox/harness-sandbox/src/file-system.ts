@@ -91,7 +91,9 @@ export class WorkspaceToolFileSystem extends FileSystem {
       cwd: this.cwd(opts?.cwd, operation), signal: this.signal(operation, opts?.signal),
     })
     this.contained(operation, remote)
-    const target = { targetKey: FsTargetKey(`${operation.permit.workspaceId}:${operation.permit.containerId}:${remote.targetKey}`), displayPath: remote.displayPath }
+    const displayPath = operation.files.displayRoot === undefined ? remote.displayPath
+      : posix.join(operation.files.displayRoot, posix.relative(operation.files.root, operation.files.fs.processPath(remote)))
+    const target = { targetKey: FsTargetKey(`${operation.permit.workspaceId}:${operation.permit.containerId}:${remote.targetKey}`), displayPath }
     this.targets.set(target, { operation, remote })
     return target
   }

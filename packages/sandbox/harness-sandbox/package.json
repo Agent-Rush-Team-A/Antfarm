@@ -60,6 +60,18 @@
     "./vultr": {
       "types": "./lib/types/vultr.d.ts",
       "default": "./lib/vultr.js"
+    },
+    "./docker": {
+      "types": "./lib/types/docker.d.ts",
+      "default": "./lib/docker.js"
+    },
+    "./modes": {
+      "types": "./lib/types/mode-backend.d.ts",
+      "default": "./lib/mode-backend.js"
+    },
+    "./mode-resources": {
+      "types": "./lib/types/mode-directory-resources.d.ts",
+      "default": "./lib/types/mode-directory-resources.js"
     }
   },
   "files": [
@@ -78,7 +90,9 @@
     "lib/backend.js",
     "lib/ssh.js",
     "lib/files.js",
-    "lib/vultr.js"
+    "lib/vultr.js",
+    "lib/docker.js",
+    "lib/mode-backend.js"
   ],
   "license": "MIT",
   "peerDependencies": {
@@ -109,7 +123,8 @@
     "@deepseek-ai/dsh-session-projection": "workspace:*",
     "@deepseek-ai/dsh-tool-fs": "workspace:*",
     "@deepseek-ai/dsh-fs-local": "workspace:*",
-    "@deepseek-ai/node-addon-system": "workspace:~"
+    "@deepseek-ai/node-addon-system": "workspace:~",
+    "@deepseek-ai/dsh-util-values": "workspace:*"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-tools": "workspace:*",

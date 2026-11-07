@@ -121,7 +121,7 @@ Workspace SSH 上下文启用[受约束的文本读取](../../ssh/fs-ssh/README.
 <a id="conversation-admission"></a>
 ### 对话接纳
 
-可选 overlay 还加载 `@deepseek-ai/dsh-harness-sandbox/conversation`，依赖原生 Session Controller、Agents 和多用户服务。`session/prompt-admission` 监听器在 Agent 恢复、开启及附件等待之前捕获已认证用户和登记工作区；准备完成后和最终同步入队前再次检查原生会话、工作区归属。准备通过 `openForUser` 开启或复用工作区；失败不会删除共享容器。
+可选 overlay 还加载 `@deepseek-ai/dsh-harness-sandbox/conversation`，依赖原生 Session Controller、Agents 和多用户服务。`session/prompt-admission` 监听器在 Agent 恢复、开启及附件等待之前捕获已认证用户和登记工作区；准备完成后和最终同步入队前再次检查原生会话、工作区归属。验证后的就绪阶段开启或复用已经选定的后端；失败不会删除多会话共享环境。
 
 准备中的重复 `requestId` 共享同一次准备。已接纳编号通过持久收件箱插入历史去重，包括随后被清队列的输入。已取消但未接纳的编号单独保留进程内回执，重试不能恢复。入队前调用方断线会撤销准备；入队后断线不取消已接纳工作。普通会话停止继续保持原有 `keepInbox` 语义。
 
@@ -202,6 +202,17 @@ Agent 步骤信号在异步工具策略前标识原 turn，工具在发送时重
 
 -----
 
+<a id="workspace-modes"></a>
+### 工作区模式
+
+可选 `./modes` 入口接收可信的工作区模式协调器、显式的执行/文件提供方映射以及切换运行时。先在隔离的 service realm 中加载各后端，再以 `backend: provided` 加载管理入口。模式入口还提供 `workspaceFileAccess`；HTTP 上传与产物入口使用 `storage: provided`。[Loader 测试](tests/mode-loader.host.spec.ts)使用真实登记协调器和 Docker 验证显式目标组合。该入口不提供默认模式或后端。
+
+Docker 提供方使用 `./docker`，配置为 Runner 通信参数加 `workspaceRoot`，不会再创建嵌套容器。它为经过验证的绑定目录提供原生文本访问，显示路径为 `/workspace`。Harness 分配器、Runner 和容器的 uid/gid 必须预先匹配。持久化二进制文件通过经过验证的目录提供方访问，不依赖容器存活。
+
+模式入口在等待协调器或准备工作前为输入保留名额，在附件验证后启动环境，并将选中的后端保留到收件箱和对话轮次收尾。Bash、原生文本工具及二进制流在同一选择下分别保留清理工作。单会话的最后一个名额释放后销毁其原始环境；删除前到达的输入保留该代次，删除期间到达的输入等待新代次。后端拒绝单会话模式的手动生命周期控制。多会话模式保留手动与空闲控制。
+
+-----
+
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
@@ -209,6 +220,11 @@ Agent 步骤信号在异步工具策略前标识原 turn，工具在发送时重
 <summary>实现内部细节 — 点击展开</summary>
 
 [管理服务](src/index.ts)负责授权、目录校验和浏览器安全结果投影。[应用状态](src/lifecycle.ts)协调关闭标记；[许可](src/permits.ts)通过真实收件箱事件绑定[对话接纳](src/conversation.ts)。[通信子服务](src/transport.ts)拥有 [HTTP 客户端](src/runner-client.ts)，将请求收束绑定到卸载。[通信设置](src/config.ts)分别提供生命周期、执行和取消预算；[执行校验](src/execution.ts)检查身份及结果，[管理类型](src/types.ts)声明脱敏的浏览器值和错误。
+
+
+[模式后端](src/mode-backend.ts) 将共享模式许可保留到消息和资源收尾。[目录资源](src/mode-directory-resources.ts) 保存完整且有总量限制的文件副本与私有恢复日志，在目标目录旁准备文件，再通过已同步的重命名发布。回滚分别尝试清理目标和恢复源状态。Linux 目录副本保留 setgid 与 sticky 权限位；发布时保留目标根目录的访问权限。符号链接及特殊条目会使目录保存失败；不完整的副本不会替换工作区。日志和备份保留到协调器以 ready 状态及更高 revision 授权清理。
+
+Vultr 模式资源适配器在准备目标前，用现有快照路径保存源状态。发布及源回收会替换关闭后的文件视图，确认过期快照已删除，再准备从已发布文件为新 VM 导入内容。删除失败时保留原始快照编号和候选文件副本，供重启后恢复。普通多会话 VM 的关闭与重开继续使用已保存快照。
 
 </details>
 
@@ -222,6 +238,7 @@ Agent 步骤信号在异步工具策略前标识原 turn，工具在发送时重
 - [沙箱子系统](../../../docs/subsystems/sandbox.zh.md) — 生成的服务参考。
 
 <a id="model-experience"></a>
+
 ## 模型体验
 
 ### Bash
@@ -243,6 +260,7 @@ Agent 步骤信号在异步工具策略前标识原 turn，工具在发送时重
 <a id="known-limitations-and-deferred-work"></a>
 
 - **部署** — Runner 需要 Linux Unix socket 和单独配置的非 root 文件系统身份。Windows 命名管道仅用于通信测试。
+- **模式组合** — 部署必须提供协调器及显式后端映射；已分发的 profile 不会自动启用 `./modes`。单会话 VM 还需要经过共享文件系统验证的执行提供方。创建或删除结果未知时，提供方完成核实且模式准入重载之前不会分配新任务代次。
 - **能力** — Runner overlay 只暴露 Bash。SSH 文本文件需要单独的 `./files` 入口和绑定代次的后端访问。搜索、PowerShell、后台、终端、浏览器和间接工具仍须先完成隔离。Runner overlay 启用网页管理控件。
 - **云端保留** — 删除工作区登记不会移除已保留的云快照或私有副本；部署运维负责已删除工作区的保留策略。关闭后的下载副本仅保留普通文件和目录，符号链接及特殊条目仅保留在完整磁盘快照中。
 - **云端验收** — `DSH_VULTR_TEST_CONFIG` 为[可选真实云端 Loader 测试](tests/vultr-loader.e2e.ts)指定私有部署 JSON，通过 `pnpm exec vitest run --config vitest.e2e.config.ts packages/sandbox/harness-sandbox/tests/vultr-loader.e2e.ts` 运行；`DSH_VULTR_TEST_EVIDENCE` 可选指定报告路径。测试创建两台计费 VM 和磁盘快照，以脚本模型验证真实 SSH 和已认证 HTTP，并移除带有唯一测试标签的资源；它不验证真实模型提供方或浏览器控件。

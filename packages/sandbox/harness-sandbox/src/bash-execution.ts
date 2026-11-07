@@ -21,7 +21,7 @@ export async function runBashExecution(
   ctx: Context, permit: SandboxExecutionPermit, request: RunnerExecutionRequest,
   signal: AbortSignal, check: () => void,
 ): Promise<RunnerExecutionResult> {
-  const transport = ctx.sandboxRunnerClient
+  const transport = permit.resources.backend
   const manager = ctx.workspaceSandbox
   let submitted = false
   let terminal = false
@@ -81,7 +81,7 @@ export async function runBashExecution(
         let closure: 'unneeded' | 'confirmed' | 'unconfirmed' | 'superseded' = 'unneeded'
         if (uncertain) {
           try {
-            await manager.closeForUser(permit.userId, permit.workspaceId, { containerId: permit.containerId, version: permit.version })
+            await manager.closeForExecution(permit)
             closure = 'confirmed'
           } catch (failure) {
             closure = remoteErrorOf(failure)?.code === 'gateway/cancelled' ? 'superseded' : 'unconfirmed'
@@ -103,7 +103,7 @@ export async function runBashExecution(
     if (isAborted(signal)) return cancelling !== undefined && await cancelling ? 'record' : 'none'
     try {
       check()
-      const state = await manager.statusForUser(permit.userId, permit.workspaceId)
+      const state = await transport.status(permit.workspaceId)
       if (isAborted(signal)) return cancelling !== undefined && await cancelling ? 'record' : 'none'
       check()
       return state.state === 'running' && state.containerId === request.expectedContainerId ? 'running' : 'none'

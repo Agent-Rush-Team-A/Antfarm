@@ -66,11 +66,11 @@ test.each(['close', 'disconnect', 'ownership'] as const)('%s during attachment p
   release.resolve(undefined)
   expect((await result)[0]?.status).toBe('rejected')
   expect([...f.agent.inbox.nextTurn, ...f.agent.inbox.nextStep]).toHaveLength(0)
-  expect(f.calls.filter(call => call.method === 'PUT')).toHaveLength(1)
+  expect(f.calls.filter(call => call.method === 'PUT')).toHaveLength(0)
   if (cause !== 'ownership') {
     await f.reloadConversation()
     await expect(f.prompt('attachments')).rejects.toMatchObject({ code: 'gateway/cancelled' })
-    expect(f.calls.filter(call => call.method === 'PUT')).toHaveLength(1)
+    expect(f.calls.filter(call => call.method === 'PUT')).toHaveLength(0)
   }
 })
 

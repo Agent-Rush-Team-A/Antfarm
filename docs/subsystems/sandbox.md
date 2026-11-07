@@ -185,18 +185,43 @@ The internal `ctx.sandboxRunnerClient` transport accepts a complete `RunnerExecu
 
 The optional `@deepseek-ai/dsh-harness-sandbox/idle` plugin discovers native-owned candidates and schedules serial checks through the existing manager. The sandbox Web overlay loads it once at application scope. It retains failed observations, preserves close barriers and drains its lifetime on unload. Defaults, candidate ownership and failure behavior belong to the [idle reference](../../packages/sandbox/harness-sandbox/README.md#idle-reclamation).
 
+`SandboxExecutionAdmission` retains a selected backend and its authorized `WorkspaceFileScope`. `taskManaged` identifies environments whose lifetime belongs to admitted input and resource settlement. `ready()` returns that reservation's running generation; `retain()` supplies an independent cleanup release, and `release()` waits for retained work. Consumers use the captured backend for commands, files, result retrieval and cleanup. The [mode reference](../../packages/sandbox/harness-sandbox/README.md#workspace-modes) owns deployment composition and transition behavior.
+
+```ts type-equiv
+/** One admitted selection, retained through preparation, inbox work and resource cleanup. */
+interface SandboxExecutionAdmission {
+  readonly backend: Pick<SandboxExecutionBackend, 'open' | 'close' | 'status' | 'execute' | 'cancel' | 'files'>
+  readonly scope: WorkspaceFileScope
+  /** Mode facades include their captured binary provider; ordinary execution-only providers omit it. */
+  readonly files?: Pick<WorkspaceFileAccess, 'list' | 'download' | 'upload'>
+  /** Refuse user and idle lifecycle controls when task completion owns this environment. */
+  readonly taskManaged: boolean
+  /** Prepare the retained generation only after prompt and attachment validation. */
+  ready(): Promise<RunnerRunningSandbox>
+  /** Retain independent command/file cleanup; release it even when execution fails. */
+  retain(): Promise<() => Promise<void>>
+  /** Idempotent; release after the owning input or operation actually settles. */
+  release(): Promise<void>
+}
+
+```
+
 ## Workspace remote files
 
 The [Workspace SSH backend](../../packages/sandbox/harness-sandbox/README.md#workspace-ssh) supplies files from the same execution generation as Bash. Trusted consumers enforce their original user and turn permissions and path policy, recheck `assertCurrent()` and pass the captured signal for every operation. Closing or losing that connection invalidates the capability; the local Runner does not substitute host files.
 
 The [Workspace text entry](../../packages/sandbox/harness-sandbox/README.md#workspace-text-tools) applies these checks to native read/write/edit. It preserves native result rendering and optional observed-version policy, confines paths to the captured remote root, and separates observation keys by Workspace and generation. Helper closure waits for accepted file requests; cancellation does not roll back committed writes. The [Vultr backend](../../packages/sandbox/harness-sandbox/README.md#workspace-vultr) also supplies generation-bound web transfers and completed read-only copies through `ctx.workspaceFileAccess`.
 
+The explicit Docker provider supplies native text files from its verified persistent bind directory. `WorkspaceRuntimeFiles.displayRoot` optionally supplies a model-visible root without changing the physical root or authorization. Docker supplies `/workspace`; omission retains the filesystem provider's display paths.
+
 ```ts type-equiv
-/** Files and directory of one original execution generation, never the Harness project directory. */
+/** Files and directory retained for one original execution generation. */
 interface WorkspaceRuntimeFiles {
   readonly fs: FileSystem
   readonly root: string
   readonly signal: AbortSignal
+  /** Optional model-visible root; omission retains the filesystem provider's own display paths. */
+  readonly displayRoot?: string
   /** Reject access after closure, disconnect or generation replacement. */
   assertCurrent(): void
 }
@@ -341,6 +366,13 @@ Providers share lifecycle and original-request semantics without choosing user p
 
 ```ts cordis-catalog
 /**
+ * Capture execution before asynchronous preparation; ordinary providers need no mode coordinator.
+ * @param scope - Original workspace registration, authority and caller cancellation.
+ * @returns A lazy selection; mode providers override this to retain shared admission and task resources.
+ */
+admit(scope: WorkspaceFileScope): SandboxExecutionAdmission | Promise<SandboxExecutionAdmission>
+
+/**
  * Open or reuse the authorized Workspace's execution generation.
  * @param workspaceId - Authorized identity.
  * @param workspaceDir - Registered project path, separate from execution coordinates.
@@ -385,6 +417,13 @@ abstract cancel(workspaceId: WorkspaceId, request: RunnerExecutionIdentity): Pro
  * @returns Provider-owned work that survives a cancelled caller, or persistent cleanup barriers.
  */
 activity(_workspaceId: WorkspaceId): Pick<SandboxActivity, 'openings' | 'executions' | 'closing'> | undefined
+
+/**
+ * Inspect a locally owned closure barrier without queuing behind that closure.
+ * @param _workspaceId - Authorized workspace.
+ * @returns Closing or cleanup-required when owned locally; omission requires a fresh provider query.
+ */
+barrier(_workspaceId: WorkspaceId): Extract<RunnerSandboxStatus, { state: 'closing' | 'starting' | 'cleanup_required' }> | undefined
 
 /**
  * Observe deployment progress without exposing cloud identities.
@@ -444,6 +483,16 @@ Rechecks native ownership and directory records on every operation; owns no cont
 async openForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerRunningSandbox>
 
 /**
+ * Count task preparation before allocating an environment and retain its original backend.
+ * @param userId - Authenticated initiating user.
+ * @param workspaceId - Original native workspace.
+ * @param signal - Message permit lifetime, detached from HTTP cancellation after inbox insertion.
+ * @param check - Optional original-session authority check; omitted for workspace-only operations.
+ * @returns A lazy reservation; release after failed preparation or complete input/resource settlement.
+ */
+async reserveForUser(userId: UserId, workspaceId: WorkspaceId, signal: AbortSignal, check?: () => void): Promise<SandboxExecutionAdmission>
+
+/**
  * Observe a sandbox for an authenticated backend initiator.
  * @param userId - Authenticated initiating user.
  * @param workspaceId - Native workspace id.
@@ -480,6 +529,13 @@ async closeIfIdleForUser( userId: UserId, workspaceId: WorkspaceId, target: Sand
  * @returns Confirmed container absence.
  */
 async closeForUser(userId: UserId, workspaceId: WorkspaceId, target?: SandboxCloseTarget): Promise<RunnerClosedSandbox>
+
+/**
+ * Close uncertain work through its retained backend without reacquiring mode admission.
+ * @param permit - Original authenticated turn and execution generation.
+ * @returns Confirmed closure; stale generations refuse before deleting a replacement.
+ */
+async closeForExecution(permit: SandboxExecutionPermit): Promise<RunnerClosedSandbox>
 ```
 
 Types: [UserId](typert.md) · [WorkspaceId](workspace.md)

@@ -1,6 +1,6 @@
 /** Private atomic cloud metadata and complete read-only file copies. */
 import { constants } from 'node:fs'
-import { open, mkdir, readdir, rename, rm, realpath, stat, type FileHandle } from 'node:fs/promises'
+import { open, mkdir, readdir, rename, rm, realpath, stat, lstat, type FileHandle } from 'node:fs/promises'
 import { tryLockExclusive } from '@deepseek-ai/node-addon-system/flock'
 import { isAbsolute, join, relative } from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
@@ -12,6 +12,7 @@ import type { VultrInstanceId, VultrSnapshotId } from './vultr-api.ts'
 import type { SshWorkspaceFiles } from '@deepseek-ai/dsh-ssh/workspace-files'
 import { listArtifacts, openArtifact, streamArtifact, artifactComponents } from '@deepseek-ai/dsh-fs-local/workspace-artifacts'
 import { UploadFailure } from '@deepseek-ai/dsh-fs-local/workspace-upload'
+import { copyWorkspaceDirectory, type WorkspaceModeCopyLimits } from './mode-copy.ts'
 
 /** Restart-safe ownership and disk-save facts; no API credentials or task content. */
 export const cloudRecord = z.strictObject({
@@ -108,6 +109,32 @@ export class CloudWorkspaceStore {
   copyPath(id: CloudRecord['workspaceId'], copy: string): string {
     if (!/^copy-[a-f0-9-]{36}$/u.test(copy)) throw new Error('Invalid workspace copy identity')
     return join(this.root, id, copy)
+  }
+
+  /**
+   * Retain a complete local mode-transition file view without replacing an earlier published cache.
+   * @param record - Original workspace identity.
+   * @param changeId - Durable mode transition identity; retry uses the same completed copy.
+   * @param source - Complete published target directory.
+   * @param limits - Aggregate copy budgets.
+   * @param signal - Provider-owned transition lifetime.
+   * @returns Complete private copy identity, published later with cloud metadata.
+   */
+  async copyLocal(record: CloudRecord, changeId: string, source: string,
+    limits: WorkspaceModeCopyLimits, signal: AbortSignal): Promise<string> {
+    const digest = createHash('sha256').update(changeId).digest('hex').slice(0, 32)
+    const copy = 'copy-' + [digest.slice(0, 8), digest.slice(8, 12), digest.slice(12, 16), digest.slice(16, 20), digest.slice(20)].join('-')
+    const root = this.copyPath(record.workspaceId, copy)
+    await mkdir(join(this.root, record.workspaceId), { recursive: true, mode: 0o700 })
+    try { const info = await lstat(root); if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('Mode file cache is not a directory'); return copy }
+    catch (error) { if (!(typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT')) throw error }
+    const pending = root + '.pending'
+    await rm(pending, { recursive: true, force: true })
+    await copyWorkspaceDirectory(source, pending, limits, signal)
+    await rename(pending, root)
+    const directory = await open(join(this.root, record.workspaceId), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
+    try { await directory.sync() } finally { await directory.close() }
+    return copy
   }
 
   /**
