@@ -57,6 +57,9 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
     requireDist()
     const initial = configuration.parse(JSON.parse(await readFile(configPath, 'utf8')))
     const cloudKey = (await readFile(initial.apiKeyFile, 'utf8')).trim()
+    const inferenceKey = (await readFile(inferenceKeyPath, 'utf8')).trim()
+    const redact = (text: string): string => text.replaceAll(cloudKey, '<credential>').replaceAll(inferenceKey, '<credential>')
+      .replace(/token=[^\s&]+/gu, 'token=<redacted>')
     const deploymentId = 'issue12-' + randomUUID().slice(0, 12)
     const root = await mkdtemp(join(tmpdir(), 'antfarm-spreadsheet-'))
     const runDir = join(REPO_ROOT, '.playwright-mcp', deploymentId)
@@ -73,7 +76,7 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
       TSX_TSCONFIG_PATH: join(REPO_ROOT, 'tsconfig.json') }
     const events: { step: string; at: string; details?: unknown }[] = []
     const failures: unknown[] = []
-    let server: { child: ChildProcess; done: Promise<void>; base: string } | undefined
+    let server: { child: ChildProcess; done: Promise<void>; base: string; output(): string; log: string } | undefined
     let browser: Browser | undefined
     let context: BrowserContext | undefined
     let page: Page | undefined
@@ -85,6 +88,9 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
       dirty: execFileSync('git', ['status', '--porcelain'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim() !== '',
       provider: 'vultr', model: 'deepseek-v4.1-flash-1017', maxInstances: 2, initialIdleTimeoutMs: 3_600_000,
       finalIdleTimeoutMs: 5000, realModel: true, realCloud: true, browser: 'isolated headless Playwright',
+      cloud: { region: initial.region, plan: initial.plan, osId: initial.osId,
+        requestTimeoutMs: initial.requestTimeoutMs, operationTimeoutMs: initial.operationTimeoutMs,
+        helperArchiveHash: initial.helperArchiveHash, helperHash: initial.helperHash },
       overlays: ['antfarm-web', 'harness-vultr', 'pin-browse-picker', 'acceptance timing'] }, null, 2) + '\n')
 
     async function record(step: string, details?: unknown): Promise<void> {
@@ -123,7 +129,8 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
       const captured = server
       server = undefined
       captured.child.kill('SIGTERM')
-      await captured.done
+      try { await captured.done }
+      finally { await writeFile(captured.log, redact(captured.output())) }
     }
     async function startServer(idleTimeoutMs: number): Promise<string> {
       await writeFile(overlay, `- id: sandbox-idle\n  config:\n    idleTimeoutMs: ${idleTimeoutMs}\n    sweepIntervalMs: 1000\n`)
@@ -135,8 +142,8 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
       { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] })
       const done = completion(child)
       void done.catch(() => {}) // The owning startup or teardown awaits and reports this failure.
-      server = { child, done, base: '' }
       let output = ''
+      server = { child, done, base: '', output: () => output, log: join(runDir, `server-${idleTimeoutMs}.log`) }
       const ready = Promise.withResolvers<string>()
       const deadline = setTimeout(() => { ready.reject(new Error('Web startup exceeded three minutes')) }, 180_000)
       const collect = (chunk: Buffer): void => {
@@ -154,7 +161,7 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
         return server.base
       } finally {
         clearTimeout(deadline)
-        await writeFile(join(runDir, `startup-${idleTimeoutMs}.log`), output.replace(/token=[^\s&]+/gu, 'token=<redacted>'))
+        await writeFile(join(runDir, `startup-${idleTimeoutMs}.log`), redact(output))
       }
     }
     async function screenshot(name: string): Promise<void> {
@@ -186,7 +193,6 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
         await currentPage.locator('.dsh-account').getByText(username, { exact: true }).waitFor()
       }
       await login()
-      const inferenceKey = (await readFile(inferenceKeyPath, 'utf8')).trim()
       await rpc(currentContext, base, 'userCredentials/create', { request: { name: 'Vultr API Key', value: inferenceKey } })
       function workspaceRow(title: string) {
         return currentPage.getByRole('treeitem').filter({ has: currentPage.getByRole('button', {
@@ -243,9 +249,14 @@ test.skipIf(configPath === undefined || inferenceKeyPath === undefined || proces
       }
       const a = await workspace('Sales A', true)
       await record('workspace-a', a)
+      const uploadReply = currentContext.waitForEvent('response', { predicate: response => response.request().method() === 'POST'
+        && new URL(response.url()).pathname.endsWith('/api/workspace/uploadFileBinary'), timeout: 1_200_000 })
       await currentPage.locator('input[type="file"][aria-label="Upload to workspace"]').setInputFiles({
         name: '销售明细.csv', mimeType: 'text/csv', buffer: await readFile(join(fixture, 'sales.csv')),
       })
+      const uploaded = await uploadReply
+      expect(uploaded.ok(), `Workspace upload HTTP ${uploaded.status()}`).toBe(true)
+      expect(await uploaded.json()).toMatchObject({ ok: true })
       await currentPage.getByText('Uploaded “销售明细.csv” to workspace', { exact: true }).waitFor({ timeout: 1_200_000 })
       await record('upload-complete', await stateOf(a.workspaceId))
       await prompt('请使用 bash 处理工作区内的销售明细.csv。只统计状态为已完成的订单，负数量表示退货。按日期中的年月升序汇总，月份严格使用 YYYY-MM 格式，例如 2026-01。订单数按记录数计算，净销量为数量之和，净销售额为数量乘单价之和，金额用十进制精确计算并保留两位小数。生成 UTF-8 的月度汇总.csv，表头严格为：月份,订单数,净销量,净销售额。完成后只回复：销售汇总已完成', '销售汇总已完成')
