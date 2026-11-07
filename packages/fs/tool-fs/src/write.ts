@@ -7,7 +7,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { DiffCallView, DiffResultView, ToolResult } from '@deepseek-ai/dsh-tools'
+import type { DiffCallView, DiffResultView, ToolResult, ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { FsWriteOutcome } from '@deepseek-ai/dsh-fs'
 import type {} from '@deepseek-ai/dsh-fs'
 import { computeHunkDiffs, diffsFromMeta, pathFromMeta } from './diff.ts'
@@ -58,8 +58,12 @@ interface WriteToolArgs {
  * Register the `write` tool and its scope-aware system-prompt guidance.
  * @param ctx - the plugin context; registrations are effects scoped to it, and execution uses its `fs` service.
  * @param sandbox - the shared sandbox-escalation API (advertisement, mode stamping, denial mapping).
+ * @param register - optional operation owner; defaults to the context tool registry.
  */
-export function applyWriteTool(ctx: Context, sandbox: FsSandboxController): void {
+export function applyWriteTool(
+  ctx: Context, sandbox: FsSandboxController,
+  register: (definition: ToolDefinition) => void = (definition) => { ctx.tools.register(definition) },
+): void {
   ctx.systemPrompt.section({
     name: 'tool:write',
     order: ctx.systemPrompt.getSectionOrder('TOOL_WRITE'),
@@ -70,7 +74,7 @@ export function applyWriteTool(ctx: Context, sandbox: FsSandboxController): void
         + '.',
   })
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: 'write',
     description: 'Create or fully replace a UTF-8 text file.',
     parameters: {

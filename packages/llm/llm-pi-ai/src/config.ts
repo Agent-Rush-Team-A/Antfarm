@@ -105,6 +105,8 @@ export type {
 export interface PiAiProviderProfile {
   /** Credential reference (environment-variable name) resolved per request through `ctx.credentials`. */
   apiKeyEnv?: string
+  /** Request requires an authorized consumer and never falls back to deployment credentials. @default global */
+  credentialScope?: 'global' | 'request'
   /** Name shown by configuration surfaces; defaults to the route key. */
   displayName?: string
   /**
@@ -209,7 +211,9 @@ export interface PiAiProviderProfile {
 
 /** Validated profile with its route stamped and every adapter-owned default resolved. */
 export interface ResolvedPiAiProviderProfile
-  extends Omit<PiAiProviderProfile, 'apiKeyEnv' | 'retryPolicy' | 'models' | 'displayName'> {
+  extends Omit<PiAiProviderProfile, 'apiKeyEnv' | 'retryPolicy' | 'models' | 'displayName' | 'credentialScope'> {
+  /** Resolved credential authority for this route. */
+  credentialScope: 'global' | 'request'
   /** Harness route key and the `Models` collection key (the configuration dict key). */
   provider: string
   /** Resolved display name for selectors and configuration surfaces. */
@@ -354,6 +358,7 @@ const modelOverride: z<PiAiModelOverride> = z.object(modelFields)
 
 const profile = z.object({
   apiKeyEnv: z.string().role('credential-ref'),
+  credentialScope: z.union(['global', 'request']),
   displayName: z.string(),
   api: z.union(supportedProtocols()),
   baseURL: z.string(),
@@ -526,11 +531,12 @@ export function resolveProfiles(
       if (validation === 'strict' || !(error instanceof PiAiCatalogError)) throw error
       catalogError ??= error.message
     }
-    const { apiKeyEnv, retryPolicy, models: _models, displayName: _displayName, ...rest } = source
+    const { apiKeyEnv, credentialScope, retryPolicy, models: _models, displayName: _displayName, ...rest } = source
     resolved.set(provider, {
       ...rest,
       provider,
       displayName,
+      credentialScope: credentialScope ?? 'global',
       ...apiKeyEnv === undefined ? {} : { apiKeyEnv: credentialRef(apiKeyEnv) },
       streamIdleTimeoutMs,
       maxRequestImageBytes,

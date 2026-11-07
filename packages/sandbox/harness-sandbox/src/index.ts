@@ -1,4 +1,4 @@
-/** Authorized workspace sandbox management over the independent local Runner. */
+/** Authorized workspace lifecycle with a deployment-selected execution backend. */
 
 import { lstat, realpath } from 'node:fs/promises'
 import { dirname, isAbsolute, resolve } from 'node:path'
@@ -11,6 +11,7 @@ import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import { z } from 'zod'
 import { RunnerConfig } from './config.ts'
 import SandboxRunnerClient from './transport.ts'
+import type { SandboxExecutionBackend } from './backend.ts'
 import WorkspaceSandboxState, { type SandboxIdleActivity } from './lifecycle.ts'
 import { RunnerRequestError, RunnerResponseError, type RunnerRunningSandbox, type RunnerClosedSandbox, type RunnerSandboxStatus } from './runner-client.ts'
 import type { SandboxRequest, SandboxValue, SandboxFailureReason } from './types.ts'
@@ -20,6 +21,8 @@ export type { SandboxIdleActivity, SandboxObservation } from './lifecycle.ts'
 export type { RunnerRunningSandbox, RunnerClosedSandbox, RunnerSandboxStatus, SandboxContainerId } from './runner-client.ts'
 export { RunnerExecutionError, RunnerRequestError, RunnerResponseError } from './runner-client.ts'
 export type { default as SandboxRunnerClient } from './transport.ts'
+export { SandboxExecutionBackend } from './backend.ts'
+export type { WorkspaceRuntimeFiles } from './backend.ts'
 export type { default as SandboxConversation, SandboxExecutionPermit } from './conversation.ts'
 
 /** Original execution generation required when cleanup requests a workspace close. */
@@ -39,14 +42,23 @@ export type SandboxIdleCloseResult = RunnerClosedSandbox | { readonly state: 'sk
 
 export type { RunnerCancellationResult, RunnerExecutionFailure, RunnerExecutionIdentity, RunnerExecutionRequest, RunnerExecutionResult, RunnerExecutionId } from './execution.ts'
 
-/** Deployment-trusted Runner settings and the existing multiuser workspace root. */
-export interface Config extends RunnerConfig {
-  /** Absolute root shared with multiuser allocation and the independent Runner. */
+/** Registered project root and deployment-selected local Runner or separately loaded backend. */
+export type Config = {
+  /** Absolute registered project root shared with multiuser allocation. Remote execution paths are supplied by the backend. */
   workspaceRoot: string
-}
+} & ((RunnerConfig & {
+  /** Construct and own the independent local Runner transport. */
+  backend?: 'runner'
+}) | {
+  /** Use a separately loaded sandboxRunnerClient; the Loader row injects that service before management. */
+  backend: 'provided'
+})
 
 /** Validated management configuration; callers cannot override these fields. */
-export const Config: Schema<Config, Required<Config>> = Schema.intersect([RunnerConfig, Schema.object({
+export const Config: Schema<Config> = Schema.intersect([Schema.union([
+  Schema.intersect([RunnerConfig, Schema.object({ backend: Schema.const('runner').default('runner') })]),
+  Schema.object({ backend: Schema.const('provided').required() }),
+]), Schema.object({
   workspaceRoot: Schema.string().required(),
 })])
 
@@ -78,7 +90,7 @@ export default class WorkspaceSandbox extends TypertRemoteService {
   static Config = Config
   private readonly root: string
   private readonly transportFiber
-  private client!: SandboxRunnerClient
+  private client!: SandboxExecutionBackend
   private readonly deleting = new Map<WorkspaceId, Promise<boolean>>()
   private state!: WorkspaceSandboxState
   private accepting = false
@@ -90,7 +102,7 @@ export default class WorkspaceSandbox extends TypertRemoteService {
     const settings = Config(config)
     if (!isAbsolute(settings.workspaceRoot) || settings.workspaceRoot.includes('\0')) throw new Error('workspaceRoot must be an absolute directory')
     this.root = resolve(settings.workspaceRoot)
-    this.transportFiber = ctx.plugin(SandboxRunnerClient, settings)
+    this.transportFiber = settings.backend === 'provided' ? undefined : ctx.plugin(SandboxRunnerClient, settings)
     ctx.workspaceRegistry.registerDeletionGuard('harness-sandbox', WorkspaceSandbox.guardDeletion)
     ctx.effect(() => async () => { await Promise.allSettled(this.deleting.values()) })
   }

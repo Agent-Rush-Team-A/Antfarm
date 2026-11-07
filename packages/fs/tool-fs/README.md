@@ -43,6 +43,8 @@ The policy plugin is optional: without it the tools run against the bare provide
 
 ### The tools
 
+An operation-owning consumer may call `apply(ctx, resolvedConfig, registerTextTool)` to register `read`, `write` and `edit` through its own executor wrapper while retaining native schemas, prompts and rendering. The consumer owns registration effects and cancellation; the callback does not intercept `read_image` or `apply_patch`. The [Workspace text entry](../../sandbox/harness-sandbox/README.md#workspace-text-tools) uses this hook with a private, generation-bound filesystem. Ordinary Loader calls omit the hook and keep native registration behavior.
+
 | Tool | Arguments | Behavior |
 |---|---|---|
 | `read` | `file_path`, `offset?`, `limit?` | Line-numbered UTF-8 content with a pagination footer; `offset` is 1-based and `limit` defaults to and caps at the configured `readLimit` |

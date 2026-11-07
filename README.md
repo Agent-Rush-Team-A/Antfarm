@@ -43,7 +43,7 @@ pnpm exec tsx scripts/multiuser-provision.ts --storage-root "$DSH_HOME/storages"
 pnpm run start:web --no-open
 ```
 
-Open `http://127.0.0.1:3080/` and sign in with that account. Antfarm's `start:web` and `dev:web` commands load account login, workspace upload, file listing and download by default; the URL needs no launch token. Restarts reuse the same `DSH_HOME` without provisioning again. Workspaces default to `$DSH_HOME/workspaces`; set `DSH_MULTIUSER_WORKSPACE_ROOT` to an absolute path to select a deployment root. `start:web` reuses built Web artifacts; `dev:web` builds before serving. The underlying `pnpm dsh web` command keeps the upstream profile defaults.
+Open `http://127.0.0.1:3080/` and sign in with that account. Antfarm's `start:web` and `dev:web` commands load account login, workspace upload, file listing, download, and [personal model credentials](docs/user/guide/personal-models.md) by default; the URL needs no launch token. Restarts reuse the same `DSH_HOME` without provisioning again. Workspaces default to `$DSH_HOME/workspaces`; set `DSH_MULTIUSER_WORKSPACE_ROOT` to an absolute path to select a deployment root. `start:web` reuses built Web artifacts; `dev:web` builds before serving. The underlying `pnpm dsh web` command keeps the upstream profile defaults.
 
 Agent tool execution remains unavailable until the sandbox Bash integration is complete. Optional sandbox management uses the [deployment guide](docs/user/guide/workspace-sandboxes.md).
 

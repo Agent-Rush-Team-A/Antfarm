@@ -599,3 +599,11 @@
       name: '@deepseek-ai/dsh-agent-preset-registry'
       config:
         default: standard
+
+- insert:
+    - id: ui-user-credentials
+      name: '@deepseek-ai/dsh-client-ui-user-credentials'
+      disabled: true
+    - id: ui-workspace-sandbox
+      name: '@deepseek-ai/dsh-client-ui-workspace-sandbox'
+      disabled: true

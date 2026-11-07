@@ -28,6 +28,8 @@ Headless records and checks Session cwd through the mounted filesystem provider.
 
 See the [decision record](../../.agents/notes/implemented/architecture/2026-09-11-posix-ssh-runtime.md) for the alternatives and verification obligations.
 
+The [Workspace SSH backend](../../packages/sandbox/harness-sandbox/README.md#workspace-ssh) keeps native project records on Harness and binds each Workspace to a private remote file/process generation. The connection's abort signal withdraws old access; acknowledged helper closure permits replacement, while transport loss retains uncertain cleanup.
+
 ## Connection API
 
 ```ts type-equiv
@@ -77,6 +79,8 @@ declare class SshConnection extends Service {
   static Config: schema<Config>;
   /** Verified remote helper coordinates; callers must await this before launch. */
   readonly ready: Promise<Hello>;
+  /** Aborted on transport loss or disposal; operations must retain this connection's lifetime. */
+  get signal(): AbortSignal;
   constructor(ctx: Context, config: Config);
   /** Hold plugin readiness until the remote identity and helper digest are verified. */
   async [Service.init](): Promise<void>;
@@ -101,6 +105,12 @@ declare class SshConnection extends Service {
   async connectStream(endpoint: SshStreamEndpoint, signal?: AbortSignal): Promise<Socket>;
   /** Tear down the helper's remote managed ranges before releasing the SSH master when reachable. */
   dispose(): Promise<void>;
+  /**
+     * Dispose the transport and require the helper's acknowledgement of managed cleanup.
+     * A lost connection still releases local resources, but rejects without claiming remote cleanup.
+     * @returns Settlement only after acknowledged remote cleanup and local teardown.
+     */
+  async closeConfirmed(): Promise<void>;
 }
 ```
 
@@ -140,6 +150,13 @@ async connectStream(endpoint: SshStreamEndpoint, signal?: AbortSignal): Promise<
 
 /** Tear down the helper's remote managed ranges before releasing the SSH master when reachable. */
 dispose(): Promise<void>
+
+/**
+ * Dispose the transport and require the helper's acknowledgement of managed cleanup.
+ * A lost connection still releases local resources, but rejects without claiming remote cleanup.
+ * @returns Settlement only after acknowledged remote cleanup and local teardown.
+ */
+async closeConfirmed(): Promise<void>
 ```
 
 Source: [`packages/ssh/ssh/src/index.ts`](../../packages/ssh/ssh/src/index.ts)

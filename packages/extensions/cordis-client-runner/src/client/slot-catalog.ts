@@ -1404,6 +1404,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'conversation.composer.bar\' (client-ui-conversation), so it exists while that entry is mounted',
     occupants: [
+      'client-ui-workspace-sandbox SandboxLauncher id \'workspace.sandbox\'',
       'client-ui-workspace WorkspaceFilesButton id \'workspace.files\'',
       'client-ui-workspace WorkspaceUploadButton id \'workspace.upload\'',
     ],
@@ -3904,6 +3905,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-settings-general HostReleasePrompt id \'host-release-change\'',
       'client-ui-settings-session-log UploadToast id \'session-log-upload-toast\'',
       'client-ui-shortcuts ShortcutReference id \'shortcuts\'',
+      'client-ui-workspace-sandbox SandboxOverlay id \'workspace.sandbox\'',
       'client-ui-workspace SessionRenameDialog id \'workspace.session-rename\'',
       'client-ui-workspace SessionArchiveConfirmDialog id \'workspace.session-archive\'',
       'client-ui-workspace RowActionToast id \'workspace.row-toast\'',
@@ -4150,6 +4152,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'sidebar\' (client-ui-sidebar), so it exists while that entry is mounted',
     occupants: [
+      'client-ui-user-credentials CredentialsLauncher id \'user-credentials\'',
       'client-ui-cordis CordisPanel id \'cordis-panel\'',
     ],
     replaceRisk: 'none',

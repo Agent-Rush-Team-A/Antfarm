@@ -7,10 +7,11 @@ import type { RunnerExecutionRequest } from '../../src/execution.ts'
 import { conversationFixture } from './conversation.ts'
 import { running } from './management.ts'
 
-class BashModel extends LlmAdapter {
+export class BashModel extends LlmAdapter {
   readonly requests: GenerateOptions[] = []
   readonly seen = new Set<string>()
   args: unknown = { command: 'pwd', description: 'Inspect directory' }
+  toolName = 'bash'
   override resolveModel(provider: string, model: string) { return Promise.resolve({ provider, id: model, name: model }) }
   override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push(options)
@@ -20,8 +21,8 @@ class BashModel extends LlmAdapter {
       const id = ToolCallId(randomUUID())
       const args = JSON.stringify(this.args)
       yield { type: 'block-start', index: 0, blockType: 'tool-call' }
-      yield { type: 'tool-call-delta', index: 0, id, name: 'bash', argumentsDelta: args }
-      yield { type: 'block-end', index: 0, block: { type: 'tool-call', id, name: 'bash', arguments: args } }
+      yield { type: 'tool-call-delta', index: 0, id, name: this.toolName, argumentsDelta: args }
+      yield { type: 'block-end', index: 0, block: { type: 'tool-call', id, name: this.toolName, arguments: args } }
       yield { type: 'finish', reason: { kind: 'tool-calls' } }
     } else {
       yield { type: 'block-start', index: 0, blockType: 'text' }

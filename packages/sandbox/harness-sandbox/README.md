@@ -1,5 +1,5 @@
 ---
-description: "Authorize native workspace sandbox operations and call an independent local Runner."
+description: "Authorize native workspace operations through a local Runner or fixed SSH instances."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Open, query, and close workspace sandboxes after checking the authenticated native user's ownership and persistent directory record. Trusted backend integrations can also submit commands and request cancellation. The independent Runner owns container state and capacity. HTTP requests have bounded waits and validated results; unconfirmed modifications are never replayed or compensated automatically.
+Open, query, and close workspace sandboxes after checking the authenticated native user's ownership and persistent directory record. Trusted backend integrations can also submit commands and request cancellation. The selected backend owns execution state; the local Runner also owns container capacity. Local HTTP requests have bounded waits and validated results; unconfirmed modifications are never replayed or compensated automatically.
 
 ## Table of Contents
 
@@ -57,6 +57,30 @@ Each call checks native ownership and the same Workspace Registry id. Opening al
 Removing a native workspace registration requires a fresh Runner observation of `closed`. An admitted open or any other state refuses deletion with `workspace/sandbox-active` and `{ workspaceId, state }`; close the sandbox first. A failed query leaves registration and ownership intact. The deletion guard rejects new opens of that workspace until the registry write or rollback settles; other workspaces remain available. The registry owns the guard across manager unload and reload: it resolves the current active service and refuses native workspace deletion with `sandbox/failed` reason `runner_unavailable` while management is offline. Unloading the plugin waits for admitted deletion guards to settle, and reloading replaces the named guard without retaining the old service.
 
 Runner failures use `sandbox/failed` with `{ reason, outcomeUnknown }`. Stable reasons distinguish `sandbox_capacity`, `sandbox_not_ready`, `sandbox_closing`, `sandbox_cleanup_required`, `sandbox_workspace_conflict`, `sandbox_name_conflict`, `sandbox_outcome_unknown`, `invalid_workspace_directory`, `docker_unavailable`, `runner_unavailable` and `runner_outcome_unknown`. Failed close retains its barrier and may be retried. An uncertain PUT or DELETE retains `closing` even after another DELETE: this protocol cannot prove a lost mutation has settled. Queries and plugin reloads do not clear this uncertainty. Messages omit raw Runner diagnostics, paths and stacks.
+
+<a id="workspace-ssh"></a>
+### Workspace SSH backend
+
+The optional [SSH overlay](../../../apps/cli/config/examples/harness-ssh.patch.yml) selects `backend: provided` and loads `@deepseek-ai/dsh-harness-sandbox/ssh` before management. Set `DSH_WORKSPACE_SSH_BINDINGS_JSON` to a JSON dictionary keyed by existing native WorkspaceId. Each entry contains a distinct externally managed `instanceId` and the [SSH connection settings](../../ssh/ssh/README.md#deployment-prerequisites), including an existing host alias, helper launch and digest, and absolute remote `workspace`. Keep private SSH keys in the OpenSSH configuration. Invalid or missing bindings refuse work; they never use the Harness host as a fallback.
+
+Execution coordination, user authorization and Session storage stay on Harness. Each opened Workspace owns a private SSH service realm with matching file and subprocess providers. The VM needs the helper and Bash, without Docker or the full Harness. Native registered project paths remain on Harness; Bash relative directories resolve against the remote root. Model-facing cwd remains `/workspace`; using `/workspace` as the VM root also keeps `pwd` output usable as a subsequent absolute workdir. Command bytes and output are never rewritten.
+
+Repeated opens share the same generation. Execution ids retain original requests and results; changed requests conflict, pre-dispatch cancellation prevents launch, and full record capacity refuses new ids without evicting mutation history. Timeout and cancellation await managed-process cleanup. SSH loss immediately revokes file leases, quarantines the generation and reports `cleanup_required`. Closing drains accepted executions and requires acknowledgement from the original helper before allowing a new generation. If acknowledgement is unavailable, verify remote cleanup externally before restarting the owning provider; reload alone is not cleanup evidence.
+
+`files(workspaceId, containerId, signal)` returns the captured generation's filesystem, remote root, abort signal and `assertCurrent()`. Trusted consumers retain original user/turn authority, recheck it and the lease before each operation, pass the lease signal, and enforce their path policy. The backend does not register model tools. The local Runner refuses file capability requests instead of accessing host files.
+
+SSH close releases the helper and its managed processes; it does not power off or delete the VM. Cloud allocation, snapshots, idle VM reclamation and Web upload/download adaptation belong to cloud migration. Bindings and execution receipts are process-local; endpoint isolation depends on correctly prepared distinct VMs and SSH aliases, not merely distinct `instanceId` strings. Shared-host SSH tests validate dispatch and directory separation, not VM isolation.
+
+<a id="workspace-text-tools"></a>
+### Workspace text tools
+
+The optional `@deepseek-ai/dsh-harness-sandbox/files` entry registers native `read`, `write` and `edit` alongside SSH Bash. The SSH overlay loads both entries in the standard preset and disables host filesystem tools. The text entry reuses [tool-fs](../../fs/tool-fs/README.md) schemas, prompts, line windows, literal matching, diff metadata and result rendering. Its native arguments remain available; undeclared extra arguments, including Workspace and generation overrides, are rejected. `readLimit`, `readMaxLineLength` and `readMaxBytes` use the native defaults and accept positive integers. Remote reads stream to avoid the helper's whole-file RPC limit.
+
+Each call captures its exact tool definition, Agent, admitted turn and original message permission. The private filesystem maps native project cwd and `/workspace` paths to that generation's remote root. Relative paths retain remote filesystem resolution, including `symlink/..`; canonical paths outside the root are refused. Each operation rechecks permission and containment, and mutations additionally carry the remote workspace-write policy. Targets include Workspace and generation identity so observations cannot cross generations. No file call falls back to the Harness filesystem or selects a newer connection after cancellation.
+
+Workspace SSH realms enable [confined text reads](../../ssh/fs-ssh/README.md#use-this-package). The Linux helper pins directories and the final file while opening them without following symlinks, so replacement after path validation cannot redirect a read outside the negotiated root. Streams release their handles on completion, failure, cancellation or early close. Workspace text reads require accessible Linux procfs and fail on unsupported remote hosts.
+
+The existing optional `fs-observation-policy` continues to supply no-clobber and version guards; without it, native writes and edits retain unconditional behavior. Failed matches and stale guards leave bytes unchanged. Cancellation does not promise rollback of a mutation that already committed. Helper closure joins accepted file requests before acknowledging cleanup; lost acknowledgement blocks reuse. Unloading the text entry cancels and drains its calls and removes all three definitions. Web upload/download still needs the cloud migration's remote file adapter; this entry does not change those endpoints.
 
 <a id="conversation-admission"></a>
 ### Conversation admission
@@ -114,13 +138,13 @@ Unload synchronously aborts the scan lifetime and clears its timer, then drains 
 
 | Consumer | Available entry | Remaining integration |
 | --- | --- | --- |
-| Conversation entry | The optional Web profile admits owned input and exposes only Runner Bash. | Deploy matched Harness/Runner builds, workspace paths and filesystem identities. |
-| #8: idle reclamation | The optional Web overlay discovers owned candidates and performs conditional idle closure with validated timings. | Validate the deployment's real Docker deletion, capacity release and persistent-file continuation. |
-| #9: Web controls | The three Typert methods, five states and typed `sandbox/failed` reasons. | Add controls and display. Failed close remains blocked; an unknown mutation requires maintenance to establish settlement, and a query cannot clear it. |
+| Conversation entry | The optional Web profiles admit owned input and expose Bash through the selected backend. | Prepare the configured Runner or SSH endpoint, execution directory and filesystem identity. |
+| #8: idle reclamation | The optional Web overlay discovers owned candidates and performs conditional idle closure through the selected backend with validated timings. | Validate the deployment's actual reclamation, capacity release and persistent-file continuation. |
+| #9: Web controls | The optional overlay enables the Web panel over the three Typert methods, five states and typed `sandbox/failed` reasons. | Failed close remains blocked; an unknown mutation requires maintenance to establish settlement, and a query cannot clear it. |
 
 Each additional file, search or browser tool needs its own isolated implementation, exact-definition authorization, original-turn permission and cancellation handling before the overlay advertises it. File operations must resolve against the registered workspace inside the sandbox and preserve their actual results through logs, replay and presentation. The Bash exception does not authorize another definition or a host implementation with the same name.
 
-Internal explicit-user methods accept only identities recovered by trusted backend code. They do not infer an owner from a missing invocation. The child `sandboxRunnerClient` service is transport only and must not be exposed as a user management API. Service disposal aborts local waits, waits for request connections and deadline timers to be released, and unregisters methods without sending DELETE or cancel; neither disconnect nor timeout confirms remote cleanup.
+Internal explicit-user methods accept only identities recovered by trusted backend code. They do not infer an owner from a missing invocation. The child `sandboxRunnerClient` service is transport only and must not be exposed as a user management API. Local Runner client disposal aborts local waits, waits for request connections and deadline timers to be released, and unregisters methods without sending DELETE or cancel; neither disconnect nor timeout confirms remote cleanup.
 
 <a id="web-control-handoff"></a>
 ### Web control handoff
@@ -183,7 +207,7 @@ The stable tool description can share the prompt prefix; results append as ordin
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Deployment** — the Runner requires Linux Unix sockets and a separately provisioned non-root filesystem identity. Windows named pipes support transport tests only.
-- **Capabilities** — Only Runner Bash has a multiuser execution exception. File, search, PowerShell, background, terminal, browser and indirect tools require their own isolation before activation; Web management controls remain separate integration work.
+- **Capabilities** — The Runner overlay exposes only Bash. SSH text files require the separate `./files` entry and generation-bound backend access. Search, PowerShell, background, terminal, browser and indirect tools still require isolation before activation. The Runner overlay enables Web management controls.
 - **Idle scope** — Reclamation assumes one application instance managing an independent Runner. It does not merge activity across Harness processes or discover containers created directly through Runner after startup. Disabled accounts or missing ownership require maintenance; the background loop does not bypass native authorization.
 - **Uncertain mutations** — Lost PUT/DELETE outcomes require deployment maintenance to establish that old Runner requests have settled. This protocol cannot automatically clear that process-local barrier; restarting the Harness alone does not prove remote settlement.
 - **Validation** — the opt-in [conversation Docker fixture](../../../apps/cli/tests/profiles/harness-sandbox/fixtures/docker-acceptance.mjs) and [idle Docker fixture](../../../apps/cli/tests/profiles/harness-sandbox/fixtures/docker-idle-acceptance.mjs) use a controlled model and real authenticated Web and Runner profiles. They require Linux, root for setup, current built artifacts with Linux dependencies and Docker access. `M5_DATA_ROOT` must select the fixture's dedicated daemon-visible bind: `/tmp/antfarm-issue7-m5` for conversation or `/tmp/antfarm-issue8-m5` for idle; `M5_EVIDENCE_DIR` selects evidence output. The idle fixture uses 5000 ms idle and 100 ms sweep settings, independently checks Docker identities, capacity and retained files, and cleans its isolated deployment; nonzero child exits or exit signals fail acceptance. These fixtures establish no real-model or Vultr result.

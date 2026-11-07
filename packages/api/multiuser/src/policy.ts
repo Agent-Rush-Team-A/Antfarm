@@ -52,7 +52,14 @@ const GLOBAL_ACTIONS = [
   'session/search',
   'session/control',
   'session/modelCatalog',
+  'event:llm/adapters-updated',
+  'event:llm/models-updated',
   'session/canOpenWorkspacePath',
+  'userCredentials/list',
+  'userCredentials/create',
+  'userCredentials/replace',
+  'userCredentials/delete',
+  'userCredentials/check',
 ] as const
 
 /** Actions allowed on a workspace the account owns. */

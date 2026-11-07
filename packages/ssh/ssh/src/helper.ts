@@ -16,6 +16,7 @@ import type { SandboxExecutionPolicy, SandboxPolicy } from '@deepseek-ai/dsh-san
 import { z } from 'zod'
 import { SshRpcPeer, RemoteOperationError, SSH_MAX_PROCESS_HANDLES, SSH_MAX_TEXT_STREAMS, SSH_PROTOCOL_VERSION } from './protocol.ts'
 import { RemoteProcesses } from './helper-processes.ts'
+import { streamWorkspaceText } from './helper-workspace-text.ts'
 import { hunkSchema, moveOptionsSchema, versionGuardSchema, editSchema, environmentSchema, intentSchema, policySchema, processIdSchema, remotePath, targetSchema, textStreamIdSchema } from './schemas.ts'
 import type { SshTextStreamId } from './schemas.ts'
 
@@ -67,6 +68,7 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
   let initialized = false
   let workspace = process.cwd()
   let cleanup: Promise<void> | undefined
+  const operations = new Set<Promise<unknown>>()
   const close = (): Promise<void> => {
     cleanup ??= (async () => {
       if (lease !== undefined) clearTimeout(lease)
@@ -76,6 +78,8 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
       iterators.clear()
       try { await processes.close() }
       finally {
+        // A cancelled filesystem request can still be committing; close acknowledges quiescence.
+        await Promise.allSettled(operations)
         try { await runtime.close() }
         finally { await rm(root, { recursive: true, force: true }) }
       }
@@ -98,7 +102,7 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
     }
   }
   const asTarget = (raw: unknown): FsTarget => targetSchema.parse(raw) as FsTarget
-  const peer = new SshRpcPeer(transport.input, transport.output, MAX_FRAME_BYTES, 128, async (method, raw, requestSignal) => {
+  const dispatch = async (method: string, raw: unknown, requestSignal: AbortSignal): Promise<unknown> => {
     const signal = AbortSignal.any([requestSignal, lifetime.signal])
     if (method === 'hello') {
       if (initialized) throw new Error('SSH helper handshake already completed')
@@ -119,7 +123,6 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
     }
     if (!initialized || cleanup !== undefined) throw new Error('SSH helper is not accepting operations')
     if (method === 'heartbeat') { object.parse(raw); touchLease(); return null }
-    if (method === 'close') { object.parse(raw); await close(); return null }
     if (method === 'process.prepare') return processes.prepare(raw)
     if (method === 'process.start') return processes.start(processIdRequest.parse(raw).id, signal)
     if (method === 'process.done') return processes.done(processIdRequest.parse(raw).id)
@@ -164,13 +167,19 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
       return method === 'fs.resolve' ? ctx.fs.resolve(input.path, { cwd: input.cwd ?? workspace, signal }) : await ctx.fs.lstat(input.path, { cwd: input.cwd ?? workspace }, signal) ?? null
     }
     if (method === 'fs.stat' || method === 'fs.list' || method === 'fs.readText' || method === 'fs.stream') {
-      const target = asTarget(z.object({ target: targetSchema }).strict().parse(raw).target)
+      const input = (method === 'fs.readText' || method === 'fs.stream'
+        ? z.object({ target: targetSchema, workspaceOnly: z.boolean().optional() }).strict()
+        : z.object({ target: targetSchema }).strict()).parse(raw)
+      const target = asTarget(input.target)
+      const textStream = (cancellation: AbortSignal) => 'workspaceOnly' in input && input.workspaceOnly === true
+        ? streamWorkspaceText(ctx.fs, workspace, target, cancellation)
+        : ctx.fs.streamText(target, cancellation)
       if (method === 'fs.stat') return await ctx.fs.stat(target, signal) ?? null
       if (method === 'fs.list') return ctx.fs.listDir(target, signal)
       if (method === 'fs.stream') {
         if (iterators.size >= SSH_MAX_TEXT_STREAMS) throw new Error('SSH text stream limit reached')
         const controller = new AbortController()
-        const stream = await ctx.fs.streamText(target, AbortSignal.any([signal, controller.signal]))
+        const stream = await textStream(AbortSignal.any([signal, controller.signal]))
         const iterator = stream[Symbol.asyncIterator]()
         try {
           signal.throwIfAborted()
@@ -184,7 +193,7 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
           throw error
         }
       }
-      const stream = await ctx.fs.streamText(target, signal)
+      const stream = await textStream(signal)
       let text = ''
       let bytes = 0
       for await (const chunk of stream) {
@@ -273,6 +282,14 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
       }, signal, await policy(input.policy, signal))
     }
     throw new Error(`Unknown SSH helper operation: ${method}`)
+  }
+  const peer = new SshRpcPeer(transport.input, transport.output, MAX_FRAME_BYTES, 128, async (method, raw, requestSignal) => {
+    if (!initialized && method !== 'hello' || cleanup !== undefined) throw new Error('SSH helper is not accepting operations')
+    if (method === 'close') { object.parse(raw); await close(); return null }
+    const operation = dispatch(method, raw, requestSignal)
+    operations.add(operation)
+    try { return await operation }
+    finally { operations.delete(operation) }
   })
   const closed = Promise.withResolvers<undefined>()
   peer.once('closed', () => {

@@ -31,6 +31,8 @@ The helper validates additional writable roots on the wire; its enforcing provid
 
 ### Deployment prerequisites
 
+Deployment integrators can call `resolveSshConfig()` to validate coordinates and resolve connection budgets before opening SSH.
+
 Both endpoints require Linux or macOS. The local `ssh` command must support connection multiplexing and Unix-socket forwarding; the server must permit that forwarding. Configure the alias, credentials and known-host entry before startup: the service enables `BatchMode`, requires strict host-key checking, disables agent forwarding and adds no interactive authentication flow.
 
 Install an [SSH helper executable archive](../ssh-helper-runtime/README.md), or the built helper script with its matching Node dependencies. Keep the runtime outside the workspace and writable temporary roots. They must also remain outside a backend’s replaced temporary tree, such as bwrap’s private `/tmp`; the workspace may still be under `/tmp`. Digest verification detects an unexpected installed artifact after helper startup; it does not make writable deployment files safe to execute or authenticate a malicious SSH host.
@@ -70,6 +72,8 @@ Failed startup and process results release their reservations after native quies
 For terminals opting into shell activity observation, root exit retains the reservation and its remaining work. Activity RPC continues to reach the provider; explicit termination awaits quiescence before releasing endpoints and recording the completed result. Helper connection disposal and lease expiry retain their existing termination authority.
 
 The connection disables the helper’s SIGUSR1 debugger activation: the script invocation uses `--disable-sigusr1`, and the executable invocation supplies that flag through `NODE_OPTIONS`.
+
+`signal` aborts on connection loss or disposal. `closeConfirmed()` joins local teardown and requires the original helper to acknowledge managed cleanup; it rejects after transport loss even if ordinary `dispose()` can finish releasing local resources. Workspace lifecycle owners use this distinction before accepting a replacement execution generation.
 
 </details>
 

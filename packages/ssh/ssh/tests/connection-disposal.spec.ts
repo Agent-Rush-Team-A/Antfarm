@@ -133,6 +133,7 @@ async function setup(phase: 'connect' | 'authenticate', pauseControl?: 'forward'
   else await allocated.promise
   if (phase === 'authenticate') await authenticating.promise
   return { service: ctx.ssh, socket, observed, controlEntered: controlEntered.promise,
+    disconnect: () => { child.kill() },
     controlAborted: controlAborted.promise, finishControl: () => { finishControl?.() },
     controlSignals: () => controlChild?.signals, heartbeatCalls: () => heartbeatCalls,
     ordinaryEntered: ordinaryEntered.promise, releaseOrdinary: () => { ordinary.resolve(null) },
@@ -141,6 +142,28 @@ async function setup(phase: 'connect' | 'authenticate', pauseControl?: 'forward'
 }
 
 describe.skipIf(process.platform === 'win32')('SSH stream establishment disposal', () => {
+  it('confirmed closure waits for the helper acknowledgement and releases the transport', async () => {
+    const state = await setup('connect', undefined, false, true)
+    let settled = false
+    const closed = state.service.closeConfirmed().then(() => { settled = true })
+    await state.closeEntered
+    expect(settled).toBe(false)
+    expect(state.service.signal.aborted).toBe(true)
+    state.releaseClose()
+    await closed
+    expect(await state.observed).toHaveProperty('error')
+    await state.service.closeConfirmed()
+  })
+
+  it('transport loss revokes the connection and refuses to infer remote cleanup', async () => {
+    const state = await setup('connect')
+    state.disconnect()
+    await new Promise<void>(resolve => setImmediate(resolve))
+    expect(state.service.signal.aborted).toBe(true)
+    await expect(state.service.closeConfirmed()).rejects.toThrow('cleanup could not be confirmed')
+    expect(await state.observed).toHaveProperty('error')
+  })
+
   it.each(['ready continuation', 'already closing'] as const)('rejects new requests during the %s without sending them', async (phase) => {
     const state = await setup('connect', undefined, false, true)
     const request = () => state.service.request('ordinary', {}, z.null(), undefined, true)

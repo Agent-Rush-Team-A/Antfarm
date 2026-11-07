@@ -99,6 +99,9 @@ declare module '@deepseek-ai/cordis' {
 export class MultiuserService extends Service implements ConnectionAdmissionProvider, MultiuserAccessIndex {
   static inject = ['connection', 'remoteAccess', 'storageDomain', 'webServer', 'workspaceRegistry']
 
+  /** Absolute root used to allocate account workspaces. */
+  get workspaceRoot(): string { return this.config.workspaceRoot }
+
   private readonly config: ResolvedConfig
   private usersTable!: KvTable<string, UserRecord>
   private loginsTable!: KvTable<string, LoginSessionRecord>

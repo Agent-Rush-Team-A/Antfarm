@@ -24,6 +24,15 @@ pnpm run start:web --patch apps/cli/config/examples/harness-sandbox.patch.yml --
 
 Antfarm's default Web entry provides account login and workspace file services; the overlay adds sandbox management and automatic preparation when an authenticated user sends a message to an owned workspace Session. Preparation failure refuses the message. Its standard preset exposes only foreground Runner Bash; host file tools and terminal handoffs remain denied. The Docker-privileged Runner stays outside Web. Missing required configuration fails startup. When using `pnpm dsh web` directly, load `apps/cli/config/antfarm-web.patch.yml` before this overlay.
 
+<a id="use-the-web-controls"></a>
+## Use the Web controls
+
+With the overlay enabled, choose **Workspace sandbox** from the workspace actions menu, or use the shield button in a conversation's input bar. Both entries open the same panel for that workspace; opening the panel only queries status.
+
+Click **Open sandbox** to start it. The panel shows **Starting…**, then **Running** after confirmation. Click **Close sandbox**, then **Confirm close** to stop it; the panel shows **Closing…**, then **Closed** after removal. Cancelling the confirmation or dismissing the panel keeps the sandbox running. Closing retains files and conversations, but stops active and queued tasks.
+
+When both slots are occupied, the panel says **Sandbox capacity is full. Close one or try again later.** Close a running sandbox before retrying the failed opening. Status refresh does not retry opening or closing. A failed query labels the last observed status and disables mutations until a successful query; an unknown operation result blocks opening and requires administrator assistance. Loss of connection or workspace permission dismisses the panel; reopen it after access returns.
+
 <a id="call-the-management-methods"></a>
 ## Call the management methods
 
@@ -57,4 +66,4 @@ Failed observations are retained for later bounded queries. Restart or managemen
 <a id="continue-the-integrations"></a>
 ## Continue the integrations
 
-The optional overlay prepares messages, forwards Bash to the Runner and reclaims idle containers. The model sees `/workspace`, command output and exit status, without sandbox-management parameters. Output uses the Runner's bounded tails; host result spilling is disabled because the model cannot access host spill files. Use the [integration handoff](../../../packages/sandbox/harness-sandbox/README.md#integration-handoff) for authorized internal methods, activity queries and browser APIs. Browser controls belong to #9; other tools require separate isolation.
+The optional overlay prepares messages, forwards Bash to the Runner and reclaims idle containers. The model sees `/workspace`, command output and exit status, without sandbox-management parameters. Output uses the Runner's bounded tails; host result spilling is disabled because the model cannot access host spill files. Use the [integration handoff](../../../packages/sandbox/harness-sandbox/README.md#integration-handoff) for authorized internal methods, activity queries and browser APIs. Other tools require separate isolation.

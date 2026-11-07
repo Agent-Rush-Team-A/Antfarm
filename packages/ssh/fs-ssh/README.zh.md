@@ -25,7 +25,9 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-将本提供方与 [`dsh-ssh`](../ssh/README.zh.md) 及 `sandboxPolicy` 一同挂载，并使用配套 SSH 子进程与沙箱提供方执行程序。本提供方没有配置字段：连接身份和默认工作区属于 `dsh-ssh`，文件效果模式属于 `sandboxPolicy`。
+将本提供方与 [`dsh-ssh`](../ssh/README.zh.md) 及 `sandboxPolicy` 一同挂载，并使用配套 SSH 子进程与沙箱提供方执行程序。连接身份和默认工作区属于 `dsh-ssh`，文件效果模式属于 `sandboxPolicy`。
+
+`confineTextReads` 默认为 false。启用后，`readText()` 和 `streamText()` 通过固定目录及文件句柄，在握手确定的规范工作区下打开普通文件。替换符号链接无法将已接纳的读取重定向到根目录外。此选项要求当前版本的 Linux helper 及可访问的 `/proc/self/fd`；不支持的 helper 或主机会拒绝读取，不会重试为无约束读取。元数据、目录列表和字节读取不受此选项约束，消费方仍须分别授权这些操作。
 
 `resolve()` 在远端主机上规范化路径。`processPath()` 与 `fileUrl()` 在同一个远端命名空间中标识文件，并不授予主机侧访问能力。文件 URL 对字面的百分号、反斜杠和换行进行编码，保留原文件名。`processPathFromHostPath()` 返回 `undefined`，因此需要已安装可执行文件或引导程序的消费方必须显式提供远端产物。
 

@@ -54,6 +54,10 @@ interface CredentialInfo {
 
 `credentials/reference-updated (ref)` 在提供方管理的来源发生已提交变更后发出——`set`、`unset` 或在存储中观察到的外部编辑。进程环境自身的变化不可观测，永不发出事件。消费方不需要该事件（它们按操作重新解析）；它服务于配置界面刷新「已配置」徽标。
 
+## 个人凭证
+
+[个人凭证 API](../../packages/api/user-credentials/README.zh.md) 为每个[多用户账号](../../packages/api/multiuser/README.zh.md)保存认证密文。`UserCredentialId` 标识记录；`UserCredentialView` 仅返回 ID、名称、保存状态和时间戳。`CreateCredentialRequest` 提交名称与凭证值，`CredentialRequest` 指定当前用户拥有的 ID，`ReplaceCredentialRequest` 提供该 ID 与新值。调用者身份来自已认证 Peer，与工作区权限独立。这些类型定义在[浏览器安全类型模块](../../packages/api/user-credentials/src/types.ts)中；凭证管理不注册模型工具或 Session 事件。
+
 ## 内嵌 Platform 凭证
 
 PlatformSession 是 getPlatformSession 返回的仅限 Host 快照：origin 指定所配置的 Platform 签发来源，token 包含其已存账号凭证。userId 复制最近一次成功 getProfile 得到的稳定账号 ID；尚无一次成功读取或资料不含 ID 时为 null。快照复用该 ID，不自行发起资料请求，因此 ID 未知时只会让 userId 为 null，而不会延迟调用方；资料读取首次取得稳定 ID 或该 ID 变化时仅通知使用 `watch(signal, true)` 的 Host 订阅者，供标识使用方重新读取快照。使用方以 origin 和 userId 作为持久化浏览器存储的键，为 null 时退回临时存储。账号已退登或读取凭证期间凭证变化时不返回快照；签发来源不匹配时失败。原生使用方负责在凭证变化时使文档失效。账号控制器 RPC、AccountView 和 AccountDetails 均不包含此快照。
@@ -366,6 +370,55 @@ abstract getDeviceIdentity(): Promise<{ deviceId?: string; userId?: AccountUserI
 ```
 
 Source: [`packages/credentials/deepseek-account/src/index.ts`](../../packages/credentials/deepseek-account/src/index.ts)
+
+<a id="ctxusercredentials--usercredentials"></a>
+
+### `ctx.userCredentials` — `UserCredentials`
+
+Host service backing the personal-credential browser API.
+
+```ts cordis-catalog
+/**
+ * Lists only the authenticated caller's credential metadata.
+ * @param signal - Request lifetime.
+ * @returns Metadata without secret fragments.
+ */
+@Remote list(signal: AbortSignal): UserCredentialView[]
+
+/**
+ * Encrypts and durably stores a new credential for the authenticated caller.
+ * @param request - Name and submitted secret.
+ * @param signal - Request lifetime.
+ * @returns Committed metadata without the secret.
+ */
+@Remote create(request: CreateCredentialRequest, signal: AbortSignal): Promise<UserCredentialView>
+
+/**
+ * Replaces the secret of a credential owned by the authenticated caller.
+ * @param request - Own record and replacement secret.
+ * @param signal - Request lifetime.
+ * @returns Committed metadata without the secret.
+ */
+@Remote replace(request: ReplaceCredentialRequest, signal: AbortSignal): Promise<UserCredentialView>
+
+/**
+ * Durably removes a credential owned by the authenticated caller.
+ * @param request - Own record to delete.
+ * @param signal - Request lifetime.
+ * @returns Confirmation after durable removal.
+ */
+@Remote delete(request: CredentialRequest, signal: AbortSignal): Promise<{ removed: true }>
+
+/**
+ * Authenticates and decrypts the caller's stored credential only in Host memory.
+ * @param request - Own record to check.
+ * @param signal - Request lifetime.
+ * @returns Storage readability, not external-service authorization.
+ */
+@Remote check(request: CredentialRequest, signal: AbortSignal): { readable: true }
+```
+
+Source: [`packages/api/user-credentials/src/index.ts`](../../packages/api/user-credentials/src/index.ts)
 
 <a id="authorization-events"></a>
 

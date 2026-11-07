@@ -49,6 +49,7 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
  * blocks. A package moves on or off this list with its context behavior.
  */
 const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
+  'packages/client/ui-workspace-sandbox': { kind: 'none', reason: 'Explicit browser sandbox lifecycle controls add no model input or Session events.' },
   'packages/client/ui-context-menu': { kind: 'none', reason: 'Client menu presentation and contributed callbacks add no model input.' },
   'packages/client/ui-file-actions': { kind: 'none', reason: 'Explicit user file saves and clipboard operations add no model input.' },
   'packages/client/ui-entry-customization': { kind: 'none', reason: 'Controls browser launchers and prepares a reviewable Creator draft without submitting model input.' },
@@ -252,6 +253,8 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/api/job-controller': { kind: 'none', reason: 'Job observation is browser and Host control state; it registers no prompt, tool, or session event.' },
   'packages/api/session-controller': { kind: 'none', reason: 'Session API and transport owner; invoked Agent commands own any model-visible effect.' },
   'packages/api/multiuser': { kind: 'none', reason: 'Authenticates browser requests and owns workspace ownership rows; it registers no prompt, tool, or session event.' },
+  'packages/api/user-credentials': { kind: 'none', reason: 'Personal credential management registers no model tools, prompt sections or Session events.' },
+  'packages/client/ui-user-credentials': { kind: 'none', reason: 'The private browser form contributes no model input or Session events.' },
   'packages/api/settings-controller': { kind: 'none', reason: 'Configuration-surface API owner; it registers no prompt, tool, or session event.' },
   'packages/api/workspace-controller': { kind: 'none', reason: 'Workspace API and state projection owner; it registers no prompt, tool, or session event.' },
   'packages/api/workspace-files': { kind: 'none', reason: 'Workspace file read API and its Client resource provider; it registers no prompt, tool, or session event.' },

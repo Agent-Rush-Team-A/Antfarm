@@ -5,13 +5,13 @@ import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import { RemoteOperationError } from '@deepseek-ai/dsh-ssh/protocol'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
-import { SshFileSystem } from '../src/index.ts'
+import { SshFileSystem, type Config } from '../src/index.ts'
 
 type Dispatch = (method: string, params: unknown, signal?: AbortSignal) => Promise<unknown>
 const target: FsTarget = { targetKey: FsTargetKey('/remote/work/file.txt'), displayPath: 'file.txt' }
 const streamId = '00000000-0000-4000-8000-000000000001'
 
-async function setup() {
+async function setup(config: Config = {}) {
   const dispatch = vi.fn<Dispatch>()
   class WireConnection extends Service {
     constructor(ctx: Context) { super(ctx, 'ssh') }
@@ -25,12 +25,32 @@ async function setup() {
     resolve(): SandboxExecutionPolicy { return { mode: 'read-only', workspaceRoot: '/remote/work' } }
   }
   const ctx = new Context()
-  const fibers = [await ctx.plugin(WireConnection), await ctx.plugin(Policy), await ctx.plugin(SshFileSystem)]
+  const fibers = [await ctx.plugin(WireConnection), await ctx.plugin(Policy), await ctx.plugin(SshFileSystem, config)]
   onTestFinished(async () => { for (const fiber of fibers.reverse()) await fiber.dispose() })
   return { fs: ctx.fs, dispatch }
 }
 
 describe('SSH filesystem provider', () => {
+  it.each([false, true])('requests workspace-confined text reads only when enabled (%s)', async (confineTextReads) => {
+    const { fs, dispatch } = await setup({ confineTextReads })
+    dispatch.mockResolvedValueOnce('text').mockResolvedValueOnce(streamId)
+      .mockResolvedValueOnce({ done: true, value: '' })
+    expect(await fs.readText(target)).toBe('text')
+    const chunks: string[] = []
+    for await (const chunk of await fs.streamText(target)) chunks.push(chunk)
+    expect(chunks).toEqual([])
+    const params = confineTextReads ? { target, workspaceOnly: true } : { target }
+    expect(dispatch.mock.calls[0]).toEqual(['fs.readText', params, undefined])
+    expect(dispatch.mock.calls[1]).toEqual(['fs.stream', params, undefined])
+  })
+
+  it('fails a confined read without retrying an unsupported helper as an unrestricted read', async () => {
+    const { fs, dispatch } = await setup({ confineTextReads: true })
+    dispatch.mockRejectedValueOnce(new RemoteOperationError('Unknown workspaceOnly request field'))
+    await expect(fs.readText(target)).rejects.toMatchObject({ code: 'FS_IO_ERROR' })
+    expect(dispatch).toHaveBeenCalledTimes(1)
+  })
+
   it('declares watching unsupported without sending a remote request', async () => {
     const { fs, dispatch } = await setup()
     await expect(fs.watch(target, vi.fn(), new AbortController().signal))

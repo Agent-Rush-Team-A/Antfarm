@@ -28,6 +28,9 @@
     // not declaration path aliases, keep each package/vendor source compiled
     // under its own tsconfig boundary.
     "paths": {
+      "@deepseek-ai/dsh-harness-sandbox/backend": ["./packages/sandbox/harness-sandbox/src/backend.ts"],
+      "@deepseek-ai/dsh-harness-sandbox/files": ["./packages/sandbox/harness-sandbox/src/files.ts"],
+      "@deepseek-ai/dsh-harness-sandbox/ssh": ["./packages/sandbox/harness-sandbox/src/ssh.ts"],
       "@deepseek-ai/dsh-client-ui-file-actions": ["./packages/client/ui-file-actions/src/index.ts"],
       "@deepseek-ai/dsh-client-ui-file-actions/client": ["./packages/client/ui-file-actions/src/client/index.ts"],
       "@deepseek-ai/dsh-client-ui-file-actions/types": ["./packages/client/ui-file-actions/src/types.ts"],
@@ -425,6 +428,12 @@
       "@deepseek-ai/dsh-harness-sandbox/conversation": ["./packages/sandbox/harness-sandbox/src/conversation.ts"],
       "@deepseek-ai/dsh-harness-sandbox/idle": ["./packages/sandbox/harness-sandbox/src/idle.ts"],
       "@deepseek-ai/dsh-tool-bash/render": ["./packages/shell/tool-bash/src/render.ts"],
+      "@deepseek-ai/dsh-api-user-credentials": ["./packages/api/user-credentials/src/index.ts"],
+      "@deepseek-ai/dsh-api-user-credentials/types": ["./packages/api/user-credentials/src/types.ts"],
+      "@deepseek-ai/dsh-client-ui-user-credentials": ["./packages/client/ui-user-credentials/src/index.ts"],
+      "@deepseek-ai/dsh-client-ui-user-credentials/client": ["./packages/client/ui-user-credentials/src/client/index.ts"],
+      "@deepseek-ai/dsh-client-ui-workspace-sandbox": ["./packages/client/ui-workspace-sandbox/src/index.ts"],
+      "@deepseek-ai/dsh-client-ui-workspace-sandbox/client": ["./packages/client/ui-workspace-sandbox/src/client/index.ts"],
       // BEGIN generated package aliases — pnpm run gen-tsconfig-paths
       "@deepseek-ai/dsh-acp": ["./packages/acp/acp/src"],
       "@deepseek-ai/dsh-acp-app": ["./packages/bundle/acp-app/src"],

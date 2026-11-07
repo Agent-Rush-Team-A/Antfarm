@@ -8,12 +8,24 @@
     "src"
   ],
   "references": [
-    { "path": "../../core/tools" },
-    { "path": "../../llm/llm" },
-    { "path": "../../shell/tool-bash" },
-    { "path": "../../core/agent" },
-    { "path": "../../core/session" },
-    { "path": "../../api/session-controller/tsconfig.host.json" },
+    {
+      "path": "../../core/tools"
+    },
+    {
+      "path": "../../llm/llm"
+    },
+    {
+      "path": "../../shell/tool-bash"
+    },
+    {
+      "path": "../../core/agent"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
+      "path": "../../api/session-controller/tsconfig.host.json"
+    },
     {
       "path": "../../../vendor/cosmokit"
     },
@@ -37,6 +49,36 @@
     },
     {
       "path": "../../typert/protocol"
+    },
+    {
+      "path": "../../fs/fs"
+    },
+    {
+      "path": "../../ssh/ssh"
+    },
+    {
+      "path": "../../ssh/fs-ssh"
+    },
+    {
+      "path": "../../subprocess/subprocess"
+    },
+    {
+      "path": "../../ssh/subprocess-ssh"
+    },
+    {
+      "path": "../sandbox-policy"
+    },
+    {
+      "path": "../../session/session-projection"
+    },
+    {
+      "path": "../../fs/tool-fs"
+    },
+    {
+      "path": "../../session/working-directory"
+    },
+    {
+      "path": "../../core/system-prompt"
     }
   ]
 }

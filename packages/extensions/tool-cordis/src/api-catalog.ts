@@ -2752,38 +2752,44 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'sandboxRunnerClient',
-    summary: 'Lifecycle-managed internal communication with one independent Runner.',
-    description: 'Lifecycle-managed internal communication with one independent Runner.',
+    summary: 'Providers share lifecycle and original-request semantics without choosing user permissions.',
+    description: 'Providers share lifecycle and original-request semantics without choosing user permissions.',
     methods: [
       {
-        signature: 'open(workspaceId: WorkspaceId, workspaceDir: string): Promise<RunnerRunningSandbox>',
-        description: 'Send an authorized caller\'s open request; this transport does not authenticate users.',
-        parameters: [{ name: 'workspaceId', description: 'Trusted Runner workspace identity.' }, { name: 'workspaceDir', description: 'Trusted persistent workspace directory.' }],
-        returns: 'Confirmed running generation, retaining its full container identity.',
+        signature: 'abstract open(workspaceId: WorkspaceId, workspaceDir: string): Promise<RunnerRunningSandbox>',
+        description: 'Open or reuse the authorized Workspace\'s execution generation.',
+        parameters: [{ name: 'workspaceId', description: 'Authorized identity.' }, { name: 'workspaceDir', description: 'Registered project path, separate from execution coordinates.' }],
+        returns: 'Confirmed execution generation.',
       },
       {
-        signature: 'status(workspaceId: WorkspaceId): Promise<RunnerSandboxStatus>',
-        description: 'Query the Runner for an authorized caller\'s workspace.',
-        parameters: [{ name: 'workspaceId', description: 'Trusted Runner workspace identity.' }],
-        returns: 'The current validated observation; failures never synthesize closed.',
+        signature: 'abstract status(workspaceId: WorkspaceId): Promise<RunnerSandboxStatus>',
+        description: 'Observe this Workspace without inferring a result from an earlier request.',
+        parameters: [{ name: 'workspaceId', description: 'Authorized identity.' }],
+        returns: 'Fresh provider observation.',
       },
       {
-        signature: 'close(workspaceId: WorkspaceId): Promise<RunnerClosedSandbox>',
-        description: 'Request closure after the caller has authorized this operation; never automatically replay it.',
-        parameters: [{ name: 'workspaceId', description: 'Trusted Runner workspace identity.' }],
-        returns: 'Closed only after the Runner confirms container absence.',
+        signature: 'abstract close(workspaceId: WorkspaceId): Promise<RunnerClosedSandbox>',
+        description: 'Close the execution generation after confirming managed cleanup.',
+        parameters: [{ name: 'workspaceId', description: 'Authorized identity.' }],
+        returns: 'Closure after managed work is quiescent; lost acknowledgement rejects.',
       },
       {
-        signature: 'execute(workspaceId: WorkspaceId, request: RunnerExecutionRequest, signal?: AbortSignal): Promise<RunnerExecutionResult>',
-        description: 'Submit or retrieve the authorized caller\'s unchanged execution request without automatic retries.',
-        parameters: [{ name: 'workspaceId', description: 'Trusted workspace identity.' }, { name: 'request', description: 'Saved request including original execution and container identities.' }, { name: 'signal', description: 'Optional local wait cancellation; omission uses only service lifetime and deadline.' }],
-        returns: 'Validated command result; stopping this wait does not cancel the remote execution.',
+        signature: 'abstract execute(workspaceId: WorkspaceId, request: RunnerExecutionRequest, signal?: AbortSignal): Promise<RunnerExecutionResult>',
+        description: 'Execute once or retrieve the unchanged original request\'s result.',
+        parameters: [{ name: 'workspaceId', description: 'Authorized identity.' }, { name: 'request', description: 'Unchanged original request.' }, { name: 'signal', description: 'Wait cancellation, without remote cancellation.' }],
+        returns: 'Original command result; conflicting requests and unknown outcomes reject.',
       },
       {
-        signature: 'cancel(workspaceId: WorkspaceId, request: RunnerExecutionIdentity): Promise<RunnerCancellationResult>',
-        description: 'Request cancellation with its own deadline, independent of an aborted execution wait.',
-        parameters: [{ name: 'workspaceId', description: 'Trusted workspace identity.' }, { name: 'request', description: 'Original execution and full container identity.' }],
-        returns: 'Cancellation acknowledgement, not a cleanup guarantee; errors retain the Runner reason.',
+        signature: 'abstract cancel(workspaceId: WorkspaceId, request: RunnerExecutionIdentity): Promise<RunnerCancellationResult>',
+        description: 'Request cancellation in the original execution generation.',
+        parameters: [{ name: 'workspaceId', description: 'Authorized identity.' }, { name: 'request', description: 'Original execution and generation.' }],
+        returns: 'Cancellation receipt, not cleanup confirmation.',
+      },
+      {
+        signature: 'files(_workspaceId: WorkspaceId, _target: SandboxContainerId, _signal?: AbortSignal): Promise<WorkspaceRuntimeFiles>',
+        description: 'Access files only in the captured execution generation; unsupported backends refuse rather than using host files.',
+        parameters: [{ name: '_workspaceId', description: 'Authorized identity.' }, { name: '_target', description: 'Captured execution generation.' }, { name: '_signal', description: 'Caller lifetime.' }],
+        returns: 'Generation-bound remote files; the caller retains user and turn authorization.',
       },
     ],
   },
@@ -3804,6 +3810,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Tear down the helper\'s remote managed ranges before releasing the SSH master when reachable.',
         parameters: [],
       },
+      {
+        signature: 'async closeConfirmed(): Promise<void>',
+        description: 'Dispose the transport and require the helper\'s acknowledgement of managed cleanup. A lost connection still releases local resources, but rejects without claiming remote cleanup.',
+        parameters: [],
+        returns: 'Settlement only after acknowledged remote cleanup and local teardown.',
+      },
     ],
   },
   {
@@ -4441,6 +4453,43 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Open one live stream Remote method without assuming a physical carrier.',
         parameters: [{ name: 'request', description: 'decoded endpoint, named wire arguments, and the Client uplink when the carrier has one.' }],
         returns: 'a cancellation-aware iterable over the business results.',
+      },
+    ],
+  },
+  {
+    key: 'userCredentials',
+    summary: 'Host service backing the personal-credential browser API.',
+    description: 'Host service backing the personal-credential browser API.',
+    methods: [
+      {
+        signature: '@Remote list(signal: AbortSignal): UserCredentialView[]',
+        description: 'Lists only the authenticated caller\'s credential metadata.',
+        parameters: [{ name: 'signal', description: 'Request lifetime.' }],
+        returns: 'Metadata without secret fragments.',
+      },
+      {
+        signature: '@Remote create(request: CreateCredentialRequest, signal: AbortSignal): Promise<UserCredentialView>',
+        description: 'Encrypts and durably stores a new credential for the authenticated caller.',
+        parameters: [{ name: 'request', description: 'Name and submitted secret.' }, { name: 'signal', description: 'Request lifetime.' }],
+        returns: 'Committed metadata without the secret.',
+      },
+      {
+        signature: '@Remote replace(request: ReplaceCredentialRequest, signal: AbortSignal): Promise<UserCredentialView>',
+        description: 'Replaces the secret of a credential owned by the authenticated caller.',
+        parameters: [{ name: 'request', description: 'Own record and replacement secret.' }, { name: 'signal', description: 'Request lifetime.' }],
+        returns: 'Committed metadata without the secret.',
+      },
+      {
+        signature: '@Remote delete(request: CredentialRequest, signal: AbortSignal): Promise<{ removed: true }>',
+        description: 'Durably removes a credential owned by the authenticated caller.',
+        parameters: [{ name: 'request', description: 'Own record to delete.' }, { name: 'signal', description: 'Request lifetime.' }],
+        returns: 'Confirmation after durable removal.',
+      },
+      {
+        signature: '@Remote check(request: CredentialRequest, signal: AbortSignal): { readable: true }',
+        description: 'Authenticates and decrypts the caller\'s stored credential only in Host memory.',
+        parameters: [{ name: 'request', description: 'Own record to check.' }, { name: 'signal', description: 'Request lifetime.' }],
+        returns: 'Storage readability, not external-service authorization.',
       },
     ],
   },
@@ -5354,6 +5403,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Prepare headers for one pi-ai inference call, excluding model discovery.',
     description: 'Prepare headers for one pi-ai inference call, excluding model discovery. Listeners run synchronously and must call next(); they may edit only the request-owned headers and must not retain them. Throws fail the call with REQUEST_HEADERS before inference I/O. Harness attribution wins afterward. Non-TypeError messages are user-visible and must exclude secrets. TypeError details and non-Error values are replaced with safe guidance.',
     parameters: [{ name: 'request', description: 'immutable routing metadata from the exact prepared call.' }, { name: 'headers', description: 'fresh profile headers, shared only within this dispatch.' }, { name: 'next', description: 'continue header preparation through the remaining listeners.' }],
+  },
+  {
+    name: 'llm-pi-ai/resolve-api-key',
+    mode: 'waterfall',
+    signature: '\'llm-pi-ai/resolve-api-key\'(request: PiAiCredentialRequest, next: () => Promise<string | undefined>): Promise<string | undefined>',
+    summary: 'Authorize one Host-only credential resolution.',
+    description: 'Authorize one Host-only credential resolution. A route-specific consumer may replace the global resolver and must reject an unauthorized request without calling next(). Other consumers delegate with next(). Neither routing inputs nor the returned secret may be logged or sent to a model.',
+    parameters: [{ name: 'request', description: 'exact endpoint and initiating Session when generating.' }, { name: 'next', description: 'resolve through the deployment\'s global credential plane.' }],
   },
   {
     name: 'llm/adapters-updated',
@@ -6416,6 +6473,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CreateAgentOptions {\n    readonly sessionId: SessionId;\n    readonly meta?: {\n        readonly cwd?: string;\n        readonly parentSession?: SessionId;\n        readonly isSeeded?: boolean;\n        readonly origin?: \'subagent\';\n        readonly delegationDepth?: number;\n        readonly agentPreset?: string;\n    };\n    readonly inheritedEventCount?: SessionLogOffset;\n    readonly seed?: readonly SessionEvent[];\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n}',
   },
   {
+    name: 'CreateCredentialRequest',
+    declaration: 'export interface CreateCredentialRequest {\n    readonly name: string;\n    readonly value: string;\n}',
+  },
+  {
     name: 'CreatedShare',
     declaration: 'export interface CreatedShare {\n    readonly link: string;\n    readonly shareId: string;\n    readonly sessionId: string;\n    readonly sessionMode: \'view\' | \'write\';\n    readonly access: ShareAccess;\n}',
   },
@@ -6474,6 +6535,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CredentialRef',
     declaration: 'export type CredentialRef = Branded<\'CredentialRef\'>;',
+  },
+  {
+    name: 'CredentialRequest',
+    declaration: 'export interface CredentialRequest {\n    readonly id: UserCredentialId;\n}',
   },
   {
     name: 'CronInput',
@@ -6714,6 +6779,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FileReferenceCandidate',
     declaration: 'export interface FileReferenceCandidate {\n    path: string;\n    kind: \'file\' | \'directory\';\n}',
+  },
+  {
+    name: 'FileSystem',
+    declaration: 'export abstract class FileSystem extends Service {\n    constructor(ctx: Context);\n    watch(target: FsTarget, changed: (error?: Error) => void, signal: AbortSignal): Promise<() => Promise<void>>;\n    get sandboxMode(): SandboxMode | undefined;\n    abstract resolve(path: string, opts?: {\n        cwd?: string;\n        signal?: AbortSignal;\n    }): Promise<FsTarget>;\n    abstract processPath(target: FsTarget): string;\n    processPathFromHostPath(hostPath: string): string | undefined;\n    abstract fileUrl(target: FsTarget): string;\n    abstract contains(parent: FsTarget, child: FsTarget): boolean;\n    abstract stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined>;\n    abstract lstat(path: string, opts?: {\n        cwd?: string;\n    }, signal?: AbortSignal): Promise<FsPathInfo | undefined>;\n    abstract readText(target: FsTarget, signal?: AbortSignal): Promise<string>;\n    abstract streamText(target: FsTarget, signal?: AbortSignal): Promise<AsyncIterable<string>>;\n    abstract readBytes(target: FsTarget, signal: AbortSignal | undefined, maxBytes: number): Promise<Uint8Array>;\n    abstract readByteRange(target: FsTarget, range: {\n        offset: number;\n        length: number;\n    }, signal?: AbortSignal): Promise<Uint8Array>;\n    abstract listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]>;\n    abstract writeText(target: FsTarget, content: string, expected?: FsWriteIntent, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy): Promise< /* …truncated — full shape in source */',
   },
   {
     name: 'FileUploadReceiptId',
@@ -7840,6 +7909,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PermissionCatalog {\n    options: PresetOption[];\n    defaultOptions: PresetOption[];\n    defaultPreset: string;\n}',
   },
   {
+    name: 'PiAiCredentialRequest',
+    declaration: 'export interface PiAiCredentialRequest {\n    readonly provider: string;\n    readonly baseURL?: string;\n    readonly model?: string;\n    readonly apiKeyEnv?: string;\n    readonly credentialScope?: \'global\' | \'request\';\n    readonly sessionId?: GenerateOptions[\'sessionId\'];\n    readonly purpose?: GenerateOptions[\'purpose\'];\n    readonly signal?: AbortSignal;\n}',
+  },
+  {
     name: 'PiAiRequestHeaderContext',
     declaration: 'export interface PiAiRequestHeaderContext extends Readonly<Pick<GenerateOptions<string>, \'provider\' | \'model\' | \'sessionId\' | \'purpose\'>> {\n    readonly baseURL: string;\n}',
   },
@@ -8298,6 +8371,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RenderedDocumentBytes',
     declaration: 'export interface RenderedDocumentBytes extends WorkspaceFileBytes {\n    readonly missingFonts: string[];\n    readonly generation: OfficeToPdfGeneration;\n}',
+  },
+  {
+    name: 'ReplaceCredentialRequest',
+    declaration: 'export interface ReplaceCredentialRequest extends CredentialRequest {\n    readonly value: string;\n}',
   },
   {
     name: 'ReplayEnvelope',
@@ -10368,6 +10445,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface UpdateTeamTaskRequest {\n    readonly taskId: TeamTaskId;\n    readonly expectedRevision: number;\n    readonly action: TeamTaskAction;\n    readonly subject?: string;\n    readonly description?: string;\n    readonly blockedBy?: readonly TeamTaskId[];\n    readonly writeScopes?: readonly string[];\n    readonly owner?: SessionId;\n}',
   },
   {
+    name: 'UserCredentialId',
+    declaration: 'export type UserCredentialId = Branded<\'UserCredentialId\'>;',
+  },
+  {
+    name: 'UserCredentialView',
+    declaration: 'export interface UserCredentialView {\n    readonly id: UserCredentialId;\n    readonly name: string;\n    readonly configured: true;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
     name: 'UserId',
     declaration: 'export type UserId = Branded<\'UserId\'>;',
   },
@@ -10714,6 +10799,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceRenameRequest',
     declaration: 'export interface WorkspaceRenameRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly title: string;\n}',
+  },
+  {
+    name: 'WorkspaceRuntimeFiles',
+    declaration: 'export interface WorkspaceRuntimeFiles {\n    readonly fs: FileSystem;\n    readonly root: string;\n    readonly signal: AbortSignal;\n    assertCurrent(): void;\n}',
   },
   {
     name: 'WorkspaceUnarchiveSessionRequest',

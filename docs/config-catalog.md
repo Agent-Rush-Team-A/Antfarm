@@ -337,6 +337,43 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-terminal-controller -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-api-user-credentials -->
+<a id="deepseek-aidsh-api-user-credentials"></a>
+
+## `@deepseek-ai/dsh-api-user-credentials`
+
+- `inject`: `storageDomain` · `multiuser`
+- `source`: [`packages/api/user-credentials/src/index.ts:23`](../packages/api/user-credentials/src/index.ts)
+
+```ts config-catalog
+/** Host deployment values; no secret is stored in plugin configuration. */
+export interface Config {
+  /** Absolute path of a private 32-byte master-key file outside workspace mounts. */
+  encryptionKeyFile: string
+  /** Create a missing key only when the persisted credential table is empty. @default false */
+  initializeKeyIfEmpty?: boolean
+  /** Maximum UTF-8 secret bytes. @default 16384 */
+  maxCredentialBytes?: number
+  /** Maximum credentials per account. @default 64 */
+  maxRecordsPerUser?: number
+  /** Provider routes allowed to consume this account's named credentials. @default [] */
+  inferenceBindings?: InferenceBinding[]
+  /** Allow HTTP only for explicitly bound loopback test providers. @default false */
+  allowLoopbackHttp?: boolean
+}
+
+/** Explicit deployment binding; credential names remain scoped to each account. */
+export interface InferenceBinding {
+  /** Registered pi-ai route receiving the credential. */
+  readonly provider: string
+  /** Exact HTTPS base endpoint allowed to receive the secret. */
+  readonly baseURL: string
+  /** Display name looked up only within the initiating account. */
+  readonly credentialName: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-user-credentials -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-api-workspace-artifacts -->
 <a id="deepseek-aidsh-api-workspace-artifacts"></a>
 
@@ -784,6 +821,22 @@ export interface Config {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-client-ui-trajectory -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-client-ui-workspace-sandbox -->
+<a id="deepseek-aidsh-client-ui-workspace-sandbox"></a>
+
+## `@deepseek-ai/dsh-client-ui-workspace-sandbox`
+
+- `source`: [`packages/client/ui-workspace-sandbox/src/config.ts:5`](../packages/client/ui-workspace-sandbox/src/config.ts)
+
+```ts config-catalog
+/** Deployment-configurable status polling interval. */
+export interface Config {
+  /** Delay in milliseconds after a completed query while the panel is open. */
+  pollIntervalMs: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-client-ui-workspace-sandbox -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-compaction-basic -->
 <a id="deepseek-aidsh-compaction-basic"></a>
@@ -1635,6 +1688,23 @@ export type Config = LocalConfig
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-fs-sandbox -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-fs-ssh -->
+<a id="deepseek-aidsh-fs-ssh"></a>
+
+## `@deepseek-ai/dsh-fs-ssh`
+
+- `inject`: `ssh` · `sandboxPolicy`
+- `source`: [`packages/ssh/fs-ssh/src/index.ts:18`](../packages/ssh/fs-ssh/src/index.ts)
+
+```ts config-catalog
+/** Text-read restrictions for the SSH filesystem provider. */
+export interface Config {
+  /** Pin text reads inside the negotiated workspace; requires Linux procfs. Defaults to false. */
+  confineTextReads?: boolean
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-fs-ssh -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-goal -->
 <a id="deepseek-aidsh-goal"></a>
 
@@ -1658,14 +1728,20 @@ export interface Config {
 ## `@deepseek-ai/dsh-harness-sandbox`
 
 - `inject`: `multiuser` · `remoteAccess` · `typert` · `workspaceRegistry`
-- `source`: [`packages/sandbox/harness-sandbox/src/index.ts:43`](../packages/sandbox/harness-sandbox/src/index.ts)
+- `source`: [`packages/sandbox/harness-sandbox/src/index.ts:46`](../packages/sandbox/harness-sandbox/src/index.ts)
 
 ```ts config-catalog
-/** Deployment-trusted Runner settings and the existing multiuser workspace root. */
-export interface Config extends RunnerConfig {
-  /** Absolute root shared with multiuser allocation and the independent Runner. */
+/** Registered project root and deployment-selected local Runner or separately loaded backend. */
+export type Config = {
+  /** Absolute registered project root shared with multiuser allocation. Remote execution paths are supplied by the backend. */
   workspaceRoot: string
-}
+} & ((RunnerConfig & {
+  /** Construct and own the independent local Runner transport. */
+  backend?: 'runner'
+}) | {
+  /** Use a separately loaded sandboxRunnerClient; the Loader row injects that service before management. */
+  backend: 'provided'
+})
 
 /** Settings supplied by the Harness deployment, never by workspace callers. */
 export interface RunnerConfig {
@@ -2030,7 +2106,7 @@ export interface Config extends ProtocolConfig, ModelListingConfig {
 
 - `inject`: `llm`
 - `refs`: `Api` (`@earendil-works/pi-ai`) · `CacheRetention` (`@earendil-works/pi-ai`) · `Model` (`@earendil-works/pi-ai`) · `ModelThinkingLevel` (`@earendil-works/pi-ai`) · `OpenAICompletionsCompat` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets` (`@earendil-works/pi-ai`) · `Transport` (`@earendil-works/pi-ai`) · `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/llm/llm-pi-ai/src/config.ts:251`](../packages/llm/llm-pi-ai/src/config.ts)
+- `source`: [`packages/llm/llm-pi-ai/src/config.ts:255`](../packages/llm/llm-pi-ai/src/config.ts)
 
 ```ts config-catalog
 /** Plugin configuration: the provider routes this instance owns. */
@@ -2047,6 +2123,8 @@ export interface Config {
 export interface PiAiProviderProfile {
   /** Credential reference (environment-variable name) resolved per request through `ctx.credentials`. */
   apiKeyEnv?: string
+  /** Request requires an authorized consumer and never falls back to deployment credentials. @default global */
+  credentialScope?: 'global' | 'request'
   /** Name shown by configuration surfaces; defaults to the route key. */
   displayName?: string
   /**
@@ -4212,7 +4290,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-tool-fs`
 
 - `inject`: `tools` · `fs` · `systemPrompt` · `workingDirectory`
-- `source`: [`packages/fs/tool-fs/src/index.ts:27`](../packages/fs/tool-fs/src/index.ts)
+- `source`: [`packages/fs/tool-fs/src/index.ts:28`](../packages/fs/tool-fs/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config (all optional — `Config` supplies the defaults). */
@@ -5077,6 +5155,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-client-ui-skill` | — | [`packages/client/ui-skill/src/index.ts`](../packages/client/ui-skill/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-subagent` | — | [`packages/client/ui-subagent/src/index.ts`](../packages/client/ui-subagent/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-tool` | — | [`packages/client/ui-tool/src/index.ts`](../packages/client/ui-tool/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-user-credentials` | — | [`packages/client/ui-user-credentials/src/index.ts`](../packages/client/ui-user-credentials/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-user-questions` | — | [`packages/client/ui-user-questions/src/index.ts`](../packages/client/ui-user-questions/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-workflow-run` | — | [`packages/client/ui-workflow-run/src/index.ts`](../packages/client/ui-workflow-run/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-workspace` | — | [`packages/client/ui-workspace/src/index.ts`](../packages/client/ui-workspace/src/index.ts) |
@@ -5100,7 +5179,6 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-experimental-session-inspector` | — | [`packages/experimental/session-inspector/src/index.ts`](../packages/experimental/session-inspector/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-tool-worktree` | `tools` · `worktrees` | [`packages/experimental/tool-worktree/src/index.ts`](../packages/experimental/tool-worktree/src/index.ts) |
 | `@deepseek-ai/dsh-fs-observation-policy` | — | [`packages/fs/fs-observation-policy/src/index.ts`](../packages/fs/fs-observation-policy/src/index.ts) |
-| `@deepseek-ai/dsh-fs-ssh` | `ssh` · `sandboxPolicy` | [`packages/ssh/fs-ssh/src/index.ts`](../packages/ssh/fs-ssh/src/index.ts) |
 | `@deepseek-ai/dsh-goal-round-driver` | `agents` · `goals` · `sessions` | [`packages/goal/goal-round-driver/src/index.ts`](../packages/goal/goal-round-driver/src/index.ts) |
 | `@deepseek-ai/dsh-harness-dev-context` | `systemPrompt` · `sessionProjections` · `webApp` | [`packages/context/harness-dev-context/src/index.ts`](../packages/context/harness-dev-context/src/index.ts) |
 | `@deepseek-ai/dsh-host-directory-picker-auto` | `webServer` · `connection` · `loader` | [`packages/host/directory-picker-auto/src/index.ts`](../packages/host/directory-picker-auto/src/index.ts) |
