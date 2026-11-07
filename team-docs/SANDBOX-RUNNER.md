@@ -2,6 +2,8 @@
 
 在 Linux 上用独立的 `sandbox-runner` profile 启动服务。Runner 通过 Docker Engine 的 Unix socket 管理容器，Harness 通过另一个 Unix socket 发出工作区请求。
 
+工作区根位于 Vultr VFS 时，先配置共享卷和启动前检查，再启动 Runner。[Vultr VFS 工作区部署](VULTR-VFS.md)
+
 ## 服务账号和目录
 
 让 Runner 使用专用账号 `agentrush-runner`，主组为 `agentrush-sandbox`。Harness 服务账号加入 `agentrush-sandbox`。在 Docker Engine socket 由 `root:docker` 持有且模式为 `0660` 的主机上，只给 Runner 服务补充 `docker` 组权限。检查 Harness 的实际进程组和 Docker socket 的 ACL，确保它无法直接连接 Docker。
@@ -90,26 +92,4 @@ jq -n --arg id "$execution_id" --arg container "$container_id" \
 
 确认单次超时或取消已清理时，容器继续可用，其他执行不受影响。结果无法确认则同步冻结该代的新命令和尚未发出的 Start/run，按完整 ID 删除并确认。原失败报 execution_outcome_unknown，受回收影响的其他执行报 execution_container_recycled。删除成功可重新开启；删除失败继续保留名额和 cleanup_required，需要关闭操作重试。HTTP 与进程内 `cancel(workspaceId, {executionId, expectedContainerId})` 均只定位已有记录，重复取消复用同一次清理。
 
-交接给 #7 的执行入口为 POST /exec，取消入口为 POST /exec/cancel，身份和最终结果按上一节处理。`processes_cleaned` 表示本次后代已清理，`container_removed` 表示整代已删除，`unconfirmed` 表示仍没有清理保证；取消请求已接纳不能代替这些证据。一次清理成功时 B 继续，监管失证时 B 返回可识别的整代回收错误。旧代取消不能作用到重开的容器。
-
-## 真实 Docker 验收
-
-[独立验收脚本](../apps/cli/tests/profiles/sandbox-runner/fixtures/docker-acceptance.mjs)启动构建后的正式 `sandbox-runner` profile，经 Unix socket 发出所有用户执行和取消，再独立核对 `/proc`、Docker top、容器 ID 和文件。脚本仅用于专用部署和空测试目录，不加入默认单元测试。需要 Linux、Node >=24.9、当前构建产物和 Linux 原生依赖、可访问的 `/var/run/docker.sock`，以及能给目录分配 UID/GID 10001 的账号；本轮在专用 root Runner 载体中运行，沙箱仍为 `10001:10001`。
-
-准备已拉取的固定镜像 `agentrush-sandbox@sha256:6410324ee0ef8f3f1609a0056234e52b6fc0345ab4a2c754051f0931faafcb98`，在 Linux 仓库根执行以下命令。控制目录和工作区目录须为本轮独占，工作区路径须满足上面的 daemon 可见性要求。
-
-```sh
-export M5_REPO="$PWD"
-export M5_DEPLOYMENT="issue9-m5-$(date +%s%N)"
-export M5_DATA_ROOT=$(mktemp -d /var/tmp/dsh-m5-control-XXXXXX)
-export M5_WORKSPACE_ROOT=$(mktemp -d /var/tmp/dsh-m5-workspaces-XXXXXX)
-mkdir -p .local/issue-9-process-cleanup/m5-runtime
-cc -static -O2 -Wall -Wextra -Werror \
-  -o .local/issue-9-process-cleanup/m5-runtime/clone-child \
-  packages/sandbox/sandbox-runner/tests/supervisor/clone_child.c
-node apps/cli/tests/profiles/sandbox-runner/fixtures/docker-acceptance.mjs
-```
-
-输出为 JSON 行，控制目录的 `evidence.jsonl` 保存相同证据。退出零且 `passed` 列出全部场景后，检查最后的 `cleanup`，所有记录的完整容器 ID 都须不存在。归档日志后删除本轮专用控制、工作区和编译目录；工作区含有意构造的越界符号链接，删除时先解除链接，禁止跟随链接。
-
-2026-11-05 的 Linux/amd64、Docker Engine 29.9.2、Node 24.19.0 验收通过 10 组场景：A 超时和取消时 B 继续，普通后台、多层 fork/setsid/忽略 TERM、特殊 clone 的回收，容量/去重/目录/两路截断，监管被杀后的整代回收，SIGTERM 和 SIGKILL 后重启清理，以及在途关闭。B 分别继续写标记并退出 7；A 后代消失，单次清理保持容器，整代回收后文件保留。本轮测试容器、辅助容器、卷和专用目录均已清理。删除失败时的冻结与保留容量由可控 Engine 测试验证；真实 Docker 验收未故意使 daemon 删除失败。Vultr 部署未运行。
+执行入口为 `POST /exec`，取消入口为 `POST /exec/cancel`。`processes_cleaned` 表示本次后代已清理，`container_removed` 表示整代已删除，`unconfirmed` 表示仍没有清理保证。用执行结果核对清理状态。一次清理成功时，其他执行可以继续。回收该代容器时，其他在途执行会收到回收错误。旧代取消不能作用到重开的容器。
