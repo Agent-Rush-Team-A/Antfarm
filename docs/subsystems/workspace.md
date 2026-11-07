@@ -18,6 +18,181 @@ type WorkspaceId = Branded<'WorkspaceId'>
 
 `WorkspaceId` is a [branded id](core.md#branded-ids). Path identity is separate: `realpathNormalize` (`fs.realpath`; trailing slashes, `..`, and symlinks resolved) is the one uniqueness canon — workspace paths are stored canonicalized, uniqueness is string equality of canonical paths (a symlink to an owned directory collides), and attach-time session cwd checks go through the same canon.
 
+## Workspace modes
+
+Mode metadata distinguishes permanent first-Session locking from current operation admission. The Host coordinator serializes creation and configuration changes with shared resource leases; runtime settlement follows the durable decision, and interrupted operations require trusted recovery. Runtime files and environment routing belong to the registered provider.
+
+```ts type-equiv
+/** Ordinary Session topology and VM or Docker execution environment selection. */
+type WorkspaceMode = 'single-vm' | 'multi-vm' | 'single-docker' | 'multi-docker'
+```
+
+```ts type-equiv
+/** A durable transition identity reused during recovery. */
+type WorkspaceModeChangeId = Branded<'WorkspaceModeChangeId'>
+```
+
+```ts type-equiv
+/** Configuration locking is permanent after the first successful ordinary Session. */
+type WorkspaceModeLockReason = 'first-session-created'
+```
+
+```ts type-equiv
+/** Operational admission state, independent of permanent configuration locking. */
+type WorkspaceModeOperationState =
+  | 'ready'
+  | 'switching'
+  | 'creating-session'
+  | 'recovery-required'
+```
+
+```ts type-equiv
+/** Browser-safe configuration; every durable state mutation increases revision. */
+interface WorkspaceModeConfig {
+  readonly workspaceId: WorkspaceId
+  readonly mode: WorkspaceMode
+  readonly revision: number
+  readonly operationState: WorkspaceModeOperationState
+  readonly modeLocked: boolean
+  readonly lockReason: WorkspaceModeLockReason | null
+  readonly firstSessionId: SessionId | null
+}
+```
+
+```ts type-equiv
+/** The lease is a stable routing snapshot until release. */
+type WorkspaceModeUseConfig = WorkspaceModeConfig & {
+  readonly operationState: 'ready'
+}
+```
+
+```ts type-equiv
+/** Captured authority and cancellation for one trusted internal operation. */
+interface WorkspaceModeOperationOptions {
+  readonly signal: AbortSignal
+  /** Throw if the original caller no longer owns the original registration. */
+  admit(): void
+}
+```
+
+```ts type-equiv
+/** Held across all resource use; nested helpers reuse it instead of reacquiring. */
+interface WorkspaceModeUseLease {
+  readonly config: WorkspaceModeUseConfig
+  /** Operation lifetime, aborted on withdrawal; release still follows actual settlement. */
+  readonly signal: AbortSignal
+  /** Recheck the captured authority before resource access or publication. */
+  admit(): void
+  /** Idempotent; invoke after all retained resource operations have settled. */
+  release(): void
+}
+```
+
+```ts type-equiv
+/** Host-only transition intent; never accept a path or identity from the browser. */
+interface WorkspaceModeChange {
+  readonly changeId: WorkspaceModeChangeId
+  readonly workspaceId: WorkspaceId
+  /** Canonical immutable project identity; not necessarily the runtime file root. */
+  readonly project: string
+  readonly from: WorkspaceMode
+  readonly to: WorkspaceMode
+  readonly previousRevision: number
+}
+```
+
+```ts type-equiv
+/** Durable coordinator decision, reused unchanged during retries. */
+type WorkspaceModeChangeDecision = 'commit' | 'rollback'
+```
+
+```ts type-equiv
+/**
+ * Environment and file routing provider. Both methods are idempotent for changeId.
+ * It must not re-enter the public mode coordinator while holding exclusivity.
+ */
+interface WorkspaceModeRuntime {
+  /** Supported default, persisted modes, and the selected direction of pending recovery. */
+  readonly supportedModes: readonly WorkspaceMode[]
+  /**
+   * Quiesce the old environment and stage complete target files, retaining a recoverable
+   * source. Resolve only after all preparation writes settle. On rejection, retained
+   * work must be settled or recorded for settle(change, 'rollback') to reconcile.
+   * @param change - Durable transition identity and selected modes.
+   * @param signal - Preparation lifetime before the durable decision.
+   * @returns after preparation writes have settled.
+   */
+  prepare(change: WorkspaceModeChange, signal: AbortSignal): Promise<void>
+  /**
+   * Publish the selected environment/file routing and reconcile retained resources.
+   * Commit follows a durable commit decision; rollback restores from-mode usability.
+   * Must work after restart, without an in-memory result from prepare.
+   * Resolve only when the selected mode is usable and all owned writes settle.
+   * @param change - Original durable transition, including after restart.
+   * @param decision - Persisted commit or rollback direction.
+   * @param signal - Coordinator-owned settlement lifetime.
+   * @returns after selected routing and all owned writes have settled.
+   */
+  settle(
+    change: WorkspaceModeChange,
+    decision: WorkspaceModeChangeDecision,
+    signal: AbortSignal,
+  ): Promise<void>
+}
+```
+
+```ts type-equiv
+/** Trusted Host API: ctx.workspaceRegistry.modes. */
+interface IWorkspaceModes {
+  /**
+   * Read committed metadata, including transitional states; does not authorize or open resources.
+   * @param workspaceId - Original registration identity.
+   * @returns its durable mode snapshot.
+   */
+  get(workspaceId: WorkspaceId): WorkspaceModeConfig
+  /**
+   * Register exactly one runtime adapter; its async disposer stops admission and drains owned work.
+   * @param runtime - Provider supporting the default and all retained modes.
+   * @returns an idempotent asynchronous disposer.
+   */
+  registerRuntime(runtime: WorkspaceModeRuntime): () => Promise<void>
+  /**
+   * Exclusive, revision-checked asynchronous change. Uses coordinator-owned settlement
+   * after a durable decision; caller cancellation must not abandon pending recovery.
+   * @param request - Target mode and previously observed revision.
+   * @param options - Captured authority and caller lifetime.
+   * @returns the settled durable configuration.
+   */
+  setMode(
+    request: WorkspaceSetModeRequest,
+    options: WorkspaceModeOperationOptions,
+  ): Promise<WorkspaceModeConfig>
+  /**
+   * Retry the existing durable intent without changing its identity or decision.
+   * Trusted maintenance only; no Remote endpoint. Concurrent recovery is deduplicated.
+   * A ready workspace without an intent returns unchanged; quarantined storage refuses.
+   * @param workspaceId - Original registration with retained intent.
+   * @param options - Trusted maintenance authority and caller lifetime.
+   * @returns its reconciled durable configuration.
+   */
+  recover(
+    workspaceId: WorkspaceId,
+    options: WorkspaceModeOperationOptions,
+  ): Promise<WorkspaceModeConfig>
+  /**
+   * Acquire shared resource use after earlier exclusive work settles. Recheck authority
+   * after waiting. Rejections preserve business failure types; recovery-required refuses.
+   * @param workspaceId - Original registration whose resources will be used.
+   * @param options - Captured authority and caller lifetime.
+   * @returns the stable routing lease, held until all resource work settles.
+   */
+  acquireUse(
+    workspaceId: WorkspaceId,
+    options: WorkspaceModeOperationOptions,
+  ): Promise<WorkspaceModeUseLease>
+}
+```
+
 ## The workspace entity
 
 Consumers see only the `Workspace` interface; the implementation stays package-private.
@@ -348,6 +523,21 @@ Host service backing the generated `ctx.remote.workspace` namespace.
 
 ```ts cordis-catalog
 /**
+ * Read committed Workspace mode metadata after ownership checks.
+ * @param request - Workspace to read.
+ * @returns committed mode metadata after access checks.
+ */
+@Remote('getMode') async getMode(request: WorkspaceGetModeRequest): Promise<WorkspaceModeValue>
+
+/**
+ * Set an unlocked Workspace mode while preserving its original caller and registration.
+ * @param request - Target mode and observed revision.
+ * @param signal - Caller cancellation before commit.
+ * @returns ready metadata after runtime settlement and durable publication.
+ */
+@Remote('setMode') async setMode(request: WorkspaceSetModeRequest, signal: AbortSignal): Promise<WorkspaceModeValue>
+
+/**
  * Create or idempotently resolve one Workspace over an existing directory.
  * @param request - directory path to register.
  * @returns the Workspace and whether this call created it.
@@ -537,6 +727,30 @@ initializeDefault(resolveDirectory: () => Promise<string>): Promise<Workspace | 
 get(id: WorkspaceId): Workspace | undefined
 
 /**
+ * Trusted ordinary Session admission; the callback runs under exclusive mode coordination.
+ * @param workspaceId - Original registration.
+ * @param sessionId - Optional reusable Session identity.
+ * @param create - Creation callback that reserves each identity before persisting it.
+ * @param options - Captured authority and caller cancellation.
+ * @returns the callback value after durable attachment and permanent mode locking.
+ */
+withSessionCreation<T>(workspaceId: WorkspaceId, sessionId: SessionId | undefined, create: (admission: WorkspaceSessionAdmission) => Promise<{ sessionId: SessionId; value: T }>, options: WorkspaceModeOperationOptions): Promise<T>
+
+/**
+ * Resolve accounting by permanent and pending identities, including currently filtered Sessions.
+ * @param sessionId - Ordinary Session whose registration is required.
+ * @returns its Workspace, or undefined when no registration owns the identity.
+ */
+findSession(sessionId: SessionId): Workspace | undefined
+
+/**
+ * Refuse single-mode forks and archives before any new log or activity stop.
+ * @param sessionId - Source or archive target.
+ * @param operation - Forbidden single-mode operation.
+ */
+assertSessionOperation(sessionId: SessionId, operation: 'fork' | 'archive'): void
+
+/**
  * Synchronous workspace projection in durable registry order. Every
  * entity's `sessionIds` getter is already filtered by the startup/live
  * canonical-cwd header index; this method performs no persistence reads.
@@ -674,6 +888,26 @@ Guard one Workspace registration deletion before its durable writes. Providers m
  */
 'workspace/before-delete'(workspaceId: WorkspaceId, next: () => Promise<boolean>): Promise<boolean>
 ```
+
+Source: [`packages/workspace/workspace/src/index.ts`](../../packages/workspace/workspace/src/index.ts)
+
+<a id="workspacerecover-session--waterfall"></a>
+
+#### `workspace/recover-session` — waterfall
+
+Take over a pending ordinary Session before completing its Workspace registration.
+
+```ts cordis-catalog
+/**
+ * Take over a pending ordinary Session before completing its Workspace registration.
+ * @param sessionId - Durable pending identity, never a newly minted replacement.
+ * @param next - Delegate to other lifecycle providers; false means no provider took ownership.
+ * @mode waterfall
+ */
+'workspace/recover-session'(sessionId: SessionId, next: () => Promise<boolean>): Promise<boolean>
+```
+
+Types: [SessionId](core.md)
 
 Source: [`packages/workspace/workspace/src/index.ts`](../../packages/workspace/workspace/src/index.ts)
 

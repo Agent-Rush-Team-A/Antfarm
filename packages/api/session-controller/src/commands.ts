@@ -103,6 +103,7 @@ export class SessionCommandController {
    * blank Session while it is an unarchived member of the requested Workspace.
    * @param request - optional blank Session to reuse, location, and Agent preset.
    * @param principal - authenticated account whose workspace must contain the Session.
+   * @param signal - Creation admission lifetime.
    * @returns the created or reused Session identity and its preset when configured.
    */
   async create(request: SessionCreateRequest, principal?: PrincipalMap['user'], signal: AbortSignal = new AbortController().signal): Promise<SessionCreateValue> {
@@ -265,6 +266,7 @@ export class SessionCommandController {
    * `atSeq` is the inclusive cut; an omitted value selects the latest
    * completed-turn prefix. An open cut receives synthetic fork closers.
    * @param request - source Session and optional exact event boundary.
+   * @param signal - Fork creation admission lifetime.
    * @returns the new Session identity.
    */
   async fork(request: SessionForkRequest, signal: AbortSignal = new AbortController().signal): Promise<SessionForkValue> {

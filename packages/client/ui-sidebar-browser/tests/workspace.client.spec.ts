@@ -6,6 +6,8 @@ import { browserWorkspace } from '../src/client/electron/workspace.ts'
 
 const SESSION = 'session' as SessionId
 const workspace = (id: string, path: string, sessionIds: readonly SessionId[]): WorkspaceView => ({
+  modeConfig: { workspaceId: id as WorkspaceId, mode: 'multi-vm', revision: 0, operationState: 'ready',
+    modeLocked: false, lockReason: null, firstSessionId: null },
   workspaceId: id as WorkspaceId, path, title: path, sessionIds, createdAt: '', updatedAt: '',
 })
 const snapshot = (phase: WorkspaceSnapshot['phase'], items: readonly WorkspaceView[] = []): WorkspaceSnapshot => ({

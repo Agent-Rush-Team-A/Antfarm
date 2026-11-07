@@ -12,6 +12,7 @@ import { stat } from 'node:fs/promises'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { WorkspaceRecord } from './spec.ts'
+import { workspaceModeConfig } from './mode-config.ts'
 import { WorkspaceModeError } from './mode-errors.ts'
 import type { WorkspaceModeConfig } from './mode-types.ts'
 import type { Workspace, WorkspaceId } from './types.ts'
@@ -86,24 +87,21 @@ export class WorkspaceEntity implements Workspace {
   }
 
   get modeConfig(): WorkspaceModeConfig {
-    const record = this.modeRecord()
-    return Object.freeze({
-      workspaceId: this.id,
-      mode: record.mode,
-      revision: record.modeRevision,
-      operationState: record.modeOperationState,
-      modeLocked: record.firstSessionId !== null,
-      lockReason: record.firstSessionId === null ? null : 'first-session-created',
-      firstSessionId: record.firstSessionId,
-    })
+    return workspaceModeConfig(this.id, this.modeRecord())
   }
 
-  /** @returns the durable snapshot; respects storage quarantine before reading cached metadata. */
+  /** Read the durable snapshot, respecting storage quarantine before cached metadata.
+   * @returns the current durable Workspace record.
+   */
   modeRecord(): WorkspaceRecord {
     return this.host.table().get(this.id) ?? this.record
   }
 
-  /** @param update - Atomic mode mutation. @returns after durability and revision publication. */
+  /**
+   * Publish an atomic mode mutation with an increased revision.
+   * @param update - Atomic mode mutation.
+   * @returns after durability and revision publication.
+   */
   async updateMode(update: (record: WorkspaceRecord) => WorkspaceRecord): Promise<void> {
     await this.mutate((record) => {
       const next = update(record)
@@ -139,7 +137,11 @@ export class WorkspaceEntity implements Workspace {
     await this.attach(sessionId, false)
   }
 
-  /** @param sessionId - Reserved ordinary identity. @returns after atomic attachment, locking, and intent clearance. */
+  /**
+   * Complete ordinary Session creation and permanent locking in one durable write.
+   * @param sessionId - Reserved ordinary identity.
+   * @returns after atomic attachment, locking, and intent clearance.
+   */
   async completeSession(sessionId: SessionId): Promise<void> {
     await this.attach(sessionId, true)
   }

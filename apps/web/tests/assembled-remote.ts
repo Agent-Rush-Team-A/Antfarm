@@ -240,6 +240,8 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
     if (existing !== undefined) return ok({ workspace: structuredClone(existing), created: false })
     const now = new Date().toISOString()
     const workspace = {
+      modeConfig: { workspaceId: `fx-ws-${String(workspaces.length + 1)}`, mode: 'multi-vm', revision: 0, operationState: 'ready',
+        modeLocked: false, lockReason: null, firstSessionId: null },
       workspaceId: `fx-ws-${String(workspaces.length + 1)}`,
       path,
       title: path.split('/').filter(Boolean).at(-1) ?? path,

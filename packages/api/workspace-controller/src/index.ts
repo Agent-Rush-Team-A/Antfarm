@@ -2,7 +2,7 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { Remote, TypertRemoteService, principalOf } from '@deepseek-ai/dsh-typert-protocol'
+import { Remote, TypertRemoteService, RemoteError, principalOf } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-api-remote-access'
 import type {} from '@deepseek-ai/dsh-api-multiuser'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -11,6 +11,7 @@ import { DirectoryPickerController } from './directory-picker.ts'
 import { WorkspaceFeed, workspaceView } from './feed.ts'
 import { defaultWorkspaceDirectory, validateDocumentsDirectory } from './default-directory.ts'
 import type {
+  WorkspaceGetModeRequest, WorkspaceSetModeRequest, WorkspaceModeValue,
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
   WorkspaceBaseline,
@@ -81,6 +82,51 @@ export class WorkspaceController extends TypertRemoteService {
     // stays pending until a picking backend is composed, so a host without one
     // registers no picking namespace instead of answering an unservable verb.
     ctx.plugin(DirectoryPickerController)
+  }
+
+  /**
+   * Read committed Workspace mode metadata after ownership checks.
+   * @param request - Workspace to read.
+   * @returns committed mode metadata after access checks.
+   */
+  @Remote('getMode')
+  async getMode(request: WorkspaceGetModeRequest): Promise<WorkspaceModeValue> {
+    this.modeAuthority(request.workspaceId, 'getMode')()
+    return this.commands.getMode(request)
+  }
+
+  /**
+   * Set an unlocked Workspace mode while preserving its original caller and registration.
+   * @param request - Target mode and observed revision.
+   * @param signal - Caller cancellation before commit.
+   * @returns ready metadata after runtime settlement and durable publication.
+   */
+  @Remote('setMode')
+  async setMode(request: WorkspaceSetModeRequest, signal: AbortSignal): Promise<WorkspaceModeValue> {
+    const admit = this.modeAuthority(request.workspaceId, 'setMode')
+    admit()
+    return this.commands.setMode(request, { signal, admit })
+  }
+
+  private modeAuthority(workspaceId: WorkspaceId, method: 'getMode' | 'setMode'): () => void {
+    const caller = principalOf(this.ctx.invocation)
+    const authorize = (): void => {
+      if (caller === undefined) return
+      const decision = this.ctx.remoteAccess.decide({
+        principal: caller, action: `workspace/${method}`, resources: [{ kind: 'workspace', id: workspaceId }],
+      })
+      if (decision.kind === 'deny') throw new RemoteError('remote-access/denied', 'Workspace access was refused', {
+        action: `workspace/${method}`, reason: decision.reason,
+      })
+    }
+    authorize()
+    const original = this.ctx.workspaceRegistry.get(workspaceId)
+    return () => {
+      authorize()
+      if (original === undefined || this.ctx.workspaceRegistry.get(workspaceId) !== original) {
+        throw new RemoteError('workspace/not-found', 'Workspace registration is no longer present', { workspaceId })
+      }
+    }
   }
 
   /**

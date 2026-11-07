@@ -81,7 +81,10 @@ class Admission {
 export interface WorkspaceModesHost {
   /** Deployment mode used for new registrations. */
   readonly defaultMode: WorkspaceRecord['mode']
-  /** @param id - Original registration. @returns its entity, or undefined after deletion. */
+  /**
+   * @param id - Original registration.
+   * @returns its entity, or undefined after deletion.
+   */
   entity(id: WorkspaceId): WorkspaceEntity | undefined
   /** @returns all original registrations currently present. */
   list(): readonly WorkspaceEntity[]
@@ -111,6 +114,10 @@ export class WorkspaceModes implements IWorkspaceModes {
     return this.requireEntity(workspaceId).modeConfig
   }
 
+  /** Register the current runtime provider and recover retained operations.
+   * @param adapter - Provider supporting all retained and default modes.
+   * @returns an asynchronous disposer that drains admitted work.
+   */
   registerRuntime(adapter: WorkspaceModeRuntime): () => Promise<void> {
     if (this.runtime !== undefined) throw new Error('workspace mode runtime is already registered')
     this.lifetime.signal.throwIfAborted()
@@ -287,7 +294,8 @@ export class WorkspaceModes implements IWorkspaceModes {
 
   /**
    * Registry-private exclusive admission for creation and deletion. Nested work consumes this slot directly.
-   * @param workspaceId - Original registration. @param options - Captured authority and cancellation.
+   * @param workspaceId - Original registration.
+   * @param options - Captured authority and cancellation.
    * @param operation - Work performed while every earlier lease is settled.
    * @returns the operation result after its owned work settles.
    */
@@ -302,7 +310,9 @@ export class WorkspaceModes implements IWorkspaceModes {
     } finally { release() }
   }
 
-  /** @param entity - Registration whose pending intent prevents resource admission. */
+  /** Refuse admission while a durable operation remains pending.
+   * @param entity - Registration whose pending intent prevents resource admission.
+   */
   assertReady(entity: WorkspaceEntity): void {
     const record = entity.modeRecord()
     if (record.modeIntent !== undefined || record.modeOperationState !== 'ready') {
@@ -312,7 +322,9 @@ export class WorkspaceModes implements IWorkspaceModes {
     }
   }
 
-  /** @param recover - Private ordinary Session recovery owned by this registry. */
+  /** Install registry-owned ordinary Session recovery.
+   * @param recover - Private ordinary Session recovery owned by this registry.
+   */
   registerSessionRecovery(recover: (entity: WorkspaceEntity) => Promise<void>): void {
     this.sessionRecovery = recover
   }

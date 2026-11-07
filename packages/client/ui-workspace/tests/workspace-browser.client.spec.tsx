@@ -67,6 +67,8 @@ const sessionState = (
   }
 }
 const workspace = (id: string, sessionIds: string[], title = id): WorkspaceView => ({
+  modeConfig: { workspaceId: wid(id), mode: 'multi-vm', revision: 0, operationState: 'ready',
+    modeLocked: false, lockReason: null, firstSessionId: null },
   workspaceId: wid(id), path: `/projects/${id}`, title,
   sessionIds: sessionIds.map(sid), createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
 })

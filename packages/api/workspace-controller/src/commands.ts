@@ -2,7 +2,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { PrincipalMap } from '@deepseek-ai/dsh-typert-protocol'
-import type { Workspace } from '@deepseek-ai/dsh-workspace'
+import type { Workspace, WorkspaceModeOperationOptions } from '@deepseek-ai/dsh-workspace'
 import {
   WorkspaceModeError,
   WorkspaceActiveSessionError,
@@ -16,6 +16,7 @@ import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-api-multiuser'
 import { workspaceView } from './feed.ts'
 import type {
+  WorkspaceGetModeRequest, WorkspaceSetModeRequest, WorkspaceModeValue,
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
   WorkspaceCreateRequest,
@@ -35,9 +36,15 @@ import type {
 
 /** One call's current visibility for response filtering. */
 export interface WorkspaceVisibility {
-  /** @param workspaceId - candidate workspace. @returns whether the caller may see it. */
+  /**
+   * @param workspaceId - candidate workspace.
+   * @returns whether the caller may see it.
+   */
   workspace(workspaceId: WorkspaceId): boolean
-  /** @param sessionId - candidate session. @returns whether the caller may see it. */
+  /**
+   * @param sessionId - candidate session.
+   * @returns whether the caller may see it.
+   */
   session(sessionId: import('@deepseek-ai/dsh-session/types').SessionId): boolean
 }
 
@@ -47,6 +54,33 @@ export class WorkspaceCommands {
 
   /** @param ctx - Host context containing the Workspace registry. */
   constructor(private readonly ctx: Context) {}
+
+  /**
+   * Read committed mode metadata and map domain failures.
+   * @param request - Original registration.
+   * @returns committed mode metadata or a stable domain failure.
+   */
+  getMode(request: WorkspaceGetModeRequest): WorkspaceModeValue {
+    try { return { config: this.ctx.workspaceRegistry.modes.get(request.workspaceId) } } catch (error) { rejectModeError(error) }
+  }
+
+  /**
+   * Change mode after wire validation and captured ownership checks.
+   * @param request - Target mode and observed revision.
+   * @param options - Original authority and cancellation.
+   * @returns ready metadata after runtime and persistence settlement.
+   */
+  async setMode(request: WorkspaceSetModeRequest, options: WorkspaceModeOperationOptions): Promise<WorkspaceModeValue> {
+    if (!Number.isSafeInteger(request.expectedRevision) || request.expectedRevision < 0) {
+      throw new RemoteError('gateway/bad-request', 'expectedRevision must be a nonnegative safe integer', {})
+    }
+    try { return { config: await this.ctx.workspaceRegistry.modes.setMode(request, options) } } catch (error) {
+      if (options.signal.aborted && !(error instanceof WorkspaceModeError)) {
+        throw new RemoteError('gateway/cancelled', 'Workspace mode change was cancelled', {})
+      }
+      rejectModeError(error)
+    }
+  }
 
   /**
    * Create a server-allocated Workspace for an account, or resolve an owner directory.
@@ -313,4 +347,9 @@ function workspaceNotFound(workspaceId: WorkspaceId): RemoteError<'workspace/not
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function rejectModeError(error: unknown): never {
+  if (error instanceof WorkspaceModeError) throw new RemoteError(error.code, error.code, error.details, { cause: error })
+  throw error
 }

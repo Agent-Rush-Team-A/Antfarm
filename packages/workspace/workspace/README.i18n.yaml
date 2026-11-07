@@ -42,10 +42,13 @@
   en: e969314497b99389
   zh: 82eafc832617a1eb
 /deepseek-ai-dsh-workspace/understand-the-implementation/api-behavior:
-  en: 001bc13c146095cf
-  zh: 126c407a48f4afe8
+  en: edd08ce1fa6cd556
+  zh: 26ca8ab8cc337d86
+/deepseek-ai-dsh-workspace/understand-the-implementation/workspace-modes:
+  en: 7292bec462f0fe02
+  zh: 5b92de641967cbd5
 /deepseek-ai-dsh-workspace/understand-the-implementation/source-map:
-  en: 9de157e85c655b7b
+  en: 6899c50041c3d1ef
   zh: ea70fda89cc50465
 /deepseek-ai-dsh-workspace/understand-the-implementation/durable-shape:
   en: 588600e0619f91f6
@@ -58,7 +61,7 @@
   zh: 612fd3439a23e035
 /deepseek-ai-dsh-workspace/further-exploration:
   en: 642397907af144b3
-  zh: 0913609d4988f7fd
+  zh: 2b35c1a6237db0c0
 /deepseek-ai-dsh-workspace/model-experience:
   en: 215e7ba838619b7b
   zh: a311da3843709f90
@@ -72,7 +75,7 @@
   en: 5b83ac7ce1ea1346
   zh: dc56664cd257ab8e
 /deepseek-ai-dsh-workspace/model-experience/workspace-records-and-session-accounts/kv-cache-effect:
-  en: e1e22df12a13fad6
+  en: 524afbded27fb06b
   zh: 9dcf8539495e9c68
 /deepseek-ai-dsh-workspace/known-limitations-and-deferred-work:
   en: 1a9c71a3dbfc4506

@@ -44,6 +44,8 @@ async function bench() {
   await runtime.mount({ inject: [...injectMenus], apply: applyMenus })
   await runtime.workspaces.update((draft) => {
     draft.items = [{
+      modeConfig: { workspaceId: 'w1' as WorkspaceId, mode: 'multi-vm', revision: 0, operationState: 'ready',
+        modeLocked: false, lockReason: null, firstSessionId: null },
       workspaceId: 'w1' as WorkspaceId, title: 'Project', path: '/home/u/Documents/project',
       sessionIds: [], createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
     }] as never

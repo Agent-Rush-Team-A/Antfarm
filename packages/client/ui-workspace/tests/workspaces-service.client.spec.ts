@@ -54,6 +54,8 @@ function workspace(
   createdAt = '2026-01-01T00:00:00.000Z',
 ): WorkspaceView {
   return {
+    modeConfig: { workspaceId: wid(id), mode: 'multi-vm', revision: 0, operationState: 'ready',
+      modeLocked: false, lockReason: null, firstSessionId: null },
     workspaceId: wid(id),
     path: `/w/${id}`,
     title: id,
@@ -176,6 +178,8 @@ class FakeSessions implements ISessions {
 }
 
 class FakeWorkspaces implements IWorkspaces {
+  declare readonly getMode: IWorkspaces['getMode']
+  declare readonly setMode: IWorkspaces['setMode']
   readonly initializeDefault = vi.fn<IWorkspaces['initializeDefault']>(async () => undefined)
   readonly list: MutableSource<WorkspaceSnapshot>
   readonly archiveCalls: SessionId[] = []

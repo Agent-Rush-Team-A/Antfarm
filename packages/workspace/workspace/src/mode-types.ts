@@ -6,7 +6,7 @@ import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from './types.ts'
 
-/** The four workspace modes shared by issues #41, #42, #43, and #45. */
+/** Ordinary Session topology and VM or Docker execution environment selection. */
 export type WorkspaceMode = 'single-vm' | 'multi-vm' | 'single-docker' | 'multi-docker'
 
 /** A durable transition identity reused during recovery. */
@@ -98,6 +98,9 @@ export interface WorkspaceModeRuntime {
    * Quiesce the old environment and stage complete target files, retaining a recoverable
    * source. Resolve only after all preparation writes settle. On rejection, retained
    * work must be settled or recorded for settle(change, 'rollback') to reconcile.
+   * @param change - Durable transition identity and selected modes.
+   * @param signal - Preparation lifetime before the durable decision.
+   * @returns after preparation writes have settled.
    */
   prepare(change: WorkspaceModeChange, signal: AbortSignal): Promise<void>
   /**
@@ -105,6 +108,10 @@ export interface WorkspaceModeRuntime {
    * Commit follows a durable commit decision; rollback restores from-mode usability.
    * Must work after restart, without an in-memory result from prepare.
    * Resolve only when the selected mode is usable and all owned writes settle.
+   * @param change - Original durable transition, including after restart.
+   * @param decision - Persisted commit or rollback direction.
+   * @param signal - Coordinator-owned settlement lifetime.
+   * @returns after selected routing and all owned writes have settled.
    */
   settle(
     change: WorkspaceModeChange,
@@ -115,13 +122,24 @@ export interface WorkspaceModeRuntime {
 
 /** Trusted Host API: ctx.workspaceRegistry.modes. */
 export interface IWorkspaceModes {
-  /** Read committed metadata, including transitional states; does not authorize or open resources. */
+  /**
+   * Read committed metadata, including transitional states; does not authorize or open resources.
+   * @param workspaceId - Original registration identity.
+   * @returns its durable mode snapshot.
+   */
   get(workspaceId: WorkspaceId): WorkspaceModeConfig
-  /** Register exactly one runtime adapter; its async disposer stops admission and drains owned work. */
+  /**
+   * Register exactly one runtime adapter; its async disposer stops admission and drains owned work.
+   * @param runtime - Provider supporting the default and all retained modes.
+   * @returns an idempotent asynchronous disposer.
+   */
   registerRuntime(runtime: WorkspaceModeRuntime): () => Promise<void>
   /**
    * Exclusive, revision-checked asynchronous change. Uses coordinator-owned settlement
    * after a durable decision; caller cancellation must not abandon pending recovery.
+   * @param request - Target mode and previously observed revision.
+   * @param options - Captured authority and caller lifetime.
+   * @returns the settled durable configuration.
    */
   setMode(
     request: WorkspaceSetModeRequest,
@@ -131,6 +149,9 @@ export interface IWorkspaceModes {
    * Retry the existing durable intent without changing its identity or decision.
    * Trusted maintenance only; no Remote endpoint. Concurrent recovery is deduplicated.
    * A ready workspace without an intent returns unchanged; quarantined storage refuses.
+   * @param workspaceId - Original registration with retained intent.
+   * @param options - Trusted maintenance authority and caller lifetime.
+   * @returns its reconciled durable configuration.
    */
   recover(
     workspaceId: WorkspaceId,
@@ -139,6 +160,9 @@ export interface IWorkspaceModes {
   /**
    * Acquire shared resource use after earlier exclusive work settles. Recheck authority
    * after waiting. Rejections preserve business failure types; recovery-required refuses.
+   * @param workspaceId - Original registration whose resources will be used.
+   * @param options - Captured authority and caller lifetime.
+   * @returns the stable routing lease, held until all resource work settles.
    */
   acquireUse(
     workspaceId: WorkspaceId,
@@ -146,7 +170,7 @@ export interface IWorkspaceModes {
   ): Promise<WorkspaceModeUseLease>
 }
 
-/** New business failures, to be merged into RemoteErrorDetailsMap by the owners. */
+/** Structured business failures shared by Workspace and Session Remote controllers. */
 export interface WorkspaceModeErrorDetailsMap {
   'workspace/mode-locked': {
     readonly workspaceId: WorkspaceId

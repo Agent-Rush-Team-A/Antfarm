@@ -8,6 +8,9 @@
 import { ok, type RemoteTable, type StreamScript } from '@deepseek-ai/dsh-remote-mock'
 import type { RemoteFailure, RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {
+  WorkspaceGetModeRequest,
+  WorkspaceSetModeRequest,
+  WorkspaceModeValue,
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
   WorkspaceCreateRequest,
@@ -51,6 +54,8 @@ export function err<T>(error: RemoteFailure): RemoteResult<T> {
  */
 export function workspace(id: string, overrides: Partial<WorkspaceView> = {}): WorkspaceView {
   return {
+    modeConfig: { workspaceId: id as WorkspaceId, mode: 'multi-vm', revision: 0, operationState: 'ready',
+      modeLocked: false, lockReason: null, firstSessionId: null },
     workspaceId: id as WorkspaceId,
     path: `/work/${id}`,
     title: id,
@@ -91,6 +96,12 @@ export function followGenerations(generations: readonly StreamScript[]): StreamS
 /** Default answers: every command accepted and echoed back as the row or set it names. */
 export const workspaceWorld: RemoteTable = {
   unary: {
+    'workspace/getMode': (request: WorkspaceGetModeRequest): RemoteResult<WorkspaceModeValue> => ok({
+      config: workspace(String(request.workspaceId)).modeConfig,
+    }),
+    'workspace/setMode': (request: WorkspaceSetModeRequest): RemoteResult<WorkspaceModeValue> => ok({
+      config: { ...workspace(String(request.workspaceId)).modeConfig, mode: request.mode, revision: request.expectedRevision + 3 },
+    }),
     'workspace/initializeDefault': (): RemoteResult<WorkspaceValue> => ok({ workspace: workspace('default') }),
     'workspace/create': (request: WorkspaceCreateRequest): RemoteResult<WorkspaceCreateValue> => ok({
       workspace: workspace('created', request.path === undefined ? {} : { path: request.path }), created: true,

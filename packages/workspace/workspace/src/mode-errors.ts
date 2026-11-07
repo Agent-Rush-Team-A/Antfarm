@@ -9,7 +9,11 @@ export type WorkspaceModeErrorDetails = WorkspaceModeErrorDetailsMap & {
 
 /** Business failure with machine-readable details and an optional diagnostic cause. */
 export class WorkspaceModeError<Code extends keyof WorkspaceModeErrorDetails = keyof WorkspaceModeErrorDetails> extends Error {
-  /** @param code - Stable failure discriminator. @param details - Handling-relevant fields. @param options - Internal diagnostic cause. */
+  /**
+   * @param code - Stable failure discriminator.
+   * @param details - Handling-relevant fields.
+   * @param options - Internal diagnostic cause.
+   */
   constructor(readonly code: Code, readonly details: WorkspaceModeErrorDetails[Code], options?: ErrorOptions) {
     super(code, options)
     this.name = 'WorkspaceModeError'

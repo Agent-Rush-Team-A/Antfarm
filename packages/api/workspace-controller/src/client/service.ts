@@ -3,7 +3,7 @@
 import { Service, type Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
-import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
+import type { WorkspaceId, WorkspaceMode, WorkspaceModeConfig } from '@deepseek-ai/dsh-workspace/types'
 import type { WorkspaceView } from '../types.ts'
 import type { ClientWorkspaceModel, WorkspaceSnapshot } from './model.ts'
 
@@ -14,6 +14,15 @@ export class WorkspaceCreateError extends Error {
   /** @param rpcError - Host business or folded carrier failure. */
   constructor(readonly rpcError: RemoteFailure) {
     super(`workspace create failed: ${rpcError.code}: ${rpcError.message}`)
+  }
+}
+
+/** Mode read or mutation failed; callers retain the complete typed Remote failure. */
+export class WorkspaceModeCommandError extends Error {
+  /** @param rpcError - Stable domain, authority, cancellation, or carrier failure. */
+  constructor(readonly rpcError: RemoteFailure) {
+    super(`Workspace mode operation failed: ${rpcError.code}`)
+    this.name = 'WorkspaceModeCommandError'
   }
 }
 
@@ -45,6 +54,20 @@ export interface WorkspaceSource {
 
 /** Workspace Controller's Client service face. */
 export interface IWorkspaces {
+  /**
+   * @param workspaceId - Target Workspace.
+   * @returns latest accepted mode metadata.
+   */
+  getMode(workspaceId: WorkspaceId): Promise<WorkspaceModeConfig>
+  /**
+   * @param workspaceId - Target Workspace.
+   * @param mode - Requested mode.
+   * @param expectedRevision - Last observed revision.
+   * @param signal - Caller cancellation.
+   * @returns metadata after settled mode publication; failures preserve rpcError.
+   */
+  setMode(workspaceId: WorkspaceId, mode: WorkspaceMode, expectedRevision: number, signal?: AbortSignal): Promise<WorkspaceModeConfig>
+
   /** Host-authoritative Workspace rows, order, archive set, and follow lifecycle. */
   readonly list: WorkspaceSource
   /**
@@ -125,6 +148,20 @@ export class WorkspaceController extends Service implements IWorkspaces {
   constructor(ctx: Context, private readonly model: ClientWorkspaceModel) {
     super(ctx, 'workspaces')
     this.list = model
+  }
+
+  async getMode(workspaceId: WorkspaceId): Promise<WorkspaceModeConfig> {
+    const result = await this.model.getMode(workspaceId)
+    if (!result.ok) throw new WorkspaceModeCommandError(result.error)
+    return result.value.config
+  }
+
+  async setMode(
+    workspaceId: WorkspaceId, mode: WorkspaceMode, expectedRevision: number, signal?: AbortSignal,
+  ): Promise<WorkspaceModeConfig> {
+    const result = await this.model.setMode(workspaceId, mode, expectedRevision, signal)
+    if (!result.ok) throw new WorkspaceModeCommandError(result.error)
+    return result.value.config
   }
 
   async create(input: { path?: string; title?: string }): Promise<WorkspaceView> {

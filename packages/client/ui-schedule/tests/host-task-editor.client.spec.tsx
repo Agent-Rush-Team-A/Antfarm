@@ -39,6 +39,8 @@ const workspaces: WorkspaceSnapshot = {
 }
 function workspace(path: string, title: string): WorkspaceSnapshot['items'][number] {
   return {
+    modeConfig: { workspaceId: `workspace:${title}` as WorkspaceId, mode: 'multi-vm', revision: 0, operationState: 'ready',
+      modeLocked: false, lockReason: null, firstSessionId: null },
     workspaceId: `workspace:${title}` as WorkspaceId, path, title, sessionIds: [], createdAt: task.createdAt ?? '', updatedAt: task.updatedAt ?? '',
   }
 }

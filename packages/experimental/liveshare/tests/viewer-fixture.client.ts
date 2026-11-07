@@ -566,6 +566,7 @@ interface FixtureWorkspaceApi {
 }
 
 interface FixtureWorkspace {
+  modeConfig: import('@deepseek-ai/dsh-workspace/types').WorkspaceModeConfig
   workspaceId: WorkspaceId
   path: string
   title: string
@@ -2192,6 +2193,8 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   const fixtureEpoch = new Date(Date.now() - 300_000).toISOString()
   const FIXTURE_HOME = '/home/fixture'
   const workspaces: FixtureWorkspace[] = options.empty ? [] : [{
+    modeConfig: { workspaceId: wid('fx-ws-fixture'), mode: 'multi-vm', revision: 0, operationState: 'ready',
+      modeLocked: false, lockReason: null, firstSessionId: null },
     workspaceId: wid('fx-ws-fixture'),
     path: '/tmp/fixture',
     title: 'fixture',
@@ -2199,6 +2202,8 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     createdAt: fixtureEpoch,
     updatedAt: fixtureEpoch,
   }, {
+    modeConfig: { workspaceId: wid('fx-ws-home'), mode: 'multi-vm', revision: 0, operationState: 'ready',
+      modeLocked: false, lockReason: null, firstSessionId: null },
     workspaceId: wid('fx-ws-home'),
     path: `${FIXTURE_HOME}/Documents/project`,
     title: 'project',
@@ -4051,6 +4056,8 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       }
       const now = new Date().toISOString()
       const created: FixtureWorkspace = {
+        modeConfig: { workspaceId: wid(`fx-ws-${nextWorkspace++}`), mode: 'multi-vm', revision: 0, operationState: 'ready',
+          modeLocked: false, lockReason: null, firstSessionId: null },
         workspaceId: wid(`fx-ws-${nextWorkspace++}`),
         path: request.path,
         title: request.path.split('/').filter(Boolean).at(-1) ?? request.path,

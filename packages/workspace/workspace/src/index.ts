@@ -25,6 +25,7 @@ import type { WorkspaceModeOperationOptions } from './mode-types.ts'
 import { WorkspaceModes } from './modes.ts'
 import type { WorkspaceEntityHost } from './entity.ts'
 
+export { workspaceModeConfig } from './mode-config.ts'
 export { WorkspaceMoveInvalidError } from './entity.ts'
 import { defaultWorkspaceTitle, fullyQualifiedWorkspacePath, realpathNormalize } from './paths.ts'
 import { workspaceDomainSpec } from './spec.ts'
@@ -351,7 +352,8 @@ export class WorkspaceRegistry extends Service {
 
   /**
    * Trusted ordinary Session admission; the callback runs under exclusive mode coordination.
-   * @param workspaceId - Original registration. @param sessionId - Optional reusable Session identity.
+   * @param workspaceId - Original registration.
+   * @param sessionId - Optional reusable Session identity.
    * @param create - Creation callback that reserves each identity before persisting it.
    * @param options - Captured authority and caller cancellation.
    * @returns the callback value after durable attachment and permanent mode locking.
@@ -378,7 +380,8 @@ export class WorkspaceRegistry extends Service {
 
   /**
    * Refuse single-mode forks and archives before any new log or activity stop.
-   * @param sessionId - Source or archive target. @param operation - Forbidden single-mode operation.
+   * @param sessionId - Source or archive target.
+   * @param operation - Forbidden single-mode operation.
    */
   assertSessionOperation(sessionId: SessionId, operation: 'fork' | 'archive'): void {
     const workspace = this.findSession(sessionId)

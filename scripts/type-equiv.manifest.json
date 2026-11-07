@@ -2771,6 +2771,66 @@
       "doc": "docs/subsystems/sandbox.md",
       "symbol": "WorkspaceRuntimeFiles",
       "source": "packages/sandbox/harness-sandbox/src/backend.ts"
+    },
+    {
+      "doc": "docs/subsystems/workspace.md",
+      "symbol": "WorkspaceMode",
+      "source": "packages/workspace/workspace/src/mode-types.ts"
+    },
+    {
+      "doc": "docs/subsystems/workspace.md",
+      "symbol": "WorkspaceModeChangeId",
+      "source": "packages/workspace/workspace/src/mode-types.ts"
+    },
+    {
+      "doc": "docs/subsystems/workspace.md",
+      "symbol": "WorkspaceModeLockReason",
+      "source": "packages/workspace/workspace/src/mode-types.ts"
+    },
+    {
+      "doc": "docs/subsystems/workspace.md",
+      "symbol": "WorkspaceModeOperationState",
+      "source": "packages/workspace/workspace/src/mode-types.ts"
+    },
+    {
+      "doc": "docs/subsystems/workspace.md",
+      "symbol": "WorkspaceModeConfig",
+      "source": "packages/workspace/workspace/src/mode-types.ts"
+    },
+    {
+      "doc": "docs/subsystems/workspace.md",
+      "symbol": "WorkspaceModeUseConfig",
+      "source": "packages/workspace/workspace/src/mode-types.ts"
+    },
+    {
+      "doc": "docs/subsystems/workspace.md",
+      "symbol": "WorkspaceModeOperationOptions",
+      "source": "packages/workspace/workspace/src/mode-types.ts"
+    },
+    {
+      "doc": "docs/subsystems/workspace.md",
+      "symbol": "WorkspaceModeUseLease",
+      "source": "packages/workspace/workspace/src/mode-types.ts"
+    },
+    {
+      "doc": "docs/subsystems/workspace.md",
+      "symbol": "WorkspaceModeChange",
+      "source": "packages/workspace/workspace/src/mode-types.ts"
+    },
+    {
+      "doc": "docs/subsystems/workspace.md",
+      "symbol": "WorkspaceModeChangeDecision",
+      "source": "packages/workspace/workspace/src/mode-types.ts"
+    },
+    {
+      "doc": "docs/subsystems/workspace.md",
+      "symbol": "WorkspaceModeRuntime",
+      "source": "packages/workspace/workspace/src/mode-types.ts"
+    },
+    {
+      "doc": "docs/subsystems/workspace.md",
+      "symbol": "IWorkspaceModes",
+      "source": "packages/workspace/workspace/src/mode-types.ts"
     }
   ]
 }

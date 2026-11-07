@@ -22,9 +22,15 @@ export interface WorkspaceSessionAdmission {
 
 /** Facilities owned by the registry rather than a transient API provider. */
 export interface WorkspaceModeSessionsHost {
-  /** @param id - Identity to inspect. @returns a fresh durable or live header, or undefined for a definite miss. */
+  /**
+   * @param id - Identity to inspect.
+   * @returns a fresh durable or live header, or undefined for a definite miss.
+   */
   header(id: SessionId): Promise<SessionHeader | undefined>
-  /** @param id - Pending identity. @returns whether a current lifecycle provider has resumed or taken over it. */
+  /**
+   * @param id - Pending identity.
+   * @returns whether a current lifecycle provider has resumed or taken over it.
+   */
   recover(id: SessionId): Promise<boolean>
   /** @param error - Retained internal recovery diagnostic. */
   report(error: unknown): void
@@ -32,14 +38,18 @@ export interface WorkspaceModeSessionsHost {
 
 /** Coordinates ordinary Sessions; subagents keep their existing independent lifecycle. */
 export class WorkspaceModeSessions {
-  /** @param modes - Registry-owned exclusive coordination. @param host - Fresh persistence and trusted recovery. */
+  /**
+   * @param modes - Registry-owned exclusive coordination.
+   * @param host - Fresh persistence and trusted recovery.
+   */
   constructor(private readonly modes: WorkspaceModes, private readonly host: WorkspaceModeSessionsHost) {
     modes.registerSessionRecovery(entity => this.recover(entity))
   }
 
   /**
    * Reserve, create or reuse, attach, and permanently lock one ordinary Session.
-   * @param workspaceId - Original Workspace registration. @param requested - Optional identity selected for reuse.
+   * @param workspaceId - Original Workspace registration.
+   * @param requested - Optional identity selected for reuse.
    * @param create - Trusted creation callback; reserve every fallback before writing it.
    * @param options - Captured authority and cancellation.
    * @returns the callback's value only after complete durable attachment and locking.
@@ -95,7 +105,9 @@ export class WorkspaceModeSessions {
     })
   }
 
-  /** @param entity - Original registration whose pending Session must be reconciled. */
+  /** Reconcile a pending Session through its lifecycle provider.
+   * @param entity - Original registration whose pending Session must be reconciled.
+   */
   async recover(entity: WorkspaceEntity): Promise<void> {
     const intent = entity.modeRecord().modeIntent
     if (intent?.operation !== 'create-session') return
