@@ -20,9 +20,9 @@ const enModeHelp = {
   'mode.help.single-vm.benefit': 'Files are stored separately in the cloud and remain available to download after shutdown.',
   'mode.help.single-vm.fit': 'Short tasks that need a separate system, such as testing generated code.',
   'mode.help.multi-vm.sessions': 'Multiple conversations in one workspace.',
-  'mode.help.multi-vm.runs': 'The conversations share a dedicated Vultr cloud VM. A disk snapshot is saved at shutdown.',
-  'mode.help.multi-vm.benefit': 'Your workspace files and installed tools are restored when the VM starts again.',
-  'mode.help.multi-vm.fit': 'Projects that need several rounds of debugging with the same tools.',
+  'mode.help.multi-vm.runs': 'The conversations share a dedicated Vultr cloud VM. Closing it keeps your workspace files in cloud storage.',
+  'mode.help.multi-vm.benefit': 'Open a fresh VM with the same workspace files. Tools installed outside the workspace need to be installed again.',
+  'mode.help.multi-vm.fit': 'Projects that use the same workspace files across several conversations.',
 }
 
 const zhModeHelp = {
@@ -45,9 +45,9 @@ const zhModeHelp = {
   'mode.help.single-vm.benefit': '文件单独存放在云端，虚拟机关闭后仍可下载。',
   'mode.help.single-vm.fit': '需要独立系统环境的短时任务，比如试跑生成的代码。',
   'mode.help.multi-vm.sessions': '同一工作区可以开多个会话。',
-  'mode.help.multi-vm.runs': '多个会话共用一台独立的 Vultr 云虚拟机，关闭时保存磁盘快照。',
-  'mode.help.multi-vm.benefit': '下次启动时，可以恢复工作区文件和已安装的工具。',
-  'mode.help.multi-vm.fit': '需要多轮调试、反复使用同一套工具的项目。',
+  'mode.help.multi-vm.runs': '多个会话共用一台独立的 Vultr 云虚拟机，关闭后工作区文件仍保留在云端。',
+  'mode.help.multi-vm.benefit': '重新创建虚拟机后可以继续使用原工作区文件，安装在工作区之外的工具需要重新安装。',
+  'mode.help.multi-vm.fit': '需要在多个会话中反复使用同一批工作区文件的项目。',
 } satisfies Record<keyof typeof enModeHelp, string>
 
 /** en mode dictionary. */

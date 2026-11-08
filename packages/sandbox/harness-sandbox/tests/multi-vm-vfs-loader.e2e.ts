@@ -42,6 +42,7 @@ describe.skipIf(supplied === undefined || process.platform !== 'linux')('Persist
     let cloudStarted = false
     onTestFinished(async () => { if (!cloudStarted) await rm(home, { recursive: true, force: true }) })
     const deploymentId = 'vfs-test-' + randomUUID().slice(0, 12)
+    const deploymentTag = 'antfarm-multi-vfs-' + deploymentId
     const workspaceRoot = join(initial.mountPoint, deploymentId)
     const cloud = resolveMultiVmVfsTestCloud(initial.cloud, deploymentId, join(home, 'allocations'))
     const key = (await readFile(cloud.apiKeyFile, 'utf8')).trim()
@@ -156,10 +157,10 @@ describe.skipIf(supplied === undefined || process.platform !== 'linux')('Persist
         }
       }
       const cleanup = AbortSignal.timeout(180_000)
-      const owned = (await api.instances(cleanup)).filter(instance => instance.tags.includes('antfarm-' + deploymentId))
+      const owned = (await api.instances(cleanup)).filter(instance => instance.tags.includes(deploymentTag))
       const reclaimed = await Promise.allSettled(owned.map(async (instance) => {
         let current = await api.instance(instance.id, cleanup)
-        if (current !== undefined && (!current.tags.includes('antfarm-' + deploymentId)
+        if (current !== undefined && (!current.tags.includes(deploymentTag)
           || current.region !== cloud.region || current.plan !== cloud.plan)) throw new Error('Test VM ownership changed before cleanup')
         if (current !== undefined && current.power_status !== 'stopped') {
           await api.power(instance.id, 'halt', cleanup)
@@ -181,9 +182,9 @@ describe.skipIf(supplied === undefined || process.platform !== 'linux')('Persist
       if (rejected.length > 0) throw new AggregateError(rejected.map((result): unknown => result.reason),
         'Owned test VM cleanup is unconfirmed; private allocation records and VFS files remain retained')
       const remaining = await api.instances(cleanup)
-      expect(remaining.some(instance => instance.tags.includes('antfarm-' + deploymentId))).toBe(false)
+      expect(remaining.some(instance => instance.tags.includes(deploymentTag))).toBe(false)
       const snapshots = await api.snapshots(cleanup)
-      expect(snapshots.some(snapshot => snapshot.description.startsWith('antfarm-' + deploymentId + '-'))).toBe(false)
+      expect(snapshots.some(snapshot => snapshot.description.startsWith(deploymentTag + '-'))).toBe(false)
       expect(before.every(instance => remaining.some(current => current.id === instance.id))).toBe(true)
       expect(beforeSnapshots.every(snapshot => snapshots.some(current => current.id === snapshot.id))).toBe(true)
       expect((await api.volume(volume.id, cleanup)).id).toBe(volume.id)
