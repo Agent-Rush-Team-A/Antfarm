@@ -1,4 +1,4 @@
-/** Persistent directories and task identities for single-session VFS workspaces. */
+/** Persistent directories and shared task identities for VFS workspace modes. */
 import { lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -122,13 +122,14 @@ export class SingleVmWorkspaces {
 
   /**
    * Register VFS file preservation in the workspace mode transition runtime.
-   * @param backend - Single VM execution provider used for source quiescence.
+   * @param mode - VM mode using this shared identity store and volume directory.
+   * @param backend - VM execution provider used for source quiescence.
    * @param limits - Deployment limits on complete directory copies.
-   * @returns Resources for the single-vm mode.
+   * @returns Resources for the selected VM mode. Switching VM modes retains the workspace identity.
    */
-  resources(backend: WorkspaceModeTarget['execution'], limits: WorkspaceModeCopyLimits): WorkspaceModeDirectoryResources {
+  resources(mode: 'single-vm' | 'multi-vm', backend: WorkspaceModeTarget['execution'], limits: WorkspaceModeCopyLimits): WorkspaceModeDirectoryResources {
     return new WorkspaceModeDirectoryResources({
-      ...limits, backend, mode: 'single-vm', stateRoot: join(this.config.stateRoot, 'modes'), shareWithGroup: true,
+      ...limits, backend, mode, stateRoot: join(this.config.stateRoot, 'modes'), shareWithGroup: true,
       directory: (change, signal) => {
         const scope = { workspaceId: change.workspaceId, project: change.project, signal, admit() {} }
         const location = this.location(scope)
@@ -136,7 +137,7 @@ export class SingleVmWorkspaces {
           location.assertCurrent()
           if (directory(location.root) !== undefined) {
             this.ownedDirectory(location.root, this.identity(change.workspaceId, change.project, change.changeId))
-          } else if (change.from === 'single-vm') throw new Error('Single VM source directory is missing')
+          } else if (change.from === mode) throw new Error('VFS source directory is missing')
         }
         return Promise.resolve({ ...location, assertCurrent })
       },

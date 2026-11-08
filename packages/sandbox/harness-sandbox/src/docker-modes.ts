@@ -141,7 +141,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         stateRoot: settings.stateRoot, maxFiles: settings.maxFiles, maxBytes: settings.maxBytes, mode: 'multi-vm',
         directory: (change, signal) => directory(change.workspaceId, change.project, signal, () => {}, true),
       }))
-      resources.set('single-vm', workspaces.resources(single, { maxFiles: settings.maxFiles, maxBytes: settings.maxBytes }))
+      resources.set('single-vm', workspaces.resources('single-vm', single, { maxFiles: settings.maxFiles, maxBytes: settings.maxBytes }))
       await publish(providers)
     })
   })

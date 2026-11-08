@@ -66,7 +66,7 @@ async function setup(configuredTaskIds = taskIds) {
     ...limits, mode: 'multi-docker', stateRoot, backend, directory: localDirectory,
   })
   const runtime = (vfs: SingleVmWorkspaces, maxBytes = limits.maxBytes) =>
-    new WorkspaceModeRuntimeAdapter(new Map([['multi-docker', docker], ['single-vm', vfs.resources(backend, { ...limits, maxBytes })]]))
+    new WorkspaceModeRuntimeAdapter(new Map([['multi-docker', docker], ['single-vm', vfs.resources('single-vm', backend, { ...limits, maxBytes })], ['multi-vm', vfs.resources('multi-vm', backend, { ...limits, maxBytes })]]))
   const change = (scope: WorkspaceFileScope, to: WorkspaceMode = 'single-vm'): WorkspaceModeChange => ({
     changeId: brandString<WorkspaceModeChangeId>(randomUUID()), workspaceId: scope.workspaceId, project: scope.project,
     from: to === 'single-vm' ? 'multi-docker' : 'single-vm', to, previousRevision: 1,
@@ -80,6 +80,7 @@ async function setup(configuredTaskIds = taskIds) {
     },
   }, new Map<WorkspaceMode, WorkspaceModeTarget>([
     ['multi-docker', { execution: backend, files: localFiles }], ['single-vm', { execution: backend, files: vfs.files }],
+    ['multi-vm', { execution: backend, files: vfs.files }],
   ]))
   return { scopes, provider, runtime, route, change, signal, workspaceRoot, stateRoot, mountPoint, mountRecord, records,
     setMount(value: string) { mountInfo = value } }
@@ -127,6 +128,34 @@ describe.runIf(process.platform === 'linux' && process.getuid?.() !== 0 && taskI
       expect(await readFile(join(scope.project, 'extra.csv'), 'utf8')).toBe('shared result')
       expect(await readFile(join(scope.project, 'input.csv'), 'utf8')).toBe(scope.workspaceId)
     }
+  })
+
+  test('preserves shared files and the task identity across both VM modes and rollback', async () => {
+    const f = await setup()
+    const scope = f.scopes[0]
+    if (scope === undefined) throw new Error('Missing test workspace')
+    await writeFile(join(scope.project, 'input.csv'), 'original')
+    const entering = f.change(scope)
+    await f.runtime(f.provider()).prepare(entering, f.signal)
+    await f.runtime(f.provider()).settle(entering, 'commit', f.signal)
+    const original = f.provider().resolve(scope)
+    await f.route(f.provider(), 'single-vm').upload(scope, 'result.csv', bytes('shared result'), 64)
+    const shared: WorkspaceModeChange = { ...f.change(scope), from: 'single-vm', to: 'multi-vm' }
+    await f.runtime(f.provider()).prepare(shared, f.signal)
+    await f.runtime(f.provider()).settle(shared, 'commit', f.signal)
+    expect(f.provider().resolve(scope)).toMatchObject({ root: original.root, uid: original.uid, gid: original.gid })
+    expect(await readFile(join(original.root, 'result.csv'), 'utf8')).toBe('shared result')
+    const failing: WorkspaceModeChange = { ...f.change(scope), from: 'multi-vm', to: 'single-vm' }
+    await expect(f.runtime(f.provider(), 1).prepare(failing, f.signal)).rejects.toMatchObject({ reason: 'byte-limit' })
+    await f.runtime(f.provider()).settle(failing, 'rollback', f.signal)
+    expect(await readFile(join(original.root, 'result.csv'), 'utf8')).toBe('shared result')
+    const returning: WorkspaceModeChange = { ...f.change(scope), from: 'multi-vm', to: 'single-vm' }
+    await f.runtime(f.provider()).prepare(returning, f.signal)
+    await f.runtime(f.provider()).settle(returning, 'commit', f.signal)
+    expect(f.provider().resolve(scope).uid).toBe(original.uid)
+    const download = await f.route(f.provider(), 'single-vm').download(scope, 'result.csv', 64)
+    expect(await new Response(download.body).text()).toBe('shared result')
+    await download.settled
   })
 
   test('rolls back a failed stage and rejects incorrect mounts, identities, and paths', async () => {
