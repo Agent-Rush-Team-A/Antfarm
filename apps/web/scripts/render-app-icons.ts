@@ -36,7 +36,7 @@ const RENDER_SCALE = 4
  * Fraction of the ant retained inside the platform-safe circular crop.
  * `pwa-manifest.e2e.ts` checks the rendered artwork against that circle.
  */
-export const MASKABLE_ARTWORK_SCALE = 0.82
+export const MASKABLE_ARTWORK_SCALE = 0.78
 
 /** Radius a platform mask is guaranteed to show, as a fraction of the icon edge. */
 export const MASKABLE_SAFE_RADIUS_RATIO = 0.4
