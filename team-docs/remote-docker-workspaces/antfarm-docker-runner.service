@@ -1,0 +1,20 @@
+[Unit]
+Description=Antfarm Docker workspace Runner
+BindsTo=srv-antfarm-docker.mount
+Requires=docker.service
+After=srv-antfarm-docker.mount docker.service
+
+[Service]
+User=agentrush-runner
+Group=agentrush-sandbox
+SupplementaryGroups=docker
+RuntimeDirectory=agentrush-sandbox
+RuntimeDirectoryMode=0750
+WorkingDirectory=/srv/antfarm/source
+EnvironmentFile=/etc/antfarm/docker-runner.env
+ExecStartPre=/usr/bin/bash /srv/antfarm/source/team-docs/vfs/check-mount.sh /srv/antfarm/docker ${ANTFARM_DOCKER_MOUNT_TAG} / /srv/antfarm/docker/workspaces traverse
+ExecStartPre=+/usr/bin/setpriv --reuid=${DSH_RUNNER_CONTAINER_UID} --regid=${DSH_RUNNER_CONTAINER_GID} --clear-groups /usr/bin/bash /srv/antfarm/source/team-docs/vfs/check-mount.sh /srv/antfarm/docker ${ANTFARM_DOCKER_MOUNT_TAG} / /srv/antfarm/docker/workspaces read-write
+ExecStart=/usr/bin/env node /srv/antfarm/source/apps/cli/lib/bin.js --profile sandbox-runner
+ExecStartPost=/usr/bin/curl --fail --silent --show-error --output /dev/null --max-time 3 --retry 10 --retry-all-errors --retry-max-time 30 --unix-socket /run/agentrush-sandbox/runner.sock http://localhost/v1/workspaces/runner-readiness/sandbox
+TimeoutStartSec=45s
+NoNewPrivileges=yes

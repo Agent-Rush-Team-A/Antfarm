@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write team-docs/remote-docker-workspaces/README.md
+/docker-workspaces-on-a-dedicated-vm:
+  en: 5071c5d4bbdcbe7c
+  zh: 327fc75e275d4277
+/docker-workspaces-on-a-dedicated-vm/install-the-service-units:
+  en: cac60da952bb0e2c
+  zh: 4d6ba96753578dbc
+/docker-workspaces-on-a-dedicated-vm/start-and-stop-the-deployment:
+  en: f8bf4fa9b510424d
+  zh: 112d78a6ee88fdd5
+/docker-workspaces-on-a-dedicated-vm/cut-over-existing-workspace-files:
+  en: 6b0ff9231b71bf39
+  zh: 7bcf585a548bb15b

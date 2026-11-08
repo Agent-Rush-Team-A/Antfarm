@@ -1,0 +1,8 @@
+[Unit]
+Description=Antfarm Docker workspace VFS
+
+[Mount]
+What=REPLACE_WITH_HOST_MOUNT_TAG
+Where=/srv/antfarm/docker
+Type=virtiofs
+Options=nosuid,nodev

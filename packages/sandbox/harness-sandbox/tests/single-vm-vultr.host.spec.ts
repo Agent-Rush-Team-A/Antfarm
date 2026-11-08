@@ -274,7 +274,7 @@ test.each([
   await backend.initialize()
   await expect(backend.open(workspaceId, project)).rejects.toMatchObject({ code: 'cloud_open_failed', outcomeUnknown: retained })
   expect(f.report.mock.calls[0]?.[0]).toMatchObject({ phase, instanceId, attachment: { state: attachment } })
-  await expect(backend.status(workspaceId)).resolves.toEqual({ state: retained ? 'cleanup_required' : 'closed' })
+  await expect(backend.status(workspaceId)).resolves.toEqual(retained ? { state: 'cleanup_required' } : { state: 'closed', reconciled: true })
   expect(() => { void backend.files(workspaceId, stale) }).toThrow('sandbox_workspace_conflict')
   if (phase !== 'handshake') expect(f.runtime.open).not.toHaveBeenCalled()
   expect(f.requests.includes('DELETE /instances/' + instanceId)).toBe(!retained)
