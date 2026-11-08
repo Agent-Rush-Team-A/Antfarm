@@ -28,6 +28,7 @@ function props(value = row): ModeFormProps {
 it('offers four modes before the first Session and saves the captured revision', async () => {
   const p = props(); render(<ModeForm {...p} />)
   expect(screen.getAllByRole('radio')).toHaveLength(4)
+  expect(screen.getByRole<HTMLInputElement>('radio', { name: en['mode.multi-vm'] }).checked).toBe(true)
   fireEvent.click(screen.getByRole('radio', { name: en['mode.single-docker'] }))
   expect(screen.getByRole('button', { name: en['mode.begin'] }).hasAttribute('disabled')).toBe(true)
   fireEvent.click(screen.getByRole('button', { name: en['mode.save'] }))
@@ -64,7 +65,9 @@ it('shows a permanent lock even when the first Session is filtered from membersh
   expect(screen.getByText(zh['mode.locked'])).toBeTruthy()
   expect(screen.getByText(first)).toBeTruthy()
   expect(screen.queryByRole('button', { name: zh['mode.save'] })).toBeNull()
-  expect(screen.getAllByRole('radio').every(r => (r as HTMLInputElement).disabled || r.closest('fieldset')?.disabled)).toBe(true)
+  expect(screen.getAllByRole('radio').every(r => (r as HTMLInputElement).disabled)).toBe(true)
+  expect(screen.getAllByRole('button', { name: /^了解/ }).map(button => button.getAttribute('aria-label')))
+    .toEqual(['了解单会话 · VM', '了解多会话 · VM', '了解单会话 · Docker', '了解多会话 · Docker'])
   expect(canCreateSession(p.row)).toBe(false)
   expect(sessionWorkspace([p.row], first)).toBe(p.row)
 })
@@ -85,6 +88,14 @@ it('keeps read-only mode information visible and dismisses without creating a Se
   expect(screen.getAllByRole('radio')).toHaveLength(4)
   fireEvent.click(screen.getByRole('button', { name: commonEn.close }))
   expect(p.dismissMode).toHaveBeenCalledOnce(); expect(p.beginModeSession).not.toHaveBeenCalled()
+})
+
+it('shows help only for the modes offered by the deployment', () => {
+  const p = props({ ...row, modeConfig: { ...row.modeConfig, mode: 'multi-docker', revision: 0 } })
+  render(<ModeForm {...p} visibleModes={['single-docker', 'multi-docker']} />)
+  expect(screen.getByRole<HTMLInputElement>('radio', { name: en['mode.multi-docker'] }).checked).toBe(true)
+  expect(screen.getAllByRole('button', { name: /^About / }).map(button => button.getAttribute('aria-label')))
+    .toEqual(['About Single session · Docker', 'About Multiple sessions · Docker'])
 })
 
 it('removes the form when read access is revoked', () => {

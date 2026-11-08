@@ -1,9 +1,59 @@
 /** Locale-owned Workspace mode choices, locking, and safe recovery guidance. */
 
+const enModeHelp = {
+  'mode.help.label': 'About {mode}',
+  'mode.help.sessions': 'Sessions',
+  'mode.help.runs': 'How it runs',
+  'mode.help.benefit': 'Benefit',
+  'mode.help.fit': 'Best for',
+  'mode.help.single-docker.sessions': 'One conversation per workspace.',
+  'mode.help.single-docker.runs': 'A lightweight Docker container starts on demand and shuts down when work is done.',
+  'mode.help.single-docker.benefit': 'No manual start or stop. Your files are available next time.',
+  'mode.help.single-docker.fit': 'Cleaning up spreadsheets, converting files, or running a quick script.',
+  'mode.help.multi-docker.sessions': 'Multiple conversations in one workspace.',
+  'mode.help.multi-docker.runs': 'The conversations share one Docker container, which you can start or stop yourself.',
+  'mode.help.multi-docker.benefit': 'Keep tasks in separate conversations while sharing files. Files stay available when the container stops.',
+  'mode.help.multi-docker.fit': 'Using the same data for cleanup, analysis, and report writing in separate conversations.',
+  'mode.help.single-vm.sessions': 'One conversation per workspace.',
+  'mode.help.single-vm.runs': 'A dedicated Vultr cloud VM starts on demand and shuts down when work is done.',
+  'mode.help.single-vm.benefit': 'Files are stored separately in the cloud and remain available to download after shutdown.',
+  'mode.help.single-vm.fit': 'Short tasks that need a separate system, such as testing generated code.',
+  'mode.help.multi-vm.sessions': 'Multiple conversations in one workspace.',
+  'mode.help.multi-vm.runs': 'The conversations share a dedicated Vultr cloud VM. A disk snapshot is saved at shutdown.',
+  'mode.help.multi-vm.benefit': 'Your workspace files and installed tools are restored when the VM starts again.',
+  'mode.help.multi-vm.fit': 'Projects that need several rounds of debugging with the same tools.',
+}
+
+const zhModeHelp = {
+  'mode.help.label': '了解{mode}',
+  'mode.help.sessions': '会话',
+  'mode.help.runs': '运行方式',
+  'mode.help.benefit': '好处',
+  'mode.help.fit': '适合',
+  'mode.help.single-docker.sessions': '每个工作区只用一个会话。',
+  'mode.help.single-docker.runs': '按需启动轻量的 Docker 容器，任务结束后自动关闭。',
+  'mode.help.single-docker.benefit': '无需手动启停，工作区文件可以留到下次继续用。',
+  'mode.help.single-docker.fit': '整理表格、转换文件、跑一次脚本。',
+  'mode.help.multi-docker.sessions': '同一工作区可以开多个会话。',
+  'mode.help.multi-docker.runs': '多个会话共用一个 Docker 容器，可以手动启停。',
+  'mode.help.multi-docker.benefit': '不同任务可以分开聊，同时共用文件。容器关闭后，文件仍会保留。',
+  'mode.help.multi-docker.fit': '围绕同一批数据，分开做清洗、分析和写报告。',
+  'mode.help.single-vm.sessions': '每个工作区只用一个会话。',
+  'mode.help.single-vm.runs': '按需启动一台独立的 Vultr 云虚拟机，任务结束后自动关闭。',
+  'mode.help.single-vm.benefit': '文件单独存放在云端，虚拟机关闭后仍可下载。',
+  'mode.help.single-vm.fit': '需要独立系统环境的短时任务，比如试跑生成的代码。',
+  'mode.help.multi-vm.sessions': '同一工作区可以开多个会话。',
+  'mode.help.multi-vm.runs': '多个会话共用一台独立的 Vultr 云虚拟机，关闭时保存磁盘快照。',
+  'mode.help.multi-vm.benefit': '下次启动时，可以恢复工作区文件和已安装的工具。',
+  'mode.help.multi-vm.fit': '需要多轮调试、反复使用同一套工具的项目。',
+} satisfies Record<keyof typeof enModeHelp, string>
+
 /** en mode dictionary. */
 export const enModes = {
+  ...enModeHelp,
   'mode.title': 'Workspace configuration',
   'mode.choose': 'Workspace mode',
+  'mode.defaultOption': '{mode} (default)',
   'mode.single-vm': 'Single session · VM',
   'mode.multi-vm': 'Multiple sessions · VM',
   'mode.single-docker': 'Single session · Docker',
@@ -31,8 +81,10 @@ export const enModes = {
 
 /** zh mode dictionary. */
 export const zhModes = {
+  ...zhModeHelp,
   'mode.title': '工作区配置',
   'mode.choose': '工作区模式',
+  'mode.defaultOption': '{mode}（默认）',
   'mode.single-vm': '单会话 · VM',
   'mode.multi-vm': '多会话 · VM',
   'mode.single-docker': '单会话 · Docker',
@@ -60,8 +112,10 @@ export const zhModes = {
 
 /** ja mode dictionary. */
 export const jaModes = {
+  ...enModeHelp,
   'mode.title': 'ワークスペース設定',
   'mode.choose': 'ワークスペースモード',
+  'mode.defaultOption': '{mode}（デフォルト）',
   'mode.single-vm': '単一セッション · VM',
   'mode.multi-vm': '複数セッション · VM',
   'mode.single-docker': '単一セッション · Docker',
@@ -89,8 +143,10 @@ export const jaModes = {
 
 /** es mode dictionary. */
 export const esModes = {
+  ...enModeHelp,
   'mode.title': 'Configuración del espacio de trabajo',
   'mode.choose': 'Modo del espacio de trabajo',
+  'mode.defaultOption': '{mode} (predeterminado)',
   'mode.single-vm': 'Una sesión · VM',
   'mode.multi-vm': 'Varias sesiones · VM',
   'mode.single-docker': 'Una sesión · Docker',
@@ -118,8 +174,10 @@ export const esModes = {
 
 /** fr mode dictionary. */
 export const frModes = {
+  ...enModeHelp,
   'mode.title': 'Configuration de l’espace de travail',
   'mode.choose': 'Mode de l’espace de travail',
+  'mode.defaultOption': '{mode} (par défaut)',
   'mode.single-vm': 'Une session · VM',
   'mode.multi-vm': 'Plusieurs sessions · VM',
   'mode.single-docker': 'Une session · Docker',
@@ -147,8 +205,10 @@ export const frModes = {
 
 /** de mode dictionary. */
 export const deModes = {
+  ...enModeHelp,
   'mode.title': 'Arbeitsbereich konfigurieren',
   'mode.choose': 'Arbeitsbereichsmodus',
+  'mode.defaultOption': '{mode} (Standard)',
   'mode.single-vm': 'Eine Sitzung · VM',
   'mode.multi-vm': 'Mehrere Sitzungen · VM',
   'mode.single-docker': 'Eine Sitzung · Docker',
@@ -176,8 +236,10 @@ export const deModes = {
 
 /** ru mode dictionary. */
 export const ruModes = {
+  ...enModeHelp,
   'mode.title': 'Настройка рабочего пространства',
   'mode.choose': 'Режим рабочего пространства',
+  'mode.defaultOption': '{mode} (по умолчанию)',
   'mode.single-vm': 'Один сеанс · VM',
   'mode.multi-vm': 'Несколько сеансов · VM',
   'mode.single-docker': 'Один сеанс · Docker',
@@ -205,8 +267,10 @@ export const ruModes = {
 
 /** pt mode dictionary. */
 export const ptModes = {
+  ...enModeHelp,
   'mode.title': 'Configuração do espaço de trabalho',
   'mode.choose': 'Modo do espaço de trabalho',
+  'mode.defaultOption': '{mode} (padrão)',
   'mode.single-vm': 'Uma sessão · VM',
   'mode.multi-vm': 'Várias sessões · VM',
   'mode.single-docker': 'Uma sessão · Docker',
