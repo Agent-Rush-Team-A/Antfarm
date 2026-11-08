@@ -55,15 +55,21 @@ export class CloudWorkspaceRecords<RecordType extends { readonly workspaceId: Cl
   /** Validate a private real directory before any key or state publication. */
   async initialize(): Promise<void> {
     if (!isAbsolute(this.root) || /[\r\n\0]/u.test(this.root)) throw new Error('Cloud stateRoot must be an absolute directory')
-    await mkdir(this.root, { recursive: true, mode: 0o700 })
+    const created = await mkdir(this.root, { recursive: true, mode: 0o700 })
     if (await realpath(this.root) !== this.root) throw new Error('Cloud stateRoot must not contain symlinks')
     const info = await stat(this.root)
     if ((info.mode & 0o077) !== 0 || info.uid !== process.getuid?.()) throw new Error('Cloud stateRoot must be private and owned by the Harness user')
     const lock = await open(join(this.root, '.owner.lock'), constants.O_RDWR | constants.O_CREAT | constants.O_NOFOLLOW, 0o600)
     try { await tryLockExclusive(lock.fd) }
     catch (error) { await lock.close(); throw new Error('Another Harness owns this cloud stateRoot', { cause: error }) }
-    try { await this.sync(dirname(this.root)) }
-    catch (error) { await lock.close(); throw error }
+    if (created !== undefined) {
+      try {
+        for (let parent = dirname(this.root); ; parent = dirname(parent)) {
+          await this.sync(parent)
+          if (parent === dirname(created)) break
+        }
+      } catch (error) { await lock.close(); throw error }
+    }
     this.lock = lock
   }
 
@@ -117,7 +123,10 @@ export class CloudWorkspaceRecords<RecordType extends { readonly workspaceId: Cl
   async remove(id: CloudRecord['workspaceId']): Promise<void> {
     const path = join(this.root, cloudWorkspaceId.parse(id))
     await rm(join(path, 'state.json'), { force: true })
-    await this.sync(path)
+    try { await this.sync(path) }
+    catch (error) {
+      if (!(typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT')) throw error
+    }
   }
 
   /**
