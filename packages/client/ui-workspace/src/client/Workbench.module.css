@@ -47,12 +47,6 @@
 .create { display: grid; gap: 18px; max-width: 480px; }
 .create > p { margin: 0; font-size: 13px; line-height: 1.7; color: var(--dsw-alias-label-secondary); }
 .create > label { display: grid; gap: 8px; font-size: 13px; font-weight: 500; }
-.modes { border: 0; padding: 0; margin: 0; display: grid; gap: 10px; }
-.mode { padding: 16px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-md); display: flex; align-items: flex-start; gap: 12px; cursor: pointer; }
-.mode[data-selected] { border-color: var(--dsw-alias-label-primary); box-shadow: inset 0 0 0 1px var(--dsw-alias-label-primary); }
-.mode input { accent-color: var(--dsw-alias-label-primary); margin-top: 3px; }
-.mode > span { display: grid; gap: 4px; font-size: 14px; font-weight: 500; }
-.mode small { font-size: 12.5px; font-weight: 400; color: var(--dsw-alias-label-secondary); line-height: 1.6; }
 .createActions { display: flex; justify-content: flex-end; gap: 10px; }
 .error, .create > .error { margin: 10px 0 0; color: var(--dsw-alias-state-error-primary); font-size: 13px; }
 .filePanel { height: 100%; box-sizing: border-box; min-width: 0; overflow: auto; padding: 20px; color: var(--dsw-alias-label-primary); }

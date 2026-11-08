@@ -24,10 +24,21 @@ export interface SandboxFailure {
 export interface SandboxView {
   readonly workspaceId: WorkspaceId
   readonly state: SandboxValue['state'] | undefined
+  readonly progress?: SandboxValue['progress']
   readonly pending: 'open' | 'close' | undefined
   readonly failure: SandboxFailure | undefined
   readonly statusFailure: SandboxFailure | undefined
   readonly connected: boolean
+}
+
+/**
+ * Identify a failed connection to the recorded workspace VM.
+ * @param view - Latest workspace observation.
+ * @returns Whether reopening can retry the original VM connection.
+ */
+export function canRetryVmConnection(view: SandboxView | undefined): boolean {
+  return view?.state === 'starting' && view.pending === undefined
+    && view.progress?.phase === 'connecting' && view.progress.failure === 'connect'
 }
 
 interface RecordState {
@@ -131,7 +142,7 @@ export class SandboxModel {
     if (this.disposed || !record || record.holders === 0 || record.mutation || this.generations.getSnapshot() === undefined) return
     this.stop(record)
     if (!this.allowed(workspaceId, 'status')) {
-      record.store.set({ ...record.store.getSnapshot(), state: undefined,
+      record.store.set({ ...record.store.getSnapshot(), state: undefined, progress: undefined,
         statusFailure: { reason: 'denied', operation: 'status', outcomeUnknown: false } })
       return
     }
@@ -143,6 +154,7 @@ export class SandboxModel {
         if (controller.signal.aborted || record.revision !== revision || !this.allowed(workspaceId, 'status')) return
         const view = record.store.getSnapshot()
         record.store.set({ ...view, state: result.ok ? result.value.state : view.state,
+          progress: result.ok ? result.value.progress : view.progress,
           statusFailure: result.ok ? undefined : failure(result.error, 'status') })
       } catch (error) {
         if (!controller.signal.aborted) record.store.set({ ...record.store.getSnapshot(), statusFailure: failure(error, 'status') })
@@ -178,7 +190,7 @@ export class SandboxModel {
           problem = { reason: 'disconnected', operation, outcomeUnknown: true }
           return problem
         }
-        if (result.ok) record.store.set({ ...record.store.getSnapshot(), state: result.value.state })
+        if (result.ok) record.store.set({ ...record.store.getSnapshot(), state: result.value.state, progress: result.value.progress })
         else problem = failure(result.error, operation)
       } catch (error) {
         problem = controller.signal.aborted ? { reason: 'disconnected', operation, outcomeUnknown: true } : failure(error, operation)

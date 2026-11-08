@@ -10,7 +10,7 @@ import type { RemoteFailure, RemoteResult } from '@deepseek-ai/dsh-typert-protoc
 import type {
   WorkspaceGetModeRequest,
   WorkspaceSetModeRequest,
-  WorkspaceModeValue,
+  WorkspaceModeValue, WorkspaceModeOptionsValue,
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
   WorkspaceCreateRequest,
@@ -96,8 +96,8 @@ export function followGenerations(generations: readonly StreamScript[]): StreamS
 /** Default answers: every command accepted and echoed back as the row or set it names. */
 export const workspaceWorld: RemoteTable = {
   unary: {
-    'workspace/getMode': (request: WorkspaceGetModeRequest): RemoteResult<WorkspaceModeValue> => ok({
-      config: workspace(String(request.workspaceId)).modeConfig,
+    'workspace/getMode': (request: WorkspaceGetModeRequest): RemoteResult<WorkspaceModeOptionsValue> => ok({
+      config: workspace(String(request.workspaceId)).modeConfig, availableModes: ['multi-vm', 'single-docker'],
     }),
     'workspace/setMode': (request: WorkspaceSetModeRequest): RemoteResult<WorkspaceModeValue> => ok({
       config: { ...workspace(String(request.workspaceId)).modeConfig, mode: request.mode, revision: request.expectedRevision + 3 },

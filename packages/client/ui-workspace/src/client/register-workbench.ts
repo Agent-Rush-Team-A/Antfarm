@@ -26,20 +26,24 @@ function registerWorkbenchViews(ctx: Context, navigation: WorkbenchNavigation): 
     const dispose = ctx.slots.register({ name: 'main', key: panelId, locale: 'antfarm',
       inject: (): WorkbenchInjected => ({
         open: workspaceId => navigation.openWorkspace(workspaceId),
-        prepare: async (example, title, mode) => {
+        prepare: async (example, title) => {
           const label = title.trim() || t(example === 'own' ? 'workspace' : example)
           const workspace = await ctx.workspaces.create({ title: label })
-          if (workspace.modeConfig.mode !== mode) await ctx.workspaces.setMode(workspace.workspaceId, mode, workspace.modeConfig.revision)
-          if (example !== 'own') {
-            const content = example === 'spreadsheet'
-              ? 'product,units,unit_price\nNotebook,12,18\nDesk lamp,8,35\nNotebook,6,18\nMonitor stand,5,42\n'
-              : '# Project brief\nBuild a small customer feedback website. It needs a landing page, a feedback form, an admin review screen, and a weekly summary. The team has two developers and three weeks. Keep the first version focused and easy to use.\n'
-            const file = new File([content], example === 'spreadsheet' ? 'sales.csv' : 'brief.md', { type: 'text/plain' })
-            const uploaded = await ctx.workspaceUploads.uploadFile(workspace.workspaceId, file, new AbortController().signal)
-            if (!uploaded.ok) throw new Error('Example file upload failed')
+          if (example === 'own') {
+            navigation.startSession(workspace.workspaceId, { prompt: t('ownPrompt'), whenDraftExists: 'replace' })
+            return
           }
+          if (workspace.modeConfig.mode !== 'single-docker') {
+            await ctx.workspaces.setMode(workspace.workspaceId, 'single-docker', workspace.modeConfig.revision)
+          }
+          const content = example === 'spreadsheet'
+            ? 'product,units,unit_price\nNotebook,12,18\nDesk lamp,8,35\nNotebook,6,18\nMonitor stand,5,42\n'
+            : '# Project brief\nBuild a small customer feedback website. It needs a landing page, a feedback form, an admin review screen, and a weekly summary. The team has two developers and three weeks. Keep the first version focused and easy to use.\n'
+          const file = new File([content], example === 'spreadsheet' ? 'sales.csv' : 'brief.md', { type: 'text/plain' })
+          const uploaded = await ctx.workspaceUploads.uploadFile(workspace.workspaceId, file, new AbortController().signal)
+          if (!uploaded.ok) throw new Error('Example file upload failed')
           await navigation.connectWorkspace(workspace.workspaceId)
-          navigation.startSession(workspace.workspaceId, { prompt: t(example === 'spreadsheet' ? 'spreadsheetPrompt' : example === 'notes' ? 'notesPrompt' : 'ownPrompt'), whenDraftExists: 'replace' })
+          navigation.startSession(workspace.workspaceId, { prompt: t(example === 'spreadsheet' ? 'spreadsheetPrompt' : 'notesPrompt'), whenDraftExists: 'replace' })
         },
       }),
     }, Workbench)

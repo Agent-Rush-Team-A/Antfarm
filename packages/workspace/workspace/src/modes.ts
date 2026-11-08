@@ -5,7 +5,7 @@ import type { WorkspaceId } from './types.ts'
 import type { WorkspaceEntity } from './entity.ts'
 import { WorkspaceModeError } from './mode-errors.ts'
 import type {
-  IWorkspaceModes, WorkspaceModeChange, WorkspaceModeChangeId, WorkspaceModeConfig,
+  IWorkspaceModes, WorkspaceMode, WorkspaceModeChange, WorkspaceModeChangeId, WorkspaceModeConfig,
   WorkspaceModeOperationOptions, WorkspaceModeRuntime, WorkspaceModeUseLease,
   WorkspaceSetModeRequest,
 } from './mode-types.ts'
@@ -112,6 +112,10 @@ export class WorkspaceModes implements IWorkspaceModes {
 
   get(workspaceId: WorkspaceId): WorkspaceModeConfig {
     return this.requireEntity(workspaceId).modeConfig
+  }
+
+  supportedModes(): readonly WorkspaceMode[] {
+    return this.runtime?.withdrawing === false ? this.runtime.adapter.supportedModes : []
   }
 
   /** Register the current runtime provider and recover retained operations.
@@ -245,7 +249,8 @@ export class WorkspaceModes implements IWorkspaceModes {
           try { await this.markRecovery(entity) } catch (persistenceError) { this.host.report(persistenceError) }
         }
         if (signal.aborted && !recoveryRequired) throw signal.reason
-        if (admissionFailed && !recoveryRequired) throw error
+        if (!recoveryRequired && (admissionFailed || (error instanceof WorkspaceModeError
+          && error.code === 'workspace/mode-single-vm-capacity'))) throw error
         throw new WorkspaceModeError('workspace/mode-switch-failed', {
           workspaceId: entity.id, changeId: change.changeId, phase,
           recoveryRequired, outcomeUnknown: recoveryRequired,

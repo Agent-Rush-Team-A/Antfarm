@@ -4803,10 +4803,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Host service backing the generated `ctx.remote.workspace` namespace.',
     methods: [
       {
-        signature: '@Remote(\'getMode\') async getMode(request: WorkspaceGetModeRequest): Promise<WorkspaceModeValue>',
+        signature: '@Remote(\'getMode\') async getMode(request: WorkspaceGetModeRequest): Promise<WorkspaceModeOptionsValue>',
         description: 'Read committed Workspace mode metadata after ownership checks.',
         parameters: [{ name: 'request', description: 'Workspace to read.' }],
-        returns: 'committed mode metadata after access checks.',
+        returns: 'Committed mode metadata and available modes after access checks.',
       },
       {
         signature: '@Remote(\'setMode\') async setMode(request: WorkspaceSetModeRequest, signal: AbortSignal): Promise<WorkspaceModeValue>',
@@ -7295,7 +7295,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'IWorkspaceModes',
-    declaration: 'export interface IWorkspaceModes {\n    get(workspaceId: WorkspaceId): WorkspaceModeConfig;\n    registerRuntime(runtime: WorkspaceModeRuntime): () => Promise<void>;\n    setMode(request: WorkspaceSetModeRequest, options: WorkspaceModeOperationOptions): Promise<WorkspaceModeConfig>;\n    recover(workspaceId: WorkspaceId, options: WorkspaceModeOperationOptions): Promise<WorkspaceModeConfig>;\n    acquireUse(workspaceId: WorkspaceId, options: WorkspaceModeOperationOptions): Promise<WorkspaceModeUseLease>;\n}',
+    declaration: 'export interface IWorkspaceModes {\n    get(workspaceId: WorkspaceId): WorkspaceModeConfig;\n    supportedModes(): readonly WorkspaceMode[];\n    registerRuntime(runtime: WorkspaceModeRuntime): () => Promise<void>;\n    setMode(request: WorkspaceSetModeRequest, options: WorkspaceModeOperationOptions): Promise<WorkspaceModeConfig>;\n    recover(workspaceId: WorkspaceId, options: WorkspaceModeOperationOptions): Promise<WorkspaceModeConfig>;\n    acquireUse(workspaceId: WorkspaceId, options: WorkspaceModeOperationOptions): Promise<WorkspaceModeUseLease>;\n}',
   },
   {
     name: 'JobAppendOptions',
@@ -10984,6 +10984,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceModeOperationState',
     declaration: 'export type WorkspaceModeOperationState = \'ready\' | \'switching\' | \'creating-session\' | \'recovery-required\';',
+  },
+  {
+    name: 'WorkspaceModeOptionsValue',
+    declaration: 'export interface WorkspaceModeOptionsValue extends WorkspaceModeValue {\n    readonly availableModes: readonly WorkspaceMode[];\n}',
   },
   {
     name: 'WorkspaceModeRuntime',

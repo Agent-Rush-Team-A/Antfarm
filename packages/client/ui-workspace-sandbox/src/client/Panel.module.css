@@ -5,3 +5,4 @@
 .status { min-height: 20px; color: var(--dsw-alias-label-primary); }
 .note { font-size: 13px; color: var(--dsw-alias-label-primary); }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.composerStatus { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--dsw-alias-label-secondary); font-size: 12px; }

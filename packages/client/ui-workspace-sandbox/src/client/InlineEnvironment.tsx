@@ -3,6 +3,7 @@ import { Button, IconShieldOutlineRegular } from '@deepseek-ai/dsh-client-ui-pri
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { SandboxActions } from './Panel.tsx'
+import { canRetryVmConnection } from './model.ts'
 import { sandboxAddress } from './address.ts'
 import css from './InlineEnvironment.module.css'
 
@@ -14,11 +15,14 @@ export function InlineEnvironment(props: Props) {
   const value = resource.value
   const state = value?.pending === 'open' ? 'starting' : value?.pending === 'close' ? 'closing' : value?.state
   const available = resource.status === 'live' && value?.connected === true && value.statusFailure === undefined
-  const label = !available ? props.t('unconfirmed') : props.t(state ?? 'loading')
+  const retry = available && props.mode === 'multi-vm' && canRetryVmConnection(value)
+  const openAllowed = props.useWorkspaceAccess(props.workspaceId, 'workspaceSandbox/open')
+  const label = !available ? props.t('unconfirmed') : props.t(retry ? 'vmConnectionFailed' : state ?? 'loading')
   const single = props.mode.startsWith('single-')
   return <section className={css.panel}>
     <div className={css.heading}><IconShieldOutlineRegular size={17} /><span>{props.t('title')}</span><Button variant="ghost" size="sm" onClick={() => { props.refresh(props.workspaceId) }}>{props.t('refresh')}</Button></div>
     <p role="status"><span className={css.dot} data-running={available && state === 'running' || undefined} />{label}</p>
+    {retry && openAllowed && <Button variant="outline" size="sm" onClick={() => { props.change(props.workspaceId, 'open') }}>{props.t('retryConnection')}</Button>}
     <small>{props.t(single ? 'automatic' : 'retained')}</small>
   </section>
 }

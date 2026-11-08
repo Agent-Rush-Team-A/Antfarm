@@ -5,8 +5,9 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ResourceSnapshot } from '@deepseek-ai/dsh-client-resources/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
+import type { InputState } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
-import { SandboxPanel, type PanelProps } from '../src/client/Panel.tsx'
+import { SandboxPanel, VmStatus, type PanelProps } from '../src/client/Panel.tsx'
 import type { SandboxView } from '../src/client/model.ts'
 import { en, zh } from '../src/client/locales.ts'
 
@@ -60,6 +61,35 @@ test.each([
   fireEvent.click(screen.getByRole('button', { name: en.refresh }))
   expect(f.props.change).not.toHaveBeenCalled()
   expect(f.props.refresh).not.toHaveBeenCalled()
+})
+
+test('shows VM preparation at the composer before a send is accepted, without opening the sandbox panel', () => {
+  const input: InputState = {
+    draft: 'Run the task', phase: 'sending', attachmentIds: [], draftRev: 1, occurrences: [], queue: [],
+  }
+  let view = closed
+  const props: Parameters<typeof VmStatus>[0] = {
+    workspaceId: id, mode: 'single-vm', t: makeTranslate(en), change: vi.fn(),
+    useWorkspaceAccess: () => true, useInput: selector => selector(input),
+    useResource: vi.fn(() => ({ status: 'live', value: view, failure: undefined })) as PanelProps['useResource'],
+  }
+  const mounted = render(<VmStatus {...props} />)
+  expect(screen.getByRole('status').textContent).toBe('Preparing VM…')
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(props.change).not.toHaveBeenCalled()
+  mounted.rerender(<VmStatus {...props} useInput={selector => selector({ ...input, phase: 'plain' })} />)
+  expect(screen.queryByRole('status')).toBeNull()
+  view = { ...closed, state: 'running', progress: { phase: 'running' } }
+  mounted.rerender(<VmStatus {...props} useInput={selector => selector({ ...input, phase: 'plain' })} />)
+  expect(screen.getByRole('status').textContent).toBe('VM ready')
+})
+
+test('offers an explicit retry when the original VM could not be reached', () => {
+  const f = fixture({ ...closed, state: 'starting', progress: { phase: 'connecting', failure: 'connect' } })
+  expect(screen.getByRole('status').textContent).toBe(en.vmConnectionFailed)
+  expect(f.props.change).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: en.retryConnection }))
+  expect(f.props.change).toHaveBeenCalledWith(id, 'open')
 })
 
 test('refreshes explicitly and dismisses the panel without closing the container', () => {

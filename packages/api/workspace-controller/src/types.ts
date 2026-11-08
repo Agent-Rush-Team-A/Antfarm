@@ -6,13 +6,18 @@
  */
 
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { SessionActivity, WorkspaceId, WorkspaceModeConfig } from '@deepseek-ai/dsh-workspace/types'
+import type { SessionActivity, WorkspaceId, WorkspaceMode, WorkspaceModeValue, WorkspaceModeConfig } from '@deepseek-ai/dsh-workspace/types'
 
 export type { WorkspaceId, WorkspaceMode, WorkspaceModeConfig, WorkspaceGetModeRequest, WorkspaceSetModeRequest, WorkspaceModeValue } from '@deepseek-ai/dsh-workspace/types'
 export type {
   SessionActivity, SessionActivityItem, SessionActivityKind, SessionActivityKindMap,
 } from '@deepseek-ai/dsh-workspace/types'
 export type { DirectoryEntry, DirectoryListing } from '@deepseek-ai/dsh-host-directory-picker/types'
+
+/** Current configuration and modes supported by the server. */
+export interface WorkspaceModeOptionsValue extends WorkspaceModeValue {
+  readonly availableModes: readonly WorkspaceMode[]
+}
 
 /** One durable Workspace projected for browser consumers. */
 export interface WorkspaceView {

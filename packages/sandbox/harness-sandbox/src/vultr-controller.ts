@@ -61,6 +61,7 @@ export class VultrWorkspaceController {
   private async reconcile(): Promise<void> {
     const records = await this.store.load()
     const instances = await this.api.instances(this.lifetime.signal)
+    const reconnect: Slot[] = []
     for (const record of records) {
       if (record.deploymentId !== this.settings.deploymentId
         || record.remoteRoot !== this.settings.remoteRoot) throw new Error('Cloud deployment configuration differs from persisted ownership')
@@ -87,7 +88,8 @@ export class VultrWorkspaceController {
           } else await this.failed(slot, 'resource_missing')
         } else if (current.state === 'starting' || current.state === 'running') {
           // No execution receipt survives a new SSH connection.
-          await this.commit(slot, { ...current, state: 'starting', phase: 'connecting' })
+          await this.commit(slot, { ...current, state: 'starting', phase: 'connecting', failure: undefined })
+          reconnect.push(slot)
         }
       } else if (current.state !== 'closed') await this.failed(slot, 'interrupted')
     }
@@ -99,6 +101,10 @@ export class VultrWorkspaceController {
       const id = tags[0]?.slice('workspace-'.length)
       if (tags.length !== 1 || id === undefined || !/^[a-zA-Z0-9_-]{1,128}$/u.test(id)) this.unassignedOrphan = true
       else this.orphanWorkspaces.add(WorkspaceId(id))
+    }
+    for (const { record } of reconnect) {
+      if (this.unassignedOrphan || this.orphanWorkspaces.has(record.workspaceId)) continue
+      void this.open(record.workspaceId, record.project).catch((_error: unknown) => { /* openOnce records and reports the failure. */ })
     }
   }
 
@@ -128,11 +134,20 @@ export class VultrWorkspaceController {
   }
 
   private async openOnce(slot: Slot): Promise<RunnerRunningSandbox> {
-    const signal = this.operationSignal()
+    const instanceId = slot.record.instanceId
+    const reconnect = instanceId !== undefined && slot.record.phase === 'connecting'
+    const signal = reconnect ? AbortSignal.any([this.operationSignal(), slot.revocation.signal]) : this.operationSignal()
+    let failure: NonNullable<CloudRecord['failure']> = instanceId !== undefined ? 'connect'
+      : slot.record.snapshotId === undefined ? 'create' : 'restore'
+    let retryable = false
     try {
-      await this.commit(slot, slot.record)
-      let instance = slot.record.instanceId === undefined ? undefined : await this.originalInstance(slot.record, signal)
+      await this.commit(slot, { ...slot.record, failure: undefined })
+      let instance = await this.originalInstance(slot.record, signal)
       if (instance === undefined) {
+        if (instanceId !== undefined) {
+          failure = 'resource_missing'
+          throw new Error('Original VM disappeared before reconnection')
+        }
         const bootstrap = await this.provisioning.bootstrap(slot.record, signal)
         if (slot.record.snapshotId !== undefined) {
           const snapshot = await this.api.snapshot(slot.record.snapshotId, signal)
@@ -152,12 +167,15 @@ export class VultrWorkspaceController {
         }
         if (!this.owned(slot.record, instance)) throw new Error('Created VM ownership does not match the request')
         await this.commit(slot, { ...slot.record, instanceId: instance.id, mutation: undefined })
+        if (slot.record.snapshotId === undefined) failure = 'connect'
       }
       if (instance.power_status === 'stopped') await this.api.power(instance.id, 'start', signal)
       instance = await this.waitInstance(slot.record, signal, candidate => candidate.status === 'active'
         && candidate.power_status === 'running' && candidate.server_status === 'ok' && candidate.main_ip !== '0.0.0.0')
       await this.commit(slot, { ...slot.record, state: 'starting', phase: 'connecting' })
+      retryable = reconnect
       const connection = await this.provisioning.connect(slot.record, instance, signal)
+      retryable = false
       slot.revocation.signal.throwIfAborted()
       this.runtime.bind(slot.record.workspaceId, { ...connection, instanceId: instance.id })
       const running = await this.runtime.open(slot.record.workspaceId, slot.record.project)
@@ -173,8 +191,15 @@ export class VultrWorkspaceController {
       return running
     } catch (error) {
       let cause: unknown = error
-      try { await this.failed(slot, slot.record.snapshotId === undefined ? slot.record.instanceId === undefined
-        ? 'create' : 'connect' : 'restore') }
+      try {
+        if (retryable && !slot.revocation.signal.aborted) {
+          try { await this.commit(slot, { ...slot.record, failure: 'connect' }) }
+          catch (metadata) { slot.revocation.abort(metadata); throw metadata }
+          finally { this.report(slot.record.workspaceId, 'connect') }
+        } else {
+          await this.failed(slot, failure)
+        }
+      }
       catch (metadata) { cause = new AggregateError([error, metadata], 'Cloud operation and failure persistence failed') }
       throw new RunnerResponseError('cloud_open_failed', 503, cause !== error || error instanceof VultrApiError
         && error.outcomeUnknown, { cause })
@@ -537,6 +562,9 @@ export class VultrWorkspaceController {
       return { files: cache === undefined ? undefined : this.store.copyPath(scope.workspaceId, cache), signal, admit }
     }
     admit()
+    if (slot.operation === undefined && slot.record.phase === 'connecting' && slot.record.failure === 'connect') {
+      throw new RunnerResponseError('cloud_open_failed', 503, false)
+    }
     const running = await this.observeOpening(this.open(scope.workspaceId, scope.project), signal)
     admit()
     const bound = await this.runtime.files(scope.workspaceId, running.containerId, signal)

@@ -20,9 +20,13 @@ const row: WorkspaceView = { workspaceId: id, path: '/project', title: 'Project 
     modeLocked: false, lockReason: null, firstSessionId: null } }
 
 function props(value = row): ModeFormProps {
-  return { row: value, selection: { workspaceId: id, startsSession: true }, pending: false,
+  return {
+    row: value,
+    selection: { workspaceId: id, startsSession: true, availableModes: ['single-vm', 'multi-vm', 'single-docker', 'multi-docker'] },
+    pending: false,
     t: makeTranslate(en, commonEn), useWorkspaceAccess: vi.fn().mockReturnValue(true), dismissMode: vi.fn(),
-    refreshMode: vi.fn(), saveMode: vi.fn().mockResolvedValue(true), beginModeSession: vi.fn() }
+    refreshMode: vi.fn(), saveMode: vi.fn().mockResolvedValue(true), beginModeSession: vi.fn(),
+  }
 }
 
 it('offers four modes before the first Session and saves the captured revision', async () => {
@@ -92,7 +96,7 @@ it('keeps read-only mode information visible and dismisses without creating a Se
 
 it('shows help only for the modes offered by the deployment', () => {
   const p = props({ ...row, modeConfig: { ...row.modeConfig, mode: 'multi-docker', revision: 0 } })
-  render(<ModeForm {...p} visibleModes={['single-docker', 'multi-docker']} />)
+  render(<ModeForm {...p} selection={{ ...p.selection, availableModes: ['single-docker', 'multi-docker'] }} />)
   expect(screen.getByRole<HTMLInputElement>('radio', { name: en['mode.multi-docker'] }).checked).toBe(true)
   expect(screen.getAllByRole('button', { name: /^About / }).map(button => button.getAttribute('aria-label')))
     .toEqual(['About Single session · Docker', 'About Multiple sessions · Docker'])

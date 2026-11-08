@@ -206,7 +206,7 @@ describe.runIf(process.platform === 'linux' && process.getuid?.() !== 0 && taskI
     await f.runtime(f.provider()).settle(failing, 'rollback', f.signal)
     expect(f.provider().resolve(scope).uid).toBe(location.uid)
     expect(await readFile(join(location.root, 'input.csv'), 'utf8')).toBe('keep original')
-    await expect(f.runtime(f.provider()).prepare(f.change(peer), f.signal)).rejects.toThrow('No reserved single VM task identity')
+    await expect(f.runtime(f.provider()).prepare(f.change(peer), f.signal)).rejects.toMatchObject({ code: 'workspace/mode-single-vm-capacity' })
   })
 
   test('commits the first identity after restarting between directory rename and publication', async () => {
@@ -307,6 +307,6 @@ describe.runIf(process.platform === 'linux' && process.getuid?.() !== 0 && taskI
     const restarted = f.runtime(f.provider())
     await expect(restarted.settle(change, 'rollback', f.signal)).rejects.toThrow('Workspace mode rollback did not finish')
     expect(await readFile(join(live, 'input.csv'), 'utf8')).toBe('keep original')
-    await expect(restarted.prepare(f.change(peer), f.signal)).rejects.toThrow('No reserved single VM task identity')
+    await expect(restarted.prepare(f.change(peer), f.signal)).rejects.toMatchObject({ code: 'workspace/mode-single-vm-capacity' })
   })
 })

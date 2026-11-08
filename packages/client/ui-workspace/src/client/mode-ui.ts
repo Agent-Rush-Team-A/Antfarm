@@ -1,7 +1,6 @@
 /** Registration-owned configuration gestures and settled Remote operations. */
 import type { Context } from '@deepseek-ai/cordis'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { WorkspaceMode } from '@deepseek-ai/dsh-workspace/types'
 import type { IWorkspaces, WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { modeFailureKey } from './mode-errors.ts'
 import { ModeOverlay, type ModeDialogInjected, type ModeSelection } from './ModeDialog.tsx'
@@ -16,10 +15,9 @@ export interface ModeControls {
  * Install the overlay and menu independently of optional execution providers.
  * @param ctx - Workspace plugin context.
  * @param workspaces - Authoritative client projection and mode commands.
- * @param visibleModes - Optional mode choices exposed by the deployment.
  * @returns Configuration gestures for the Workspace row and first-Session flow.
  */
-export function registerModeUi(ctx: Context, workspaces: IWorkspaces, visibleModes?: readonly WorkspaceMode[]): ModeControls {
+export function registerModeUi(ctx: Context, workspaces: IWorkspaces): ModeControls {
   const selection = createSnapshotStore<ModeSelection | null>(null)
   const pending = createSnapshotStore<readonly WorkspaceId[]>([])
   const lifetime = new AbortController()
@@ -41,16 +39,15 @@ export function registerModeUi(ctx: Context, workspaces: IWorkspaces, visibleMod
     return operation
   }
   const actions: ModeDialogInjected = {
-    ...(visibleModes === undefined ? {} : { visibleModes }),
     hooks: { modeSelection: selection, modePending: pending },
     dismissMode: dismiss,
     refreshMode: (id) => {
       if (!allowed(id, 'workspace/getMode')) return
       const requestEpoch = epoch
-      void track(workspaces.getMode(id).then(() => {
+      void track(workspaces.getMode(id).then(({ availableModes }) => {
         const current = selection.getSnapshot()
         if (epoch === requestEpoch && current?.workspaceId === id) {
-          selection.set({ workspaceId: id, startsSession: current.startsSession })
+          selection.set({ workspaceId: id, startsSession: current.startsSession, availableModes })
         }
       }).catch((error: unknown) => {
         const current = selection.getSnapshot()
@@ -61,6 +58,14 @@ export function registerModeUi(ctx: Context, workspaces: IWorkspaces, visibleMod
     },
     saveMode: async (id, mode, revision) => {
       if (!allowed(id, 'workspace/setMode') || pending.getSnapshot().includes(id)) return false
+      const requestEpoch = epoch
+      const current = () => {
+        const target = selection.getSnapshot()
+        return requestEpoch === epoch && target?.workspaceId === id ? target : null
+      }
+      const active = current()
+      if (active !== null) selection.set({ workspaceId: id, startsSession: active.startsSession,
+        ...active.availableModes === undefined ? {} : { availableModes: active.availableModes } })
       pending.set([...pending.getSnapshot(), id])
       return track((async () => {
         try {
@@ -69,11 +74,25 @@ export function registerModeUi(ctx: Context, workspaces: IWorkspaces, visibleMod
           ctx.contextMenus.notify(ctx.locale.bind('workspace')('mode.saved'), true)
           return true
         } catch (error: unknown) {
-          if (allowed(id, 'workspace/getMode')) {
-            ctx.contextMenus.notify(ctx.locale.bind('workspace')(modeFailureKey(error)), false)
-            actions.refreshMode(id)
+          if (!allowed(id, 'workspace/getMode')) return false
+          const saveFailure = modeFailureKey(error)
+          const target = current()
+          if (target === null) {
+            ctx.contextMenus.notify(ctx.locale.bind('workspace')(saveFailure), false)
+            return false
           }
-          return false
+          selection.set({ ...target, saveFailure })
+          if (saveFailure === 'mode.conflict') return false
+          try {
+            const { availableModes } = await workspaces.getMode(id)
+            const refreshed = current()
+            if (refreshed !== null) selection.set({ ...refreshed, availableModes })
+            return saveFailure === 'mode.singleVmCapacity'
+          } catch (refreshError) {
+            const refreshed = current()
+            if (refreshed !== null) selection.set({ ...refreshed, queryFailure: modeFailureKey(refreshError) })
+            return false
+          }
         } finally {
           if (!lifetime.signal.aborted) pending.set(pending.getSnapshot().filter(value => value !== id))
         }
@@ -82,7 +101,7 @@ export function registerModeUi(ctx: Context, workspaces: IWorkspaces, visibleMod
     beginModeSession: () => {
       const current = selection.getSnapshot()
       if (current === null || pending.getSnapshot().includes(current.workspaceId)
-        || current.queryFailure !== undefined || !allowed(current.workspaceId, 'session/create')) return
+        || current.availableModes === undefined || current.queryFailure !== undefined || !allowed(current.workspaceId, 'session/create')) return
       const row = workspaces.list.getSnapshot().items.find(item => item.workspaceId === current.workspaceId)
       if (row?.modeConfig.operationState !== 'ready') return
       const begin = continuation

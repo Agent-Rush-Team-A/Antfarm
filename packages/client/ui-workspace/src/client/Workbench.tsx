@@ -12,7 +12,7 @@ import css from './Workbench.module.css'
 
 /** Dashboard commands stay in the apply world. */
 export interface WorkbenchInjected {
-  prepare: (example: 'spreadsheet' | 'notes' | 'own', title: string, mode: WorkspaceMode) => Promise<void>
+  prepare: (example: 'spreadsheet' | 'notes' | 'own', title: string) => Promise<void>
   open: (workspaceId: WorkspaceId) => Promise<void>
 }
 type DashboardProps = PropsRuntime<'main'> & PropsLocale<'antfarm'> & InjectFace<WorkbenchInjected>
@@ -25,10 +25,9 @@ export function Workbench(props: DashboardProps) {
   const [pending, setPending] = useState(false)
   const [problem, setProblem] = useState(false)
   const [title, setTitle] = useState('')
-  const [mode, setMode] = useState<WorkspaceMode>('single-docker')
   const prepare = async (example: 'spreadsheet' | 'notes' | 'own') => {
     setPending(true); setProblem(false)
-    try { await props.prepare(example, title, mode); setCreating(false) }
+    try { await props.prepare(example, title); setCreating(false) }
     catch (_error) { setProblem(true) }
     finally { setPending(false) }
   }
@@ -86,7 +85,6 @@ export function Workbench(props: DashboardProps) {
     </div>
     <Modal open={creating} onClose={() => { if (!pending) setCreating(false) }} title={t('setup')} closeLabel={t('cancel')}>
       <div className={css.create}><p>{t('setupHint')}</p><label>{t('name')}<Input value={title} placeholder={t('namePlaceholder')} onChange={(event) => { setTitle(event.target.value) }} /></label>
-        <fieldset className={css.modes} disabled={pending}>{(['single-docker', 'multi-docker'] as const).map(value => <label key={value} className={css.mode} data-selected={mode === value || undefined}><input type="radio" name="workbench-mode" checked={mode === value} onChange={() => { setMode(value) }} /><span><span>{t(value === 'single-docker' ? 'single' : 'multi')}</span><small>{t(value === 'single-docker' ? 'singleHint' : 'multiHint')}</small></span></label>)}</fieldset>
         {problem && <p role="alert" className={css.error}>{t('failed')}</p>}
         <div className={css.createActions}><Button variant="outline" disabled={pending} onClick={() => { setCreating(false) }}>{t('cancel')}</Button><Button variant="primary" disabled={pending} onClick={() => { void prepare('own') }}>{t(pending ? 'creating' : 'create')}</Button></div>
       </div>

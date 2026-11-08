@@ -972,6 +972,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   WorkspaceGetModeRequest: 'workspace.md',
   WorkspaceSetModeRequest: 'workspace.md',
   WorkspaceModeValue: 'workspace.md',
+  WorkspaceModeOptionsValue: 'workspace.md',
   WorkspaceSessionAdmission: 'workspace.md',
   ArchiveSessionOptions: 'workspace.md',
   SessionActivity: 'workspace.md',

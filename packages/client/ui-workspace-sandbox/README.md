@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-View sandbox status and start or stop a workspace's sandbox from the browser. Enable this package with Harness management and a local Runner or the Vultr backend. An open panel polls status every two seconds by default; only explicit user actions open or close a sandbox.
+View sandbox status and start or stop a workspace's sandbox from the browser. Enable this package with Harness management and a local Runner or the Vultr backend. The panel and a visible VM composer share status polling every two seconds by default. The composer shows VM preparation and readiness, and offers a connection retry when the server confirms the original VM can be retried.
 
 ## Table of Contents
 

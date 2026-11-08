@@ -3,6 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import type { PeerId, Principal, RemoteInvocation } from '@deepseek-ai/dsh-typert-protocol'
 import RemoteAccess from '@deepseek-ai/dsh-api-remote-access'
+import { WorkspaceModeError } from '@deepseek-ai/dsh-workspace'
 import { barrier, modeFixture } from '../../../workspace/workspace/tests/mode-fixture.ts'
 import WorkspaceController from '../src/index.ts'
 import type { WorkspaceFollowFrame } from '../src/types.ts'
@@ -36,7 +37,10 @@ function caller(ctx: Context, principal: Principal): Context {
 
 it('reads mode metadata and permanently rejects edits after the first ordinary Session', async () => {
   const f = await fixture(), id = f.workspace.id
-  expect(await f.controller.getMode({ workspaceId: id })).toEqual({ config: f.workspace.modeConfig })
+  expect(await f.controller.getMode({ workspaceId: id })).toEqual({
+    config: f.workspace.modeConfig,
+    availableModes: f.adapter.supportedModes,
+  })
   await f.controller.setMode({ workspaceId: id, mode: 'single-vm', expectedRevision: 0 }, f.options.signal)
   await f.registry.withSessionCreation(id, SessionId('first'), async (admission) => {
     f.headers.set(admission.sessionId, {
@@ -50,6 +54,18 @@ it('reads mode metadata and permanently rejects edits after the first ordinary S
     })
   await expect(f.controller.archiveSession({ sessionId: SessionId('first'), stopActivity: true }))
     .rejects.toMatchObject({ code: 'workspace/session-operation-forbidden' })
+})
+
+it('reports exhausted single-VM capacity only after restoring the committed mode', async () => {
+  const f = await fixture(), workspaceId = f.workspace.id
+  f.adapter.prepare = vi.fn().mockRejectedValueOnce(new WorkspaceModeError('workspace/mode-single-vm-capacity', { workspaceId }))
+  await expect(f.controller.setMode({ workspaceId, mode: 'single-vm', expectedRevision: 0 }, f.options.signal))
+    .rejects.toMatchObject({ code: 'workspace/mode-single-vm-capacity' })
+  const { config } = await f.controller.getMode({ workspaceId })
+  expect(config).toMatchObject({ mode: 'multi-vm', operationState: 'ready' })
+  expect(config.revision).toBeGreaterThan(0)
+  await expect(f.controller.setMode({ workspaceId, mode: 'single-docker', expectedRevision: config.revision }, f.options.signal))
+    .resolves.toMatchObject({ config: { mode: 'single-docker' } })
 })
 
 it.each([-1, 0.5, Infinity, Number.MAX_SAFE_INTEGER + 1])('rejects an invalid wire revision %s before any runtime operation', async (expectedRevision) => {

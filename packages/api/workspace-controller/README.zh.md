@@ -30,7 +30,7 @@ Host 控制器会串行执行正确性取决于当前注册表状态的变更，
 
 Client 入口提供 `ClientWorkspaceModel` 和 `createWorkspaceStateStream()`。该模型拥有 Workspace 行、registry 顺序、归档与置顶会话身份、一元变更回显，以及流与一元调用的竞态处理。较新的 Host 行按 `updatedAt` 获胜；已提交的流顺序优先于较旧的一元响应；已经移除的 Workspace id 不会被延迟数据复活。置顶快照仅在会话身份或顺序变化时更新。该包公开与框架无关的快照和订阅，把导航策略与 React 钩子留给 UI owner。`WorkspaceController.archiveSession(sessionId, { stopActivity })` 抛出携带 Host `rpcError` 的 `WorkspaceArchiveError`，界面因此能区分"仍有工作在跑"的拒绝与会话缺失或载体故障，并提议停止这些工作。
 
-`getMode({ workspaceId })` 读取已提交的 `WorkspaceModeConfig`；`setMode({ workspaceId, mode, expectedRevision }, signal)` 通过已注册的运行时提供者变更未锁定的 Workspace。两个方法均检查 Workspace 所有权，变更在排队后及持久化决策前重新检查捕获的调用者。版本过期、永久锁定、提供者缺失或待恢复操作均返回结构化业务错误。每个 `WorkspaceView`，包括创建响应和 follow 帧，都携带 `modeConfig`。Client 独立于行时间戳比较模式版本，因此延迟的一元响应和替换基线不会恢复旧模式元数据。`IWorkspaces` 门面提供 `getMode` 和 `setMode`；`WorkspaceModeCommandError.rpcError` 保留 Host 错误详情。[模式协调](../../workspace/workspace/README.zh.md#workspace-modes) 定义运行时与恢复语义。
+`getMode({ workspaceId })` 读取已提交的 `WorkspaceModeConfig` 和当前运行时支持的模式。游客和登录用户作为工作区所有者时可看到同样的模式选项。`setMode({ workspaceId, mode, expectedRevision }, signal)` 通过已注册的运行时提供者变更未锁定的 Workspace。两个方法均检查 Workspace 所有权，变更在排队后及持久化决策前重新检查捕获的调用者。版本过期、永久锁定、提供者缺失或待恢复操作均返回结构化业务错误。每个 `WorkspaceView`，包括创建响应和 follow 帧，都携带 `modeConfig`。Client 独立于行时间戳比较模式版本，因此延迟的一元响应和替换基线不会恢复旧模式元数据。`IWorkspaces` 门面提供 `getMode` 和 `setMode`；`WorkspaceModeCommandError.rpcError` 保留 Host 错误详情。[模式协调](../../workspace/workspace/README.zh.md#workspace-modes) 定义运行时与恢复语义。
 
 <a id="first-use-workspace"></a>
 ### 首次使用工作区

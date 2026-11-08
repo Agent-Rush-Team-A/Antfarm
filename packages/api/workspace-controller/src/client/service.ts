@@ -4,7 +4,7 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
 import type { WorkspaceId, WorkspaceMode, WorkspaceModeConfig } from '@deepseek-ai/dsh-workspace/types'
-import type { WorkspaceView } from '../types.ts'
+import type { WorkspaceModeOptionsValue, WorkspaceView } from '../types.ts'
 import type { ClientWorkspaceModel, WorkspaceSnapshot } from './model.ts'
 
 /** Structured create failure for callers that distinguish Host business errors. */
@@ -57,9 +57,9 @@ export interface IWorkspaces {
   /**
    * Read mode metadata without replacing a newer accepted revision.
    * @param workspaceId - Target Workspace.
-   * @returns latest accepted mode metadata.
+   * @returns Latest accepted mode metadata and available modes.
    */
-  getMode(workspaceId: WorkspaceId): Promise<WorkspaceModeConfig>
+  getMode(workspaceId: WorkspaceId): Promise<WorkspaceModeConfig & Pick<WorkspaceModeOptionsValue, 'availableModes'>>
   /**
    * Change an unlocked Workspace mode and retain the latest accepted revision.
    * @param workspaceId - Target Workspace.
@@ -152,10 +152,10 @@ export class WorkspaceController extends Service implements IWorkspaces {
     this.list = model
   }
 
-  async getMode(workspaceId: WorkspaceId): Promise<WorkspaceModeConfig> {
+  async getMode(workspaceId: WorkspaceId): Promise<WorkspaceModeConfig & Pick<WorkspaceModeOptionsValue, 'availableModes'>> {
     const result = await this.model.getMode(workspaceId)
     if (!result.ok) throw new WorkspaceModeCommandError(result.error)
-    return result.value.config
+    return { ...result.value.config, availableModes: result.value.availableModes }
   }
 
   async setMode(
