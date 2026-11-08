@@ -10,9 +10,9 @@ Vultr Agent Rush Hackathon · Blast Radius Zero · 基于 [DeepSeek Harness](htt
 
 [English](README.md) | 中文
 
-[**体验 Antfarm**](#try-antfarm) · [演示录屏](https://github.com/Agent-Rush-Team-A/Antfarm/pull/59) · [工作原理](#how-it-works) · [自行部署](#quick-start)
+[**体验 Antfarm**](#try-antfarm) · [演示录屏](./assets/hackathon/antfarm.mp4) · [工作原理](#how-it-works) · [自行部署](#quick-start)
 
-[![Antfarm 访客会话执行真实任务并下载结果](https://github.com/user-attachments/assets/4eeb423c-8394-41de-a12c-0f852027b9ab?readme=1)](https://github.com/Agent-Rush-Team-A/Antfarm/pull/59)
+[![Antfarm 访客会话执行真实任务并下载结果](https://github.com/user-attachments/assets/4eeb423c-8394-41de-a12c-0f852027b9ab?readme=1)](./assets/hackathon/antfarm.mp4)
 
 <sub>真实 Vultr 推理 · 单会话 Docker · 可下载的成果文件 · 录屏已加速</sub>
 

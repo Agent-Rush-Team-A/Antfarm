@@ -10,9 +10,9 @@ Vultr Agent Rush Hackathon · Blast Radius Zero · Built on [DeepSeek Harness](h
 
 English | [中文](README.zh.md)
 
-[**Try Antfarm**](#try-antfarm) · [Recorded demo](https://github.com/Agent-Rush-Team-A/Antfarm/pull/59) · [How it works](#how-it-works) · [Self-host](#quick-start)
+[**Try Antfarm**](#try-antfarm) · [Recorded demo](./assets/hackathon/antfarm.mp4) · [How it works](#how-it-works) · [Self-host](#quick-start)
 
-[![Antfarm guest session running a real task and downloading the result](https://github.com/user-attachments/assets/4eeb423c-8394-41de-a12c-0f852027b9ab?readme=1)](https://github.com/Agent-Rush-Team-A/Antfarm/pull/59)
+[![Antfarm guest session running a real task and downloading the result](https://github.com/user-attachments/assets/4eeb423c-8394-41de-a12c-0f852027b9ab?readme=1)](./assets/hackathon/antfarm.mp4)
 
 <sub>Real Vultr inference · Single-session Docker · Downloadable results · Accelerated playback</sub>
 
