@@ -764,7 +764,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY || notReady.length > 0)('web smoke
   it('cold start: loading page settles into the three-column frame', async () => {
     onTestFailed(() => saveFailureShot(page, 'w5-cold-start'))
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-    expect(await page.locator('text=Failed to load plugins').count()).toBe(0)
+    expect(await page.locator('text=Antfarm could not start').count()).toBe(0)
     expect(bootWarnings).toEqual([])
     const template = await page.locator('[class*="frame"]').evaluate(el => getComputedStyle(el).gridTemplateColumns)
     expect(template.split(' ').length).toBe(3)

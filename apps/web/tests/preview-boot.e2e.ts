@@ -337,7 +337,7 @@ async function bootPreview(site: Site, manifest: ImageManifest, browser: Browser
       SNAPSHOT_MODE,
     )
     await page.getByRole('button', { name: 'Start Preview' }).click()
-    await page.getByText('Loading plugins…', { exact: true }).waitFor({ timeout: 10_000 })
+    await page.getByText('Preparing Antfarm…', { exact: true }).waitFor({ timeout: 10_000 })
     const bootLine = await within(treeActive, BOOT_TIMEOUT_MS, `preview boot: the worker never reported "${TREE_ACTIVE}"`)
     // The activated tree ran bodies lowered against the contract this
     // checkout's packer emits; a dist built before a contract change would

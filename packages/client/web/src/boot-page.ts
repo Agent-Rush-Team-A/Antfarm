@@ -4,6 +4,7 @@
  * @module @deepseek-ai/dsh-client-web/src/boot-page
  */
 import type { LoaderEntryState } from './loader-status.ts'
+import { bootCopy, type BootCopy } from './boot-copy.ts'
 import css from './boot-page.module.css'
 
 /** Create a div with one module class and optional text. */
@@ -21,6 +22,7 @@ export class BootPage {
   private readonly wordmark: HTMLDivElement
   private readonly spinner: HTMLDivElement
   private readonly hint: HTMLDivElement
+  private readonly copy: BootCopy
   private readonly states = new Map<string, LoaderEntryState>()
   private readonly active = new Set<string>()
   private total = 0
@@ -31,13 +33,27 @@ export class BootPage {
    * @param container - Application mount point.
    */
   constructor(container: HTMLElement) {
+    this.copy = bootCopy(container.ownerDocument.documentElement.lang)
     this.root = div(css.boot)
     this.root.dataset.dshBoot = ''
     this.card = div(css.card)
-    this.wordmark = div(css.wordmark, 'HARNESS')
+    this.wordmark = div(css.wordmark, this.copy.brand)
     this.spinner = div(css.spinner)
     this.spinner.dataset.dshBootSpinner = ''
-    this.hint = div(css.hint, 'Loading plugins…')
+    this.spinner.setAttribute('role', 'progressbar')
+    this.spinner.setAttribute('aria-label', this.copy.progress)
+    this.spinner.setAttribute('aria-valuemin', '0')
+    this.spinner.setAttribute('aria-valuemax', '100')
+    const ant = div(css.ant)
+    ant.dataset.dshBootAnt = ''
+    ant.setAttribute('aria-hidden', 'true')
+    for (const position of [css.frontFar, css.middleFar, css.rearFar, css.frontNear, css.middleNear, css.rearNear]) {
+      ant.append(div(`${css.leg} ${position}`))
+    }
+    ant.append(div(css.abdomen), div(css.thorax), div(css.head),
+      div(`${css.antenna} ${css.antennaFar}`), div(`${css.antenna} ${css.antennaNear}`))
+    this.spinner.append(div(css.trail), ant, div(css.progress))
+    this.hint = div(css.hint, this.copy.loading)
     this.card.append(this.wordmark, this.spinner, this.hint)
     this.root.append(this.card)
     container.append(this.root)
@@ -89,15 +105,17 @@ export class BootPage {
       return
     }
     const report = div(css.failed)
-    report.append(div(css.failedTitle, 'Failed to load plugins'))
+    report.append(div(css.failedTitle, this.copy.failed))
     for (const id of failed) report.append(div(css.failedItem, id))
     if (this.failure !== undefined) report.append(div(css.failedItem, this.failure))
     this.card.replaceChildren(this.wordmark, report)
   }
 
-  /** Grow the rotating arc monotonically as loader entries activate. */
+  /** Update visible and accessible progress as loader entries activate. */
   private updateProgress(): void {
     const ratio = this.total === 0 ? 0 : Math.min(this.active.size / this.total, 1)
-    this.spinner.style.setProperty('--dsh-boot-arc', `${String(Math.round(72 + ratio * 216))}deg`)
+    const percentage = String(Math.round(ratio * 100))
+    this.spinner.style.setProperty('--dsh-boot-progress', `${percentage}%`)
+    this.spinner.setAttribute('aria-valuenow', percentage)
   }
 }

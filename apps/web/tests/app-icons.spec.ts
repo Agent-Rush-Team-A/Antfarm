@@ -16,17 +16,17 @@ describe('web install icons', () => {
     }
   })
 
-  it('crops the desktop shadow and scales only the maskable artwork', async () => {
+  it('uses the Web ant on an opaque tile and scales only the maskable artwork', async () => {
     const source = await readFile(TILE_SOURCE, 'utf8')
     const tile = tileDocument(source)
     const maskable = maskableDocument(source)
-    expect(tile).toContain('viewBox="40 32 1024 1024"')
-    expect(tile).not.toContain('<g filter="url(#filter0_d_1637_371)">')
+    expect(tile).toContain('viewBox="0 0 64 64"')
+    expect(tile).toContain('<rect width="64" height="64" fill="#ffffff"/>')
     expect(tile).not.toContain(`scale(${MASKABLE_ARTWORK_SCALE})`)
-    expect(tile).toContain('<g filter="url(#filter1_ddi_1637_371)">')
+    expect(tile).toContain('<g id="app-artwork">')
     expect(tile).toContain(source.match(/<path\b[^>]*>/u)![0])
-    expect(tile).toContain(source.match(/<defs>[\s\S]*<\/defs>/u)![0])
-    expect(maskable).toContain(`transform="translate(552 544) scale(${MASKABLE_ARTWORK_SCALE}) translate(-552 -544)"`)
+    expect(tile).toContain(source.match(/<ellipse\b[^>]*>/u)![0])
+    expect(maskable).toContain(`transform="translate(32 32) scale(${MASKABLE_ARTWORK_SCALE}) translate(-32 -32)"`)
   })
 
   it('rejects non-PNG bytes and incomplete image headers', () => {
@@ -36,8 +36,7 @@ describe('web install icons', () => {
 
   it('fails loudly on a source without the tile it transforms', () => {
     expect(() => tileDocument('')).toThrow(/no root element/)
-    expect(() => tileDocument('<svg></svg>')).toThrow(/no shadowed tile group/)
-    expect(() => maskableDocument('<svg><g filter="url(#filter0_d_1637_371)"></g></svg>'))
-      .toThrow(/no artwork group/)
+    expect(() => tileDocument('<svg></svg>')).toThrow(/square viewBox/)
+    expect(() => maskableDocument('<svg viewBox="0 0 64 64">')).toThrow(/no closing SVG element/)
   })
 })
