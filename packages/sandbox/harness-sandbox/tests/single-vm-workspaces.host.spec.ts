@@ -53,7 +53,7 @@ async function setup(configuredTaskIds = taskIds) {
   }))
   const records = new Map(scopes.map(scope => [scope.workspaceId, { path: scope.project }]))
   const config = { projectRoot, mountPoint, mountTag, workspaceRoot, stateRoot, taskIds: configuredTaskIds }
-  const provider = () => new SingleVmWorkspaces(config, id => records.get(id))
+  const provider = (overrides: Partial<typeof config> = {}) => new SingleVmWorkspaces({ ...config, ...overrides }, id => records.get(id))
   const backend = {
     status: vi.fn(async () => ({ state: 'closed' as const })),
     close: vi.fn(async () => ({ state: 'closed' as const })),
@@ -81,7 +81,7 @@ async function setup(configuredTaskIds = taskIds) {
   }, new Map<WorkspaceMode, WorkspaceModeTarget>([
     ['multi-docker', { execution: backend, files: localFiles }], ['single-vm', { execution: backend, files: vfs.files }],
   ]))
-  return { scopes, provider, runtime, route, change, signal, workspaceRoot, stateRoot, mountRecord,
+  return { scopes, provider, runtime, route, change, signal, workspaceRoot, stateRoot, mountPoint, mountRecord, records,
     setMount(value: string) { mountInfo = value } }
 }
 
@@ -230,5 +230,83 @@ describe.runIf(process.platform === 'linux' && process.getuid?.() !== 0 && taskI
     await f.runtime(restarted).settle(entering, 'commit', f.signal)
     expect(await readFile(join(restarted.resolve(scope).root, 'input.csv'), 'utf8')).toBe('keep original')
     await f.runtime(f.provider()).settle(entering, 'commit', f.signal)
+  })
+
+  test('rejects invalid VFS deployment paths, public state and unreserved task groups', async () => {
+    const f = await setup()
+    const uid = vi.spyOn(process, 'getuid').mockReturnValue(0)
+    try { expect(() => f.provider()).toThrow('non-root Linux Web process') } finally { uid.mockRestore() }
+    expect(() => f.provider({ mountPoint: 'relative' })).toThrow('canonical absolute paths')
+    expect(() => f.provider({ workspaceRoot: join(f.mountPoint, 'nested', 'workspaces') })).toThrow('separate registration')
+    expect(() => f.provider({ stateRoot: join(f.mountPoint, 'identities') })).toThrow('separate registration')
+    expect(() => f.provider({ mountTag: 'untrusted' })).toThrow('separate registration')
+    for (const taskIds of [[], [1.5], [0], [0xffff_ffff], [process.getuid!()], [process.getgid!()], [0xffff_fffe]]) {
+      expect(() => f.provider({ taskIds })).toThrow('reserved supplementary groups')
+    }
+    await mkdir(f.stateRoot)
+    await chmod(f.stateRoot, 0o755)
+    expect(() => f.provider()).toThrow('storage must be private')
+    await chmod(f.stateRoot, 0o700)
+    const vfs = f.provider()
+    expect(() => { vfs.assertOutside(f.stateRoot) }).not.toThrow()
+    expect(() => { vfs.assertOutside(f.workspaceRoot) }).toThrow('outside workspace mounts')
+    expect(() => { vfs.assertOutside(f.scopes[0]!.project) }).toThrow('outside workspace mounts')
+  })
+
+  test('revokes access when the registration, mount or VFS directory changes', async () => {
+    const f = await setup()
+    const [scope] = f.scopes
+    if (scope === undefined) throw new Error('Missing test workspace')
+    const vfs = f.provider()
+    expect(() => vfs.resolve(scope)).toThrow('no bound task identity')
+    expect(() => vfs.resolve({ ...scope, workspaceId: brandString<WorkspaceId>('unregistered') })).toThrow('registered direct child')
+    const aborted = AbortSignal.abort(new Error('Admission revoked'))
+    expect(() => vfs.resolve({ ...scope, signal: aborted })).toThrow('Admission revoked')
+    await chmod(f.workspaceRoot, 0o700)
+    expect(() => vfs.resolve(scope)).toThrow('workspace parent must belong to Web with mode 0711')
+    await chmod(f.workspaceRoot, 0o711)
+    await chmod(f.mountPoint, 0o775)
+    expect(() => vfs.resolve(scope)).toThrow('volume root must be protected')
+    await chmod(f.mountPoint, 0o755)
+    f.setMount(f.mountRecord() + f.mountRecord(undefined, '/', '25'))
+    expect(() => vfs.resolve(scope)).toThrow('expected virtiofs volume')
+    f.setMount('')
+    expect(() => vfs.resolve(scope)).toThrow('expected virtiofs volume')
+    f.setMount(f.mountRecord())
+
+    const change = f.change(scope)
+    await f.runtime(vfs).prepare(change, f.signal)
+    await f.runtime(vfs).settle(change, 'commit', f.signal)
+    const directory = vfs.resolve(scope)
+    expect(() => f.provider({ taskIds: taskIds.slice(1) }).resolve(scope)).toThrow('identity conflicts')
+    const original = f.records.get(scope.workspaceId)!
+    f.records.set(scope.workspaceId, { path: scope.project })
+    expect(() => { directory.assertCurrent() }).toThrow('registration changed')
+    f.records.set(scope.workspaceId, original)
+    await rename(directory.root, directory.root + '.backup')
+    expect(() => { directory.assertCurrent() }).toThrow('workspace directory changed')
+    expect(() => vfs.resolve(scope)).toThrow('workspace directory is missing')
+    await expect(f.runtime(vfs).prepare(f.change(scope, 'multi-docker'), f.signal)).rejects.toThrow('source directory is missing')
+    await symlink(directory.root + '.backup', directory.root)
+    expect(() => vfs.resolve(scope)).toThrow('not a canonical directory')
+  })
+
+  test('keeps a reserved identity quarantined if rollback finds a live VFS directory', async () => {
+    const f = await setup(taskIds.slice(0, 1))
+    const [scope, peer] = f.scopes
+    if (scope === undefined || peer === undefined) throw new Error('Missing test workspace')
+    await writeFile(join(scope.project, 'input.csv'), 'keep original')
+    const change = f.change(scope)
+    await f.runtime(f.provider()).prepare(change, f.signal)
+    const leaf = basename(scope.project)
+    const stage = (await readdir(f.workspaceRoot)).find(name => name.startsWith('.' + leaf + '.mode-'))
+    if (stage === undefined) throw new Error('Missing staged copy')
+    const live = join(f.workspaceRoot, leaf)
+    await rename(join(f.workspaceRoot, stage), live)
+
+    const restarted = f.runtime(f.provider())
+    await expect(restarted.settle(change, 'rollback', f.signal)).rejects.toThrow('Workspace mode rollback did not finish')
+    expect(await readFile(join(live, 'input.csv'), 'utf8')).toBe('keep original')
+    await expect(restarted.prepare(f.change(peer), f.signal)).rejects.toThrow('No reserved single VM task identity')
   })
 })

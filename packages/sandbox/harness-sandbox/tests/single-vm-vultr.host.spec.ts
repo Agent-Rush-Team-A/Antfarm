@@ -22,7 +22,7 @@ const settings = { deploymentId: 'test', region: 'nrt', plan: 'vc2-1c-1gb', osId
 
 type Fault = 'region' | 'attachment' | 'wrong-instance' | 'guest-readiness' | 'mount' | 'permission' | 'handshake' | 'create-hidden'
   | 'create-rejected' | 'create-limited' | 'attach-rejected' | 'attach-limited' | 'attach-not-found' | 'attachment-timeout'
-  | 'detach-timeout' | 'detach-applied' | 'delete-timeout' | 'delete-applied'
+  | 'mount-tag' | 'helper-root' | 'helper-generation' | 'detach-timeout' | 'detach-applied' | 'delete-timeout' | 'delete-applied'
 
 function fixture(fault?: Fault) {
   const disk = new Map<WorkspaceId, string>()
@@ -40,6 +40,7 @@ function fixture(fault?: Fault) {
   const requests: string[] = []
   let instance: VultrInstance | undefined
   let attached = false
+  let mountTag = 113849250
   let visible = true
   let observedAttachment = 0
   let created = 0
@@ -104,7 +105,8 @@ function fixture(fault?: Fault) {
         return fault === 'detach-applied' ? loseResponse() : new Response(null, { status: 204 })
       }
       if (!attached || method === 'GET' && record().state === 'starting' && ++observedAttachment === 1) return new Response(null, { status: 404 })
-      return Response.json({ vfs_id: fault === 'attachment' ? otherVolume : volumeId, target_id: instance?.id, state: 'ATTACHED', mount_tag: 113849250 })
+      return Response.json({ vfs_id: fault === 'attachment' ? otherVolume : volumeId, target_id: instance?.id,
+        state: 'ATTACHED', mount_tag: fault === 'mount-tag' ? null : mountTag })
     }
     throw new Error('Unexpected request: ' + method + ' ' + path)
   }
@@ -121,7 +123,8 @@ function fixture(fault?: Fault) {
     expect(record().phase).toBe('mounting')
     if (fault === 'mount') throw new Error('Wrong guest volume path')
     if (fault === 'permission') throw new Error('Task write probe denied')
-    return { host: 'fixture', launch: { kind: 'executable' as const }, helper: '/helper', helperHash: 'a'.repeat(64), workspace: '/workspace' }
+    return { host: 'fixture', launch: { kind: 'executable' as const }, helper: '/helper', helperHash: 'a'.repeat(64),
+      workspace: fault === 'helper-root' ? '/unexpected' : '/workspace' }
   })
   const retire = vi.fn(async () => { requests.push('SSH retire') })
   const entered = Promise.withResolvers<undefined>()
@@ -138,7 +141,7 @@ function fixture(fault?: Fault) {
       entered.resolve(undefined)
       await handshake.promise
       if (fault === 'handshake') throw new Error('Helper handshake rejected')
-      return { state: 'running', containerId: generation }
+      return { state: 'running', containerId: fault === 'helper-generation' ? stale : generation }
     }),
     status: vi.fn(async (): Promise<RunnerSandboxStatus> => ({ state: 'running', containerId: generation })),
     execute: vi.fn(), files: vi.fn(), cancel: vi.fn(), dispose: vi.fn(() => Promise.resolve()),
@@ -148,8 +151,10 @@ function fixture(fault?: Fault) {
   const report = vi.fn()
   const make = () =>
     new SingleVmVultrBackend(settings, api, records, { resolve: () => directory }, { bootstrap, connect, retire }, runtime, report)
-  return { make, record, records, requests, directory, connect, retire, runtime, report, entered, handshake,
+  return { make, record, records, requests, directory, api, connect, retire, runtime, report, entered, handshake,
     setFault(value?: Fault) { fault = value },
+    setMountTag(value: number) { mountTag = value },
+    hideInstance() { visible = false },
     revealInstance() { visible = true },
     revealAttachment() { attached = true },
   }
@@ -158,6 +163,9 @@ function fixture(fault?: Fault) {
 test('reserves capacity and one durable generation through shared memory, VFS and helper readiness', async () => {
   const f = fixture()
   const backend = f.make()
+  await expect(backend.open(workspaceId, project)).rejects.toMatchObject({ code: 'runner_unavailable' })
+  await expect(backend.close(workspaceId)).resolves.toEqual({ state: 'closed' })
+  await expect(backend.closeTask(workspaceId, stale)).resolves.toEqual({ state: 'closed' })
   await backend.initialize()
   const first = backend.open(workspaceId, project)
   const duplicate = backend.open(workspaceId, project)
@@ -167,6 +175,8 @@ test('reserves capacity and one durable generation through shared memory, VFS an
     const identity = executionIdentity.parse({ executionId: 'task-one', expectedContainerId: generation })
     const execution = executionRequest.parse({ ...identity, command: 'pwd', workdir: '.', timeoutMs: 1000 })
     await expect(backend.status(workspaceId)).resolves.toEqual({ state: 'starting' })
+    await expect(backend.closeTask(workspaceId, generation)).rejects.toMatchObject({ code: 'sandbox_closing' })
+    await expect(backend.open(workspaceId, '/registered/replaced')).rejects.toMatchObject({ code: 'sandbox_workspace_conflict' })
     expect(() => { void backend.execute(workspaceId, execution) }).toThrow('sandbox_workspace_conflict')
     expect(() => { void backend.files(workspaceId, generation) }).toThrow('sandbox_workspace_conflict')
     await expect(backend.open(secondId, '/registered/ws-2')).rejects.toMatchObject({ code: 'sandbox_capacity' })
@@ -175,6 +185,8 @@ test('reserves capacity and one durable generation through shared memory, VFS an
     await expect(first).resolves.toEqual(ready)
     await expect(duplicate).resolves.toEqual(ready)
     await expect(backend.open(workspaceId, project)).resolves.toEqual(ready)
+    f.runtime.status.mockResolvedValueOnce({ state: 'running', containerId: stale })
+    await expect(backend.status(workspaceId)).resolves.toEqual({ state: 'cleanup_required' })
     expect(f.requests.filter(request => request === 'POST /instances')).toHaveLength(1)
     expect(f.requests.filter(request => request.startsWith('PUT '))).toHaveLength(1)
     expect(() => { void backend.execute(workspaceId, { ...execution, expectedContainerId: stale }) }).toThrow('sandbox_workspace_conflict')
@@ -191,6 +203,51 @@ test('reserves capacity and one durable generation through shared memory, VFS an
   }
 })
 
+test('waits for pending instance and volume states before starting the pinned helper', async () => {
+  const f = fixture()
+  f.handshake.resolve(undefined)
+  const getInstance = f.api.instance.bind(f.api)
+  const observeInstance = vi.spyOn(f.api, 'instance').mockImplementationOnce(async (id, signal) => {
+    const vm = await getInstance(id, signal)
+    if (vm === undefined) throw new Error('Fixture instance was not created')
+    return { ...vm, status: 'pending', main_ip: '0.0.0.0' }
+  })
+  const getAttachment = f.api.attachment.bind(f.api)
+  const observeAttachment = vi.spyOn(f.api, 'attachment').mockImplementationOnce(async (volume, id, signal) => {
+    await getAttachment(volume, id, signal)
+    return { vfs_id: volume, target_id: id, state: 'PENDING' }
+  })
+  const backend = f.make()
+  try {
+    await backend.initialize()
+    const ready = await backend.open(workspaceId, project)
+    expect(observeInstance.mock.calls.length).toBeGreaterThanOrEqual(3)
+    expect(observeAttachment).toHaveBeenCalledTimes(2)
+    expect(f.runtime.open).toHaveBeenCalledOnce()
+    await backend.closeTask(workspaceId, ready.containerId)
+  } finally { await backend.dispose() }
+})
+
+test('retains an allocation if the VFS Mount Tag changes and reclaims it after the original tag returns', async () => {
+  const f = fixture()
+  f.handshake.resolve(undefined)
+  const backend = f.make()
+  try {
+    await backend.initialize()
+    const ready = await backend.open(workspaceId, project)
+    f.setMountTag(113849251)
+    await expect(backend.closeTask(workspaceId, ready.containerId)).rejects.toMatchObject({
+      code: 'sandbox_cleanup_required', cause: { message: 'Original VFS Mount Tag has changed' },
+    })
+    expect(f.record().cleanup).toBe('unmounted')
+    expect(f.requests.some(value => value.startsWith('DELETE '))).toBe(false)
+    f.setMountTag(113849250)
+    await backend.recoverTask(workspaceId)
+    expect(f.retire).toHaveBeenCalledOnce()
+    await expect(backend.status(workspaceId)).resolves.toEqual({ state: 'closed' })
+  } finally { await backend.dispose() }
+})
+
 test('rejects an out-of-region volume before creating an allocation record or requesting an instance', async () => {
   const f = fixture('region')
   const backend = f.make()
@@ -204,8 +261,9 @@ test('rejects an out-of-region volume before creating an allocation record or re
 
 test.each([
   ['wrong-instance', 'booting', 'not-requested', true], ['attachment', 'attaching', 'requested', true],
-  ['guest-readiness', 'attaching', 'attached', false],
+  ['guest-readiness', 'attaching', 'attached', false], ['mount-tag', 'attaching', 'requested', false],
   ['mount', 'mounting', 'attached', false], ['permission', 'mounting', 'attached', false], ['handshake', 'handshake', 'attached', false],
+  ['helper-root', 'mounting', 'attached', false], ['helper-generation', 'handshake', 'attached', false],
   ['attachment-timeout', 'attaching', 'requested', true],
 ] as const)('handles %s startup failure without accepting commands', async (fault, phase, attachment, retained) => {
   const f = fixture(fault)
@@ -230,6 +288,25 @@ test.each([
     expect(f.requests.filter(request => request.startsWith('PUT '))).toHaveLength(1)
   }
   await backend.dispose()
+})
+
+test('retains cleanup evidence when the original guest disappears before synchronization', async () => {
+  const f = fixture()
+  f.handshake.resolve(undefined)
+  const backend = f.make()
+  try {
+    await backend.initialize()
+    const ready = await backend.open(workspaceId, project)
+    f.hideInstance()
+    await expect(backend.closeTask(workspaceId, ready.containerId)).rejects.toMatchObject({
+      code: 'sandbox_cleanup_required', cause: { message: 'Guest disappeared before workspace synchronization was confirmed' },
+    })
+    expect(f.record()).toMatchObject({ cleanup: 'draining', generation: ready.containerId })
+    expect(f.requests.some(value => value.startsWith('DELETE '))).toBe(false)
+    f.revealInstance()
+    await backend.recoverTask(workspaceId)
+    expect(f.retire).toHaveBeenCalledOnce()
+  } finally { await backend.dispose() }
 })
 
 test('retains an unanswered create by unique label across restart and charges it against capacity', async () => {
