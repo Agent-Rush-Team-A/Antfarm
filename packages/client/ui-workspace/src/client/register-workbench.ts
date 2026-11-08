@@ -3,7 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { UiWorkspace } from './navigation.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
-import { Workbench, WorkbenchBrand, WorkbenchFiles, WorkbenchHero, WorkbenchHeroMark, WorkbenchIcon, WorkbenchMark, type WorkbenchInjected, type WorkbenchFilesInjected } from './Workbench.tsx'
+import { Workbench, WorkbenchAccountDock, WorkbenchBrand, WorkbenchFiles, WorkbenchHero, WorkbenchHeroMark, WorkbenchIcon, WorkbenchMark, type WorkbenchInjected, type WorkbenchFilesInjected } from './Workbench.tsx'
 import { en, zh } from './workbench-copy.ts'
 import { fileFailureKey } from './file-failures.ts'
 
@@ -50,6 +50,9 @@ function registerWorkbenchViews(ctx: Context, navigation: WorkbenchNavigation): 
     name: 'sidebar.panellist', id: panelId, order: -100, label: () => t('dashboard'), locale: 'antfarm',
   }, WorkbenchIcon))
   ctx.slots.inject('sidebar.brand.name', () => ctx.slots.register({ name: 'sidebar.brand.name', locale: 'antfarm' }, WorkbenchBrand))
+  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
+    name: 'sidebar.footer.action', id: 'antfarm-account', order: 100,
+  }, WorkbenchAccountDock))
   ctx.slots.inject('sidebar.brand.mark', () => ctx.slots.register({ name: 'sidebar.brand.mark' }, WorkbenchMark))
   ctx.slots.inject('conversation.hero.brand.name', () => ctx.slots.register({ name: 'conversation.hero.brand.name', locale: 'antfarm' }, WorkbenchHero))
   ctx.slots.inject('conversation.hero.brand.mark', () => ctx.slots.register({ name: 'conversation.hero.brand.mark' }, WorkbenchHeroMark))

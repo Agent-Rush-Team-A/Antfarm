@@ -67,6 +67,7 @@ async function bench(language: 'en' | 'zh' = 'en') {
     'sidebar.panellist': { kind: 'list', scope: 'root' },
     'sidebar.brand.name': { kind: 'single', scope: 'root' },
     'sidebar.brand.mark': { kind: 'single', scope: 'root' },
+    'sidebar.footer.action': { kind: 'list', scope: 'root' },
     'conversation.hero.brand.name': { kind: 'single', scope: 'root' },
     'conversation.hero.brand.mark': { kind: 'single', scope: 'root' },
     'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session', inject: { hooks: {
@@ -148,7 +149,7 @@ it('removes the workbench views and file tab when its fiber is disposed', async 
   expect(b.runtime.slots.entries('main')).toHaveLength(1)
   await b.feature.dispose()
   expect(b.tabs.get('workspace-files')).toBeUndefined()
-  for (const slot of ['main', 'sidebar.panellist', 'sidebar.brand.name', 'sidebar.brand.mark',
+  for (const slot of ['main', 'sidebar.panellist', 'sidebar.brand.name', 'sidebar.brand.mark', 'sidebar.footer.action',
     'conversation.hero.brand.name', 'conversation.hero.brand.mark', 'sidebar.right.pane.tab'] as const) {
     expect(b.runtime.slots.entries(slot)).toHaveLength(0)
   }

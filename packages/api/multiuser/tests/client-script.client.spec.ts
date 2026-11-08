@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 /** Account UI behavior before and after the application adopts its browser locale. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { runInThisContext } from 'node:vm'
 import { MULTIUSER_CLIENT_SCRIPT, MULTIUSER_CLIENT_STYLE } from '../src/client-script.ts'
 
 const storageKey = 'dsh.locale.preference'
@@ -27,7 +28,7 @@ function boot(options: {
   const style = document.createElement('style')
   style.textContent = MULTIUSER_CLIENT_STYLE
   document.head.append(style)
-  new Function(MULTIUSER_CLIENT_SCRIPT)()
+  runInThisContext(MULTIUSER_CLIENT_SCRIPT)
 }
 
 function selector(): HTMLSelectElement {
@@ -39,6 +40,29 @@ function selectLanguage(value: string): void {
 }
 
 describe('standalone account presentation', () => {
+  it('follows the sidebar host and releases its placement observer on page exit', async () => {
+    const dock = document.createElement('div')
+    dock.setAttribute('data-dsh-account-dock', '')
+    document.body.appendChild(dock)
+    boot({ authenticated: true })
+    const badge = document.querySelector('.dsh-account')!
+    expect(badge.parentNode).toBe(dock)
+    expect(badge.classList.contains('dsh-account-docked')).toBe(true)
+    dock.remove()
+    await Promise.resolve()
+    expect(badge.parentNode).toBe(document.body)
+    expect(badge.classList.contains('dsh-account-docked')).toBe(false)
+    const replacement = document.createElement('div')
+    replacement.setAttribute('data-dsh-account-dock', '')
+    document.body.appendChild(replacement)
+    await Promise.resolve()
+    expect(badge.parentNode).toBe(replacement)
+    window.dispatchEvent(new Event('pagehide'))
+    replacement.remove()
+    await Promise.resolve()
+    expect(badge.isConnected).toBe(false)
+  })
+
   beforeEach(() => {
     document.head.innerHTML = ''
     document.body.innerHTML = ''
@@ -82,9 +106,9 @@ describe('standalone account presentation', () => {
   })
 
   it.each([
-    ['en-US', 'Try as a guest →', 'en'],
-    ['zh-CN', '游客体验 →', 'zh-CN'],
-    ['fr-FR', 'Try as a guest →', 'en'],
+    ['en-US', 'Try it as a guest', 'en'],
+    ['zh-CN', '游客体验', 'zh-CN'],
+    ['fr-FR', 'Try it as a guest', 'en'],
   ])('uses the browser locale without a configured preference: %s', (browserLocale, button, lang) => {
     boot({ browserLocale, browserPersistence: false })
     expect(document.getElementById('dsh-guest-submit')!.textContent).toBe(button)
@@ -121,18 +145,19 @@ describe('standalone account presentation', () => {
     const password = document.getElementById('dsh-password') as HTMLInputElement
     username.value = 'reviewer'
     password.value = 'test-password'
-    const event = vi.fn()
+    const event = vi.fn<(event: Event) => void>()
     window.addEventListener('dsh:locale-preference', event)
     selectLanguage('zh')
     expect(username.value).toBe('reviewer')
     expect(password.value).toBe('test-password')
-    expect(document.getElementById('dsh-guest-submit')!.textContent).toBe('游客体验 →')
+    expect(document.getElementById('dsh-guest-submit')!.textContent).toBe('游客体验')
     expect(document.getElementById('dsh-login-submit')!.textContent).toBe('登录')
     expect(document.querySelector('details')!.open).toBe(false)
-    expect(event.mock.calls[0]![0].detail).toBe('zh')
+    expect(event.mock.calls[0]![0]).toMatchObject({ detail: 'zh' })
     selectLanguage('en')
-    expect(document.getElementById('dsh-guest-submit')!.textContent).toBe('Try as a guest →')
-    expect(document.querySelector('h2')!.textContent).toBe('A little help. A lot less busywork.')
+    expect(document.getElementById('dsh-guest-submit')!.textContent).toBe('Try it as a guest')
+    expect(document.querySelector('h1')!.textContent).toBe('From good to better')
+    expect(document.querySelector('.dsh-farm figcaption')!.textContent).toBe('Each workspace has its own execution environment. Your inputs and results stay in the workspace.')
   })
 
   it('posts an empty guest request and translates the retained error on language change', async () => {
@@ -148,7 +173,7 @@ describe('standalone account presentation', () => {
     expect(document.getElementById('dsh-guest-error')!.textContent).toBe('Too many attempts. Try again later.')
     selectLanguage('zh')
     expect(document.getElementById('dsh-guest-error')!.textContent).toBe('尝试次数过多，请稍后重试。')
-    expect(button.textContent).toBe('游客体验 →')
+    expect(button.textContent).toBe('游客体验')
   })
 
   it('translates a pending guest request and a subsequent busy response', async () => {
@@ -181,7 +206,7 @@ describe('standalone account presentation', () => {
     boot()
     selectLanguage('zh')
     expect(document.documentElement.lang).toBe('zh-CN')
-    expect(document.getElementById('dsh-guest-submit')!.textContent).toBe('游客体验 →')
+    expect(document.getElementById('dsh-guest-submit')!.textContent).toBe('游客体验')
   })
 
   it('opens ordinary sign-in without offering disabled guest access', () => {

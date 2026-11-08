@@ -36,7 +36,7 @@ pnpm dsh web --patch apps/cli/config/antfarm-web.patch.yml --patch apps/cli/conf
 
 ## 体验任务
 
-打开预览，选择 **Try as a guest**。应用会创建独立的游客身份，并签发 HttpOnly 登录 Cookie。每个游客只拥有自己的工作区和对话；浏览器不会要求游客输入密码或模型密钥。
+打开预览，选择 **Try it as a guest**（中文界面为 **游客体验**）。应用会创建独立的游客身份，并签发 HttpOnly 登录 Cookie。每个游客只拥有自己的工作区和对话；浏览器不会要求游客输入密码或模型密钥。
 
 选择销售示例，准备 `sales.csv` 和任务草稿，然后发送任务。Agent 会生成 Markdown 报告和 CSV 汇总。文件面板显示上传文件和生成成果。任务完成后下载成果，再继续对话，在新的执行环境中使用保留文件。选择项目简报示例可生成计划，也可以创建工作区并上传自己的文件。
 

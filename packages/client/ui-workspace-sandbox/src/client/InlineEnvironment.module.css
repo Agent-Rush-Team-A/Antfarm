@@ -1,8 +1,8 @@
-.panel { border: 1px solid var(--dsw-alias-border-l3); border-radius: 12px; padding: 16px; background: var(--dsw-alias-bg-layer-2); margin-bottom: 26px; }
-.heading { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
-.heading > svg { color: var(--dsw-alias-brand-primary); }
+.panel { border: 0.5px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-md); padding: 14px 16px; background: var(--dsw-alias-bg-layer-1); margin-bottom: 22px; }
+.heading { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 500; color: var(--dsw-alias-label-secondary); }
+.heading > svg { color: var(--af-sand, var(--dsw-alias-label-secondary)); }
 .heading > button { margin-left: auto; }
-.panel p { display: flex; align-items: center; gap: 7px; font-size: 13px; margin: 12px 0 9px; }
-.panel small { display: block; font-size: 12px; color: var(--dsw-alias-label-secondary); line-height: 1.7; }
-.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--dsw-alias-label-secondary); }
-.dot[data-running] { background: var(--dsw-alias-brand-primary); }
+.panel p { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; margin: 10px 0 6px; }
+.panel small { display: block; font-size: 12.5px; color: var(--dsw-alias-label-secondary); line-height: 1.6; }
+.dot { width: 7px; height: 7px; border-radius: 50%; corner-shape: round; box-sizing: border-box; border: 1.5px solid var(--dsw-alias-label-tertiary); }
+.dot[data-running] { border-color: var(--af-sand, var(--dsw-alias-state-success-primary)); background: var(--af-sand, var(--dsw-alias-state-success-primary)); }

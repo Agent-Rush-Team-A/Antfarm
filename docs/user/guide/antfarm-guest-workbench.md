@@ -36,7 +36,7 @@ Choose the Web port and listener through the existing deployment configuration. 
 
 ## Try a task
 
-Open the preview and choose **Try as a guest**. The application creates a separate visitor identity with an HttpOnly login cookie. Every visitor owns only their own workspaces and conversations; the browser does not ask visitors for a password or model key.
+Open the preview and choose **Try it as a guest**. The application creates a separate visitor identity with an HttpOnly login cookie. Every visitor owns only their own workspaces and conversations; the browser does not ask visitors for a password or model key.
 
 Choose the sales example to prepare `sales.csv` and a task draft, then send the task. The agent produces a Markdown report and CSV summary. The file panel shows uploaded files and generated results. Download a result after the task finishes, then continue the conversation to use the retained files in a fresh environment. Choose the project brief example for a plan, or create a workspace to upload your own files.
 

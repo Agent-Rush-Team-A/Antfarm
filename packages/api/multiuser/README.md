@@ -47,6 +47,8 @@ Tool execution is denied by default, including preset contributions. A trusted i
 
 Unauthenticated index requests redirect to the public `auth/sign-in` document relative to the index URL. Script references, login/logout requests and account refreshes preserve the deployment prefix; the browser derives the application root from the account script URL. Authenticated pages show the account and a logout control. Login changes refresh other tabs, and switching accounts clears browser-persisted application views before boot. When browser-local locale preferences are configured, the login page and account control offer English and Chinese, retain entered form values while switching languages, and follow the application document language. The public login document uses the same Host theme bootstrap as the application, including system dark mode. A failed logout stays visible and can be retried. Active Peers expire at the login deadline; authentication responses and personalized index documents are not cacheable.
 
+The Antfarm workbench hosts account controls in the sidebar footer; folding the sidebar hides them with that sidebar, while other compositions keep the floating account control.
+
 <a id="remote-access-policy"></a>
 ## Remote access policy
 
