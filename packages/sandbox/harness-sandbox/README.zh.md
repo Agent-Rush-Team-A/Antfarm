@@ -109,7 +109,7 @@ SSH 关闭只释放 helper 及其受管理进程，不关闭或删除 VM。[Vult
 | `maxOutputBytes` | `65536` | 保留的命令输出字节上限。 |
 | `graceMs` | `5000` | 受管进程终止宽限期。 |
 
-两种工作区 VM 模式按登记项目的目录名定位同一个 [VFS 工作区根](../../../team-docs/VULTR-VFS.md#执行-vm-的挂载和权限)下的文件，共用一个 UID/GID 池。提供方核对当前整卷挂载和 Mount Tag。首次切入 VM 模式时，在私有状态中预留身份，并以该组权限暂存完整文件副本。目录发布后，身份与工作区永久绑定；两种 VM 模式间切换保留该身份。回滚先清理暂存文件，再释放新预留的身份。网页直接从已验证的 VFS 目录上传、列表和下载，无需启动执行 VM。身份容量同时计入保留的工作区目录和活跃 VM；部署预留 128 个身份时，全部仍被绑定后便无法接纳新的绑定。
+两种工作区 VM 模式按登记项目的目录名定位同一个 [VFS 工作区根](../../../team-docs/VULTR-VFS.md#执行-vm-的挂载和权限)下的文件，共用一个 UID/GID 池。提供方核对当前整卷挂载和 Mount Tag。首次切入 VM 模式时，在私有状态中预留身份，并以该组权限暂存完整文件副本。目录发布后，身份与工作区永久绑定；两种 VM 模式间切换保留该身份。回滚先清理暂存文件，再释放新预留的身份。未归档的工作区可通过网页直接从已验证的 VFS 目录上传、列表和下载，无需启动执行 VM。身份容量同时计入保留的工作区目录和活跃 VM；部署预留 128 个身份时，全部仍被绑定后便无法接纳新的绑定。
 
 两种 VM 分配提供方在发送创建请求前保存原代次、标签和卷标识，核对实例归属和 Shared Memory Backing，再确认指定 VFS 的连接与 Mount Tag。固定主机密钥的 SSH 通道准备客体机整卷挂载和 `/workspace` 绑定，并以分配的任务用户运行探针。该代次的 helper 校验通过后才接纳命令和文本文件操作。中断的分配保留在私有状态中，占用容量直至回收结果得到确认。
 
@@ -273,7 +273,8 @@ VFS 模式切换在生成受总量限制的目录检查点前，先让源 VM 停
 - **模式组合** — 部署必须提供协调器及显式后端映射；已分发的 profile 不会自动启用 `./modes`。VM 模式需要经过共享文件系统验证的执行提供方。创建或删除结果不明时，提供方核实原资源前会阻止分配新 VM。
 - **能力** — Runner overlay 只暴露 Bash。SSH 文本文件需要单独的 `./files` 入口和绑定代次的后端访问。搜索、PowerShell、后台、终端、浏览器和间接工具仍须先完成隔离。Runner overlay 启用网页管理控件。
 - **旧云端保留** — 删除工作区登记不会移除独立快照提供方保留的快照或私有副本；部署运维负责已删除工作区的保留策略。其关闭后的下载副本仅保留普通文件和目录，符号链接及特殊条目仅保留在完整磁盘快照中。
-- **云端验收** — `DSH_VULTR_TEST_CONFIG` 为[可选真实云端 Loader 测试](tests/vultr-loader.e2e.ts)指定私有部署 JSON，通过 `pnpm exec vitest run --config vitest.e2e.config.ts packages/sandbox/harness-sandbox/tests/vultr-loader.e2e.ts` 运行；`DSH_VULTR_TEST_EVIDENCE` 可选指定报告路径。测试创建两台计费 VM 和磁盘快照，以脚本模型验证真实 SSH 和已认证 HTTP，并移除带有唯一测试标签的资源；它不验证真实模型提供方或浏览器控件。
+- **VFS 云端验收** — `DSH_MULTI_VM_VFS_TEST_CONFIG` 为[多会话 VFS Loader 测试](tests/multi-vm-vfs-loader.e2e.ts)指定私有 JSON 文件。通过 `pnpm exec vitest run --config vitest.e2e.config.ts packages/sandbox/harness-sandbox/tests/multi-vm-vfs-loader.e2e.ts` 运行；`DSH_MULTI_VM_VFS_TEST_EVIDENCE` 可选指定报告路径。配置专用且已存在的本地账号（`webUid`/`webGid`）、至少两个预留的补充组 `taskIds` 和已有且已挂载的 VFS 卷。测试使用私有命名空间、计费 VM、真实 SSH/VFS 和已认证 HTTP，模型由脚本控制。不创建快照，只回收带测试标签的资源；清理未确认时保留私有恢复证据。它不验证真实 LLM 或浏览器控件。
+- **旧云端验收** — `DSH_VULTR_TEST_CONFIG` 为[可选快照 Loader 测试](tests/vultr-loader.e2e.ts)指定私有部署 JSON，通过 `pnpm exec vitest run --config vitest.e2e.config.ts packages/sandbox/harness-sandbox/tests/vultr-loader.e2e.ts` 运行；`DSH_VULTR_TEST_EVIDENCE` 可选指定报告路径。测试创建两台计费 VM 和磁盘快照，以脚本模型验证真实 SSH 和已认证 HTTP，并移除带有唯一测试标签的资源；它不验证真实模型提供方或浏览器控件。
 - **空闲范围** — 回收面向单个应用实例管理所选后端，不合并多个 Harness 进程的活动；本地 Runner 接入不发现启动后直接通过 Runner 创建的容器。停用账号或缺失归属需要维护；后台循环不绕过原生授权。
 - **修改结果不明** — PUT/DELETE 响应丢失后需要部署维护确认旧 Runner 请求已收束。现有协议不能自动解除本进程阻止标记；仅重启 Harness 不能证明远端已收束。
 - **验证** — 可选[对话 Docker 夹具](../../../apps/cli/tests/profiles/harness-sandbox/fixtures/docker-acceptance.mjs)和[空闲 Docker 夹具](../../../apps/cli/tests/profiles/harness-sandbox/fixtures/docker-idle-acceptance.mjs)使用可控模型及真实鉴权的 Web、Runner profile，要求 Linux、用于准备的 root、当前构建产物及 Linux 依赖和 Docker 权限。`M5_DATA_ROOT` 必须选择对应夹具的专用 daemon 可见绑定：对话用 `/tmp/antfarm-issue7-m5`，空闲用 `/tmp/antfarm-issue8-m5`；`M5_EVIDENCE_DIR` 选择证据输出。空闲夹具使用 5000 毫秒空闲、100 毫秒扫描配置，独立核对真实容器身份、容量和保留文件，并清理隔离部署；子进程非零退出或因信号退出会使验收失败。这些夹具不证明真实模型或 Vultr 结果。

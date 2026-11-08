@@ -5,6 +5,7 @@ import { chmod, mkdir, readFile, rename, symlink, writeFile } from 'node:fs/prom
 import { basename, join } from 'node:path'
 import { describe, expect, test, vi } from 'vitest'
 import { z } from 'zod'
+import Schema from '@deepseek-ai/schemastery'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { WorkspaceFileScope } from '@deepseek-ai/dsh-fs/workspace-access'
 import type { WorkspaceModeChange, WorkspaceModeChangeId, WorkspaceModeRuntime } from '@deepseek-ai/dsh-workspace/types'
@@ -20,11 +21,12 @@ vi.mock('node:fs', async (original) => {
 const taskGroup = process.getgroups?.().find(id => id > 0 && id !== process.getuid?.() && id !== process.getgid?.())
 
 function cloudSettings(home: string) {
+  const volumeId: string = randomUUID()
   const vm = {
     apiKeyFile: join(home, 'api-key'), sshKeyFile: join(home, 'ssh-key'),
     helperArchive: join(home, 'helper.tar.gz'), helperArchiveHash: 'a'.repeat(64), helperHash: 'b'.repeat(64),
     deploymentId: 'test', region: 'nrt', plan: 'vc2-1c-1gb', osId: 2284,
-    volumeId: randomUUID(), vfsScriptsRoot: join(home, 'scripts'),
+    volumeId, vfsScriptsRoot: join(home, 'scripts'),
   }
   const mountPoint = join(home, 'vfs')
   return {
@@ -55,7 +57,7 @@ describe.runIf(process.platform === 'linux')('Docker mode directory publication'
     }
     Reflect.deleteProperty(input.vultr.multi, field)
     const parsed: unknown = JSON.parse(JSON.stringify(input))
-    expect(() => DockerModes.Config(parsed)).toThrow()
+    expect(() => { Schema.resolve(parsed, DockerModes.Config, {}) }).toThrow()
     expect(f.calls).toEqual([])
   })
 
@@ -68,7 +70,7 @@ describe.runIf(process.platform === 'linux')('Docker mode directory publication'
       vultr: { ...cloud, [kind]: { ...cloud[kind], remoteRoot: '/unexpected' } },
     }
     const parsed: unknown = JSON.parse(JSON.stringify(input))
-    expect(() => DockerModes.Config(parsed)).toThrow()
+    expect(() => { Schema.resolve(parsed, DockerModes.Config, {}) }).toThrow()
     expect(f.calls).toEqual([])
   })
 

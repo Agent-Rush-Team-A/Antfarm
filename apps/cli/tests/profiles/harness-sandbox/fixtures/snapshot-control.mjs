@@ -4,7 +4,7 @@ import { sessionFormatCatalog } from '../../../../../../packages/session/session
 
 export const inject = ['llm', 'webServer', 'agents', 'tools', 'sessions', 'sessionPersistence']
 
-/** @param {import('@deepseek-ai/cordis').Context} ctx - Built test profile. @param {{script: object[]}} config - Recorded external model chunks. */
+/** @param {import('@deepseek-ai/cordis').Context} ctx - Built test profile. @param {{script: object[], repeatScript?: boolean}} config - Recorded external model chunks. */
 export function apply(ctx, config) {
   const requests = []
   let cursor = 0
@@ -12,7 +12,9 @@ export function apply(ctx, config) {
     async resolveModel(provider, model) { return { provider, id: model, name: model } }
     async * stream(options) {
       requests.push({ messages: options.messages, tools: options.tools })
-      const entry = config.script[cursor++]
+      const index = config.repeatScript ? cursor % config.script.length : cursor
+      cursor++
+      const entry = config.script[index]
       if (entry?.kind !== 'chunks') throw new Error('Snapshot model script exhausted')
       for (const chunk of entry.chunks) yield chunk
     }
@@ -39,7 +41,9 @@ export function apply(ctx, config) {
       log = [sessionFormatCatalog.encodeCurrentHeader({ ...handle.header, delegationDepth: handle.header.delegationDepth ?? 0 }, handle.inheritedEventCount),
         ...events.map(event => sessionFormatCatalog.encodeCurrentEvent(event))].map(row => JSON.stringify(row)).join('\n') + '\n'
     } finally { await handle.close() }
-    if (cursor !== config.script.length) throw new Error('Snapshot did not consume the complete model script')
+    if (cursor !== config.script.length && !(config.repeatScript && cursor % config.script.length === 0)) {
+      throw new Error('Snapshot did not consume the complete model script')
+    }
     response.setHeader('Content-Type', 'application/json')
     response.end(JSON.stringify({ log, requests, presentations }))
   } }))

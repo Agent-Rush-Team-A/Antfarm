@@ -22,7 +22,7 @@ const antfarmWeb = fileURLToPath(new URL('../../../apps/cli/config/antfarm-web.p
 const stdout = '中\0'.repeat(16_384)
 const stderr = `${'e'.repeat(65_525)}diagnostic\n`
 
-test('snapshot: Web sandbox Bash retains its recorded Session through automatic idle reclamation', async (t) => {
+test('snapshot: Web multi-VM Bash retains its generation across Sessions and releases it on idle, archive and delete', async (t) => {
   const refresh = process.env.DSH_SNAPSHOT === 'refresh'
   expect(existsSync(fixture), 'replay requires the committed Session fixture').toBe(true)
   const source = await readFile(fixture, 'utf8')
@@ -33,6 +33,7 @@ test('snapshot: Web sandbox Bash retains its recorded Session through automatic 
   const patches = [antfarmWeb, overlay]
   const calls: Array<{ method: string | undefined; path: string; body: Record<string, unknown> }> = []
   let running = false
+  let allocations = 0
   const socketPath = process.platform === 'win32' ? `\\\\.\\pipe\\dsh-sandbox-snapshot-${randomUUID()}` : `/tmp/dsh-sandbox-${randomUUID()}.sock`
   const server = createServer((request, response) => {
     let body = ''
@@ -40,13 +41,13 @@ test('snapshot: Web sandbox Bash retains its recorded Session through automatic 
     request.on('end', () => {
       const parsed = body === '' ? {} : JSON.parse(body) as Record<string, unknown>
       calls.push({ method: request.method, path: request.url!, body: parsed })
-      if (request.method === 'PUT') running = true
+      if (request.method === 'PUT') { if (!running) allocations++; running = true }
       if (request.method === 'DELETE') running = false
       response.end(JSON.stringify(request.url?.endsWith('/exec') ? {
         executionId: parsed.executionId, exitCode: parsed.command === 'pwd' ? 0 : 7,
         stdout: { text: parsed.command === 'pwd' ? '/workspace\n' : stdout, truncated: parsed.command !== 'pwd' },
         stderr: { text: parsed.command === 'pwd' ? '' : stderr, truncated: parsed.command !== 'pwd' },
-      } : running ? { state: 'running', containerId: 'a'.repeat(64) } : { state: 'closed' }))
+      } : running ? { state: 'running', containerId: (allocations === 1 ? 'a' : 'b').repeat(64) } : { state: 'closed' }))
     })
   })
   t.onTestFinished(async () => {
@@ -55,7 +56,7 @@ test('snapshot: Web sandbox Bash retains its recorded Session through automatic 
   })
   await once(server.listen(socketPath), 'listening')
   vi.stubEnv('DSH_SANDBOX_RUNNER_SOCKET', socketPath)
-  await withDefaultWeb(t, async ({ root, url }) => {
+  await withDefaultWeb(t, async ({ root, url, output }) => {
     const post = (path: string, body: unknown, cookie = '') => webRequest(new URL(path, url), t.signal, {
       method: 'POST', headers: { 'content-type': 'application/json', origin: new URL(url).origin, cookie }, body: JSON.stringify(body),
     })
@@ -66,7 +67,7 @@ test('snapshot: Web sandbox Bash retains its recorded Session through automatic 
       const response = await post(`/api/${method}`, { type: 'client-request', rpcId: randomUUID(), method, payload: { args: { request } } }, cookie)
       expect(response.status, response.text).toBe(200)
       const envelope = JSON.parse(response.text) as { result: { ok: boolean; value: Record<string, unknown> } }
-      expect(envelope.result.ok, response.text).toBe(true)
+      expect(envelope.result.ok, response.text + '\n' + output().stderr).toBe(true)
       return envelope.result.value
     }
     const workspace = (await rpc('workspace/create', { title: 'snapshot' })).workspace as { workspaceId: string }
@@ -118,10 +119,19 @@ test('snapshot: Web sandbox Bash retains its recorded Session through automatic 
       if (refresh) await writeFile(join(directory, name), value)
       else expect(value, name).toBe(await readFile(join(directory, name), 'utf8'))
     }
+    const secondSessionId = (await rpc('session/create', { workspaceId: workspace.workspaceId })).sessionId as string
+    expect(await rpc('session/prompt', { sessionId: secondSessionId, requestId: randomUUID(), mode: 'queue',
+      content: [{ type: 'text', text: task }] })).toMatchObject({ accepted: true })
+    const secondIdle = await post('/__test/sandbox-idle', { op: 'idle', sessionId: secondSessionId })
+    expect(secondIdle.status, secondIdle.text).toBe(200)
+    expect(calls.filter(call => call.method === 'DELETE')).toHaveLength(0)
+    expect(allocations).toBe(1)
+    expect(calls.filter(call => call.path.endsWith('/exec'))).toHaveLength(4)
+    expect(new Set(calls.filter(call => call.path.endsWith('/exec')).map(call => call.body.expectedContainerId))).toEqual(new Set(['a'.repeat(64)]))
     const reclaimed = await post('/__test/sandbox-idle', { op: 'round', advance: 1_800_000, workspaceId: workspace.workspaceId })
     expect(reclaimed.status, reclaimed.text).toBe(200)
     expect(JSON.parse(reclaimed.text)).toMatchObject({ activity: { busy: false, sandbox: { state: 'closed' } } })
-    expect(calls.map(call => call.method)).toEqual(['PUT', 'POST', 'POST', 'GET', 'GET', 'DELETE'])
+    expect(calls.filter(call => call.method === 'DELETE')).toHaveLength(1)
     expect(await rpc('workspaceSandbox/status', { workspaceId: workspace.workspaceId })).toEqual({ workspaceId: workspace.workspaceId, state: 'closed' })
     expect(await rpc('session/events', { address: { kind: 'session', sessionId }, maxMessages: 100 })).toEqual(events)
     const afterClose = await post('/__test/sandbox-snapshot', {})
@@ -131,13 +141,24 @@ test('snapshot: Web sandbox Bash retains its recorded Session through automatic 
     const beforeDuplicate = calls.length
     expect(await rpc('session/prompt', { sessionId, requestId, mode: 'queue', content: [{ type: 'text', text: task }] })).toMatchObject({ accepted: true })
     expect(calls).toHaveLength(beforeDuplicate)
+    await rpc('workspaceSandbox/open', { workspaceId: workspace.workspaceId })
+    await rpc('workspace/setArchived', { workspaceId: workspace.workspaceId, archived: true })
+    expect(calls.filter(call => call.method === 'DELETE')).toHaveLength(2)
+    await rpc('workspace/setArchived', { workspaceId: workspace.workspaceId, archived: false })
+    await rpc('workspaceSandbox/open', { workspaceId: workspace.workspaceId })
+    await rpc('workspace/delete', { workspaceId: workspace.workspaceId })
+    expect(calls.filter(call => call.method === 'DELETE')).toHaveLength(3)
+    expect(allocations).toBe(3)
   }, { patches, prepare: async (root) => {
     vi.stubEnv('DSH_MULTIUSER_WORKSPACE_ROOT', join(root, 'workspaces'))
     const patch = join(root, 'snapshot.patch.yml')
     await writeFile(patch, JSON.stringify([
+      { id: 'workspace', config: { defaultMode: 'multi-vm' } },
+      { id: 'workspace-sandbox', inject: ['sandboxRunnerClient'], config: { backend: 'provided', workspaceRoot: join(root, 'workspaces') } },
       { id: 'sandbox-idle', inject: ['multiuser', 'workspaceRegistry', 'workspaceSandboxState', 'sandboxIdleTestClock'], config: { sweepIntervalMs: 60_001 } },
       { insert: [{ id: 'sandbox-snapshot-control',
-        name: new URL('../../../apps/cli/tests/profiles/harness-sandbox/fixtures/snapshot-control.mjs', import.meta.url).href, config: { script } },
+        name: new URL('../../../apps/cli/tests/profiles/harness-sandbox/fixtures/snapshot-control.mjs', import.meta.url).href, config: { script, repeatScript: true } },
+      { id: 'sandbox-snapshot-modes', name: new URL('../../../apps/cli/tests/profiles/harness-sandbox/fixtures/snapshot-modes.mjs', import.meta.url).href },
       { id: 'sandbox-idle-clock', name: new URL('../../../apps/cli/tests/profiles/harness-sandbox/fixtures/idle-control.mjs', import.meta.url).href }] },
       { id: 'agent-default-model', config: { provider: 'sandbox-snapshot', model: 'fixture' } }, { id: 'session-title', disabled: true }]))
     patches.push(patch)
