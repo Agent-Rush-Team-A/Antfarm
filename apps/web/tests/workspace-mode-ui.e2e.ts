@@ -60,10 +60,18 @@ it('configures four modes, preserves permanent locks, and keeps Workspace admiss
       prepare: async (_change, signal) => { signal.throwIfAborted() },
       settle: async (_change, _decision, signal) => { signal.throwIfAborted() } }
     scaffold.ctx.effect(() => scaffold.ctx.workspaceRegistry.modes.registerRuntime(runtime))
-    for (const [mode, label] of [
-      ['single-docker', 'Single session · Docker'], ['multi-docker', 'Multiple sessions · Docker'],
-      ['multi-vm', 'Multiple sessions · VM'], ['single-vm', 'Single session · VM'],
+    const tooltip = page.getByRole('tooltip')
+    for (const [mode, label, detail] of [
+      ['single-docker', 'Single session · Docker', 'lightweight Docker container'],
+      ['multi-docker', 'Multiple sessions · Docker', 'share one Docker container'],
+      ['multi-vm', 'Multiple sessions · VM', 'disk snapshot'],
+      ['single-vm', 'Single session · VM', 'stored separately in the cloud'],
     ] as const) {
+      await dialog.getByRole('button', { name: `About ${label}`, exact: true }).hover()
+      await tooltip.waitFor()
+      const explanation = await tooltip.innerText()
+      expect(explanation).toContain(detail)
+      expect(explanation.match(/^• /gm)).toHaveLength(4)
       await dialog.getByRole('radio', { name: label, exact: true }).check()
       await dialog.getByRole('button', { name: 'Save mode', exact: true }).click()
       await expect.poll(() => a.modeConfig.mode).toBe(mode)
@@ -105,6 +113,11 @@ it('configures four modes, preserves permanent locks, and keeps Workspace admiss
     await dialog.getByText('The first session has been created. The mode is permanently locked.', { exact: true }).waitFor()
     expect(await dialog.getByRole('radio', { name: 'Single session · VM', exact: true }).isDisabled()).toBe(true)
     await compareOrRefreshGolden(join(expected, 'locked.expected.md'), scrub(await dialog.ariaSnapshot()), webSnapshotMode())
+    await dialog.getByRole('button', { name: 'About Multiple sessions · VM', exact: true }).click()
+    await tooltip.getByText(/disk snapshot/).waitFor()
+    await page.keyboard.press('Escape')
+    await tooltip.waitFor({ state: 'hidden' })
+    expect(await dialog.isVisible()).toBe(true)
     await page.keyboard.press('Escape')
     await workspaceRow(a.title).hover()
     expect(await workspaceRow(a.title).getByRole('button', { name: `New session in ${a.title}`, exact: true }).count()).toBe(0)

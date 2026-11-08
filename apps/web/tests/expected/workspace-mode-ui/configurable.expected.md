@@ -8,11 +8,15 @@
     - text: Workspace mode
     - radio "Single session · VM" [checked]
     - text: Single session · VM
+    - button "About Single session · VM"
     - radio "Multiple sessions · VM"
     - text: Multiple sessions · VM
+    - button "About Multiple sessions · VM"
     - radio "Single session · Docker"
     - text: Single session · Docker
+    - button "About Single session · Docker"
     - radio "Multiple sessions · Docker"
     - text: Multiple sessions · Docker
+    - button "About Multiple sessions · Docker"
   - button "Save mode" [disabled]
   - button "Refresh configuration"

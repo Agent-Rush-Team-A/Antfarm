@@ -5,7 +5,9 @@
 .identity { overflow-wrap: anywhere; font-size: 13px; }
 .choices { display: flex; flex-direction: column; gap: 12px; border: 0; padding: 0; margin: 0; min-width: 0; }
 .choices legend { padding: 0; margin-bottom: 12px; }
+.option { display: flex; align-items: center; gap: 4px; }
 .choice { display: flex; align-items: center; gap: 8px; min-height: 32px; cursor: pointer; }
 .choice input { accent-color: var(--dsw-alias-label-primary); }
-.choices:disabled .choice { cursor: default; }
+.choice:has(input:disabled) { cursor: default; }
+.option .help { flex: 0 0 28px; padding: 0; color: var(--dsw-alias-label-secondary); }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; }

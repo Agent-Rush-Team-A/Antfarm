@@ -2,7 +2,7 @@
 import clsx from 'clsx'
 import type { WorkspaceMode } from '@deepseek-ai/dsh-workspace/types'
 import { useState } from 'react'
-import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconQuestionOutlineRegular, Modal, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
@@ -63,13 +63,23 @@ export function ModeForm(props: ModeFormProps) {
       <p role="status" aria-live="polite">{t(`mode.${config.operationState}`)}</p>
       <p>{t(config.modeLocked ? 'mode.locked' : 'mode.unlocked')}</p>
       {config.modeLocked && config.firstSessionId !== null && <code className={css.identity}>{config.firstSessionId}</code>}
-      <fieldset className={css.choices} disabled={disabled}>
+      <fieldset className={css.choices}>
         <legend>{t('mode.choose')}</legend>
-        {(props.visibleModes ?? modes).map(mode => <label key={mode} className={css.choice}>
-          <input type="radio" name={`workspace-mode-${row.workspaceId}`} value={mode} checked={selected === mode}
-            onChange={() => { setDraft({ mode, revision: config.revision }) }} />
-          <span>{t(`mode.${mode}`)}</span>
-        </label>)}
+        {(props.visibleModes ?? modes).map((mode) => {
+          const label = t(`mode.${mode}`)
+          return <div key={mode} className={css.option}>
+            <label className={css.choice}>
+              <input type="radio" name={`workspace-mode-${row.workspaceId}`} value={mode} checked={selected === mode} disabled={disabled}
+                onChange={() => { setDraft({ mode, revision: config.revision }) }} />
+              <span>{label}</span>
+            </label>
+            <Tooltip label={t(`mode.help.${mode}`)} delayMs={300} maxWidth={360} portal openOnClick>
+              <Button size="sm" className={css.help} aria-label={t('mode.help.label', { mode: label })}>
+                <IconQuestionOutlineRegular aria-hidden="true" />
+              </Button>
+            </Tooltip>
+          </div>
+        })}
       </fieldset>
       {(stale || selection.queryFailure !== undefined) && <p role="alert">{t(stale ? 'mode.conflict' : selection.queryFailure ?? 'mode.failed')}</p>}
       <div className={css.actions}>

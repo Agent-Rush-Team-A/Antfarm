@@ -1,7 +1,64 @@
 /** Locale-owned Workspace mode choices, locking, and safe recovery guidance. */
 
+const enModeHelp = {
+  'mode.help.label': 'About {mode}',
+  'mode.help.single-docker': [
+    '• Sessions One conversation per workspace.',
+    '• How it runs A lightweight Docker container starts on demand and shuts down when work is done.',
+    '• Benefit No manual start or stop. Your files are available next time.',
+    '• Best for Cleaning up spreadsheets, converting files, or running a quick script.',
+  ].join('\n'),
+  'mode.help.multi-docker': [
+    '• Sessions Multiple conversations in one workspace.',
+    '• How it runs The conversations share one Docker container, which you can start or stop yourself.',
+    '• Benefit Keep tasks in separate conversations while sharing files. Files stay available when the container stops.',
+    '• Best for Using the same data for cleanup, analysis, and report writing in separate conversations.',
+  ].join('\n'),
+  'mode.help.single-vm': [
+    '• Sessions One conversation per workspace.',
+    '• How it runs A dedicated Vultr cloud VM starts on demand and shuts down when work is done.',
+    '• Benefit Files are stored separately in the cloud and remain available to download after shutdown.',
+    '• Best for Short tasks that need a separate system, such as testing generated code.',
+  ].join('\n'),
+  'mode.help.multi-vm': [
+    '• Sessions Multiple conversations in one workspace.',
+    '• How it runs The conversations share a dedicated Vultr cloud VM. A disk snapshot is saved at shutdown.',
+    '• Benefit Your workspace files and installed tools are restored when the VM starts again.',
+    '• Best for Projects that need several rounds of debugging with the same tools.',
+  ].join('\n'),
+}
+
+const zhModeHelp = {
+  'mode.help.label': '了解{mode}',
+  'mode.help.single-docker': [
+    '• 会话　每个工作区只用一个会话。',
+    '• 运行方式　按需启动轻量的 Docker 容器，任务结束后自动关闭。',
+    '• 好处　无需手动启停，工作区文件可以留到下次继续用。',
+    '• 适合　整理表格、转换文件、跑一次脚本。',
+  ].join('\n'),
+  'mode.help.multi-docker': [
+    '• 会话　同一工作区可以开多个会话。',
+    '• 运行方式　多个会话共用一个 Docker 容器，可以手动启停。',
+    '• 好处　不同任务可以分开聊，同时共用文件。容器关闭后，文件仍会保留。',
+    '• 适合　围绕同一批数据，分开做清洗、分析和写报告。',
+  ].join('\n'),
+  'mode.help.single-vm': [
+    '• 会话　每个工作区只用一个会话。',
+    '• 运行方式　按需启动一台独立的 Vultr 云虚拟机，任务结束后自动关闭。',
+    '• 好处　文件单独存放在云端，虚拟机关闭后仍可下载。',
+    '• 适合　需要独立系统环境的短时任务，比如试跑生成的代码。',
+  ].join('\n'),
+  'mode.help.multi-vm': [
+    '• 会话　同一工作区可以开多个会话。',
+    '• 运行方式　多个会话共用一台独立的 Vultr 云虚拟机，关闭时保存磁盘快照。',
+    '• 好处　下次启动时，可以恢复工作区文件和已安装的工具。',
+    '• 适合　需要多轮调试、反复使用同一套工具的项目。',
+  ].join('\n'),
+} satisfies Record<keyof typeof enModeHelp, string>
+
 /** en mode dictionary. */
 export const enModes = {
+  ...enModeHelp,
   'mode.title': 'Workspace configuration',
   'mode.choose': 'Workspace mode',
   'mode.single-vm': 'Single session · VM',
@@ -31,6 +88,7 @@ export const enModes = {
 
 /** zh mode dictionary. */
 export const zhModes = {
+  ...zhModeHelp,
   'mode.title': '工作区配置',
   'mode.choose': '工作区模式',
   'mode.single-vm': '单会话 · VM',
@@ -60,6 +118,7 @@ export const zhModes = {
 
 /** ja mode dictionary. */
 export const jaModes = {
+  ...enModeHelp,
   'mode.title': 'ワークスペース設定',
   'mode.choose': 'ワークスペースモード',
   'mode.single-vm': '単一セッション · VM',
@@ -89,6 +148,7 @@ export const jaModes = {
 
 /** es mode dictionary. */
 export const esModes = {
+  ...enModeHelp,
   'mode.title': 'Configuración del espacio de trabajo',
   'mode.choose': 'Modo del espacio de trabajo',
   'mode.single-vm': 'Una sesión · VM',
@@ -118,6 +178,7 @@ export const esModes = {
 
 /** fr mode dictionary. */
 export const frModes = {
+  ...enModeHelp,
   'mode.title': 'Configuration de l’espace de travail',
   'mode.choose': 'Mode de l’espace de travail',
   'mode.single-vm': 'Une session · VM',
@@ -147,6 +208,7 @@ export const frModes = {
 
 /** de mode dictionary. */
 export const deModes = {
+  ...enModeHelp,
   'mode.title': 'Arbeitsbereich konfigurieren',
   'mode.choose': 'Arbeitsbereichsmodus',
   'mode.single-vm': 'Eine Sitzung · VM',
@@ -176,6 +238,7 @@ export const deModes = {
 
 /** ru mode dictionary. */
 export const ruModes = {
+  ...enModeHelp,
   'mode.title': 'Настройка рабочего пространства',
   'mode.choose': 'Режим рабочего пространства',
   'mode.single-vm': 'Один сеанс · VM',
@@ -205,6 +268,7 @@ export const ruModes = {
 
 /** pt mode dictionary. */
 export const ptModes = {
+  ...enModeHelp,
   'mode.title': 'Configuração do espaço de trabalho',
   'mode.choose': 'Modo do espaço de trabalho',
   'mode.single-vm': 'Uma sessão · VM',
