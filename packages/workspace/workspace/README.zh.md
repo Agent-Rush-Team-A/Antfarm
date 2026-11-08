@@ -110,6 +110,8 @@ Workspace 注册不意味着拥有其目录。未来的破坏性文件系统操�
 
 工作区模式为 `single-vm`、`multi-vm`、`single-docker` 和 `multi-docker`。注册服务支持 `defaultMode`（默认 `multi-vm`），仅用于新记录。`Workspace.modeConfig` 包含模式、单调递增版本、操作状态和首个会话的永久锁定信息。运行时提供方从 `@deepseek-ai/dsh-workspace/types` 导入浏览器安全的协调接口。模式元数据本身不会启动执行后端。
 
+计划停止 Host 时，受信调用方可用 `workspaceRegistry.quiesceModes()` 拒绝新的模式操作，并等待已排队和活跃的许可结算。
+
 `ctx.workspaceRegistry.modes` 协调版本和运行时切换。注册一个幂等的 `WorkspaceModeRuntime`；`prepare` 准备资源，`settle` 完成已持久化的提交或回滚决定。配置切换与会话创建等待先前资源租约收尾。持有 `acquireUse` 租约直到所有保留的写入和传输流收尾，并将捕获快照传递给嵌套函数。运行时注销取消准入并等待实际释放。未完成的操作阻止依赖操作；注册服务初始化后，运行时注册触发恢复，可信 Host 调用方可携带捕获的权限重试 `recover`。存储隔离仍然有效。
 
 

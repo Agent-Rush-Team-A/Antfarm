@@ -8,6 +8,10 @@ export function enableExecUpgrade(server: Server): () => void {
     socket.once('close', () => connections.delete(socket))
   })
   server.on('upgrade', (request, socket, head) => {
+    socket.on('error', (error: NodeJS.ErrnoException) => {
+      // The client may abandon an upgraded Exec Start while the fixture is writing.
+      if (error.code !== 'ECONNRESET') throw error
+    })
     socket.once('end', () => { socket.end() })
     socket.pause()
     let body = head

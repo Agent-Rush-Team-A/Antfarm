@@ -5066,6 +5066,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'path', description: 'Existing directory path in a fully qualified spelling.' }],
         returns: 'the workspace owning the canonical path, when one exists.',
       },
+      {
+        signature: 'quiesceModes(): Promise<void>',
+        description: 'Pause mode admission for a planned Host shutdown and allow accepted operations to finish.',
+        parameters: [],
+        returns: 'After the coordinator\'s queued and active leases settle.',
+      },
     ],
   },
   {

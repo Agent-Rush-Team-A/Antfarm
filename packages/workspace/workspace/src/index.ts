@@ -1125,6 +1125,12 @@ export class WorkspaceRegistry extends Service {
     this.operationTail = result.then(() => {}, () => {})
     return result
   }
+
+  /**
+   * Pause mode admission for a planned Host shutdown and allow accepted operations to finish.
+   * @returns After the coordinator's queued and active leases settle.
+   */
+  quiesceModes(): Promise<void> { return this.modeCoordinator.quiesce() }
 }
 
 const sameSessionIds = (left: readonly SessionId[], right: readonly SessionId[]): boolean =>

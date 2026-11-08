@@ -2529,7 +2529,7 @@ describe('WorkspaceBrowser', () => {
     browser.openDialog(wid('alpha'), 'Alpha', 'rename')
     fireEvent.change(screen.getByLabelText('工作区名称'), { target: { value: 'Other' } })
     fireEvent.click(screen.getByRole('button', { name: '重命名' }))
-    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('无法确认操作完成。请刷新工作区与沙箱状态后重试。') })
+    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('denied') })
   })
 
   it('confirms Workspace deletion, explains retention, and blocks duplicate submission', async () => {

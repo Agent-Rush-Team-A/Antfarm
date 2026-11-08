@@ -1,0 +1,13 @@
+[Unit]
+Description=Antfarm Docker Runner SSH tunnel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=antfarm-web
+RuntimeDirectory=antfarm-runner-tunnel
+RuntimeDirectoryMode=0700
+ExecStart=/usr/bin/ssh -F /etc/antfarm/runner-ssh.conf -NT antfarm-docker-runner
+Restart=on-failure
+RestartSec=2s
+NoNewPrivileges=yes
