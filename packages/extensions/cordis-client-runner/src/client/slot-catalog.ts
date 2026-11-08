@@ -4276,6 +4276,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     declaredBy: 'an entry in \'sidebar\' (client-ui-sidebar), so it exists while that entry is mounted',
     occupants: [
       'client-ui-user-credentials CredentialsLauncher id \'user-credentials\'',
+      'client-ui-workspace WorkbenchAccountDock id \'antfarm-account\'',
       'client-ui-cordis CordisPanel id \'cordis-panel\'',
     ],
     replaceRisk: 'none',

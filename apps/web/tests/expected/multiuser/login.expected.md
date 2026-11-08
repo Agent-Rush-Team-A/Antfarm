@@ -1,9 +1,22 @@
 - main:
-  - heading "Sign in" [level=1]
-  - paragraph: Use your team account.
-  - text: Username
-  - textbox "Username"
-  - text: Password
-  - textbox "Password"
-  - button "Sign in"
-  - alert
+  - text: Antfarm
+  - heading "From good to better" [level=1]
+  - paragraph: A general-purpose agent for every task, built on Vultr secure sandboxes
+  - paragraph: Give it files and a task. It runs commands and edits files inside a sealed sandbox, and the results stay in your workspace.
+  - group:
+    - text: Sign in with an account Username
+    - textbox "Username"
+    - text: Password
+    - textbox "Password"
+    - button "Sign in"
+    - alert
+  - figure "Each workspace has its own execution environment. Your inputs and results stay in the workspace."
+  - term: No network
+  - definition: Commands in the sandbox can’t reach the internet.
+  - term: Read-only system
+  - definition: System files can’t be changed.
+  - term: Hard limits
+  - definition: 1 CPU, 512 MB of memory and 64 processes.
+  - term: Cleaned up after use
+  - definition: The environment is removed. Your files stay.
+  - text: Models by Vultr Serverless Inference
