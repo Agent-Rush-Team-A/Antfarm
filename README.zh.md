@@ -1,6 +1,6 @@
 <div align="center">
 
-# Antfarm
+# 🐜 Antfarm
 
 **从好到更好**
 
