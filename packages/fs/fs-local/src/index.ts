@@ -232,8 +232,9 @@ export class LocalFileSystem extends FileSystem {
       const before = diffable
         ? await readTextForDiff(target.targetKey, this.config.diffBasisMaxBytes, signal)
         : null
-      await writeFileAtomic(target.targetKey, content, existing?.mode, signal, this.internals,
-        { displayPath: target.displayPath, createIfAbsent: expected?.kind === 'createIfAbsent' })
+      const mode = existing === null ? this.newTextFileMode(target) : existing.mode
+      await writeFileAtomic(target.targetKey, content, mode, signal, this.internals,
+        { displayPath: target.displayPath, createIfAbsent: expected?.kind === 'createIfAbsent', existingDestination: existing !== null })
       const after = await probe(target.targetKey)
       return {
         operation: existing ? 'update' : 'create',
@@ -246,6 +247,13 @@ export class LocalFileSystem extends FileSystem {
       }
     })
   }
+
+  /**
+   * Select publication permissions for a newly created text file.
+   * @param _target - Canonical file identity after provider policy checks.
+   * @returns A provider-specific mode, or undefined for owner-only publication.
+   */
+  protected newTextFileMode(_target: FsTarget): number | undefined { return undefined }
 
   override async editText(
     target: FsTarget,

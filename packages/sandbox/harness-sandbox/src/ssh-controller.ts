@@ -43,7 +43,7 @@ interface Generation {
 /** Keeps each original execution on its own fixed VM and connection generation. */
 export class WorkspaceSshRuntime {
   private readonly settings: ResolvedConfig
-  private readonly bindings = new Map<WorkspaceId, WorkspaceSshBinding>()
+  private readonly bindings = new Map<WorkspaceId, WorkspaceSshBinding & { readonly generation?: SandboxContainerId }>()
   private readonly generations = new Map<WorkspaceId, Generation>()
   private disposed = false
   private disposal: Promise<void> | undefined
@@ -89,11 +89,12 @@ export class WorkspaceSshRuntime {
    * Install a verified binding before establishing a Workspace generation.
    * @param workspaceId - Trusted workspace.
    * @param binding - Verified instance coordinates. Replace only after the previous connection is released.
+   * @param generation - Optional generation already reserved by the allocation owner. Otherwise SSH assigns one on open.
    */
-  bind(workspaceId: WorkspaceId, binding: WorkspaceSshBinding): void {
+  bind(workspaceId: WorkspaceId, binding: WorkspaceSshBinding, generation?: SandboxContainerId): void {
     if (this.generations.has(workspaceId)) throw new RunnerResponseError('sandbox_closing', 409, false)
     const { instanceId, ...connection } = binding
-    this.bindings.set(workspaceId, { ...resolveSshConfig(connection), instanceId })
+    this.bindings.set(workspaceId, { ...resolveSshConfig(connection), instanceId, ...generation === undefined ? {} : { generation } })
   }
 
   /**
@@ -115,9 +116,8 @@ export class WorkspaceSshRuntime {
   }
 
   /**
-   * Release revoked local resources only after the original VM is confirmed stopped.
-   * @param workspaceId - Original workspace whose deployment owner has confirmed stopped power state. Release
-   * its revoked local connection.
+   * Release revoked local resources after the owner independently confirms no remote work can continue.
+   * @param workspaceId - Original workspace with a stopped VM or a fenced, quiescent guest.
    */
   async releaseStopped(workspaceId: WorkspaceId): Promise<void> {
     const generation = this.generations.get(workspaceId)
@@ -147,9 +147,9 @@ export class WorkspaceSshRuntime {
     if (generation?.state === 'cleanup_required') throw new RunnerResponseError('sandbox_cleanup_required', 409, true)
     if (generation === undefined) {
       const controller = new AbortController()
-      const { instanceId: _instanceId, ...connection } = binding
+      const { instanceId: _instanceId, generation: reserved, ...connection } = binding
       const slot: Generation = {
-        id: brandString<SandboxContainerId>(randomBytes(32).toString('hex')), project: workspaceDir, controller,
+        id: reserved ?? brandString<SandboxContainerId>(randomBytes(32).toString('hex')), project: workspaceDir, controller,
         state: 'starting', executions: new Map(),
         ready: createWorkspaceSshServices(connection),
       }

@@ -10,12 +10,16 @@ import { SshRpcPeer } from '../../src/protocol.ts'
 import { helloSchema, type SshStreamEndpoint } from '../../src/schemas.ts'
 import { authenticateStream } from '../../src/stream-security.ts'
 
-export async function createHelperHarness(handshake = true, leaseMs = 30_000, kind: 'node-script' | 'executable' = 'node-script') {
+export async function createHelperHarness(handshake = true, leaseMs = 30_000,
+  kind: 'node-script' | 'executable' = 'node-script', sharedWorkspace = false) {
   const root = await realpath(await mkdtemp('/tmp/dsh-ssh-rpc-'))
   const input = new PassThrough()
   const output = new PassThrough()
   const controller = new AbortController()
-  const serving = runSshHelper({ input, output, kind, entryPath: fileURLToPath(new URL('../../src/helper-entry.ts', import.meta.url)), signal: controller.signal })
+  const serving = runSshHelper({
+    input, output, kind, entryPath: fileURLToPath(new URL('../../src/helper-entry.ts', import.meta.url)), signal: controller.signal,
+    ...sharedWorkspace ? { sharedWorkspace: root } : {},
+  })
   void serving.catch(() => {})
   const client = new SshRpcPeer(output, input, 64 * 1024 * 1024, 128)
   const sockets = new Set<Socket>()

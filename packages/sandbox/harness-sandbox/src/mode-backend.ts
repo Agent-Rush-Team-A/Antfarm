@@ -1,6 +1,6 @@
 /** Workspace-mode admission retained through inbox, execution and binary file settlement. */
 import { Context, Service } from '@deepseek-ai/cordis'
-import type { IWorkspaceModes, WorkspaceId, WorkspaceModeRuntime } from '@deepseek-ai/dsh-workspace/types'
+import type { IWorkspaceModes, WorkspaceId, WorkspaceMode, WorkspaceModeRuntime } from '@deepseek-ai/dsh-workspace/types'
 import { WorkspaceFileAccess, type WorkspaceFileScope, type WorkspaceFileDownload } from '@deepseek-ai/dsh-fs/workspace-access'
 import { SandboxExecutionBackend, type SandboxExecutionAdmission } from './backend.ts'
 import { TaskSandboxLifecycle } from './mode-reclamation.ts'
@@ -17,6 +17,7 @@ export interface Config {
 
 interface TaskWorld {
   readonly project: string
+  readonly mode: WorkspaceMode
   readonly backend: WorkspaceModeTarget['execution']
   readonly lifecycle: TaskSandboxLifecycle
 }
@@ -24,7 +25,7 @@ interface TaskWorld {
 class ModeFileAccess extends WorkspaceFileAccess {
   constructor(ctx: Context, private readonly provider: WorkspaceModeBackend) { super(ctx) }
   override list(scope: WorkspaceFileScope, path: string, maxEntries: number) {
-    return this.provider.binary(scope, (selected, admitted) => selected.files.list(admitted, path, maxEntries))
+    return this.provider.binary(scope, (selected, admitted) => selected.files.list(admitted, path, maxEntries), true)
   }
   override upload(scope: WorkspaceFileScope, name: string, chunks: AsyncIterable<Uint8Array>, maxBytes: number) {
     return this.provider.binary(scope, (selected, admitted) => selected.files.upload(admitted, name, chunks, maxBytes))
@@ -74,33 +75,40 @@ export default class WorkspaceModeBackend extends SandboxExecutionBackend {
   }
 
   override admit(scope: WorkspaceFileScope): Promise<SandboxExecutionAdmission> {
-    const pending = this.admission(scope).finally(() => { this.pending.delete(pending) })
+    return this.trackAdmission(scope, false)
+  }
+
+  private trackAdmission(scope: WorkspaceFileScope, readOnly: boolean): Promise<SandboxExecutionAdmission> {
+    const pending = this.admission(scope, readOnly).finally(() => { this.pending.delete(pending) })
     this.pending.add(pending)
     return pending
   }
 
-  private async admission(original: WorkspaceFileScope): Promise<SandboxExecutionAdmission> {
+  private async admission(original: WorkspaceFileScope, readOnly: boolean): Promise<SandboxExecutionAdmission> {
     const signal = AbortSignal.any([original.signal, this.lifetime.signal])
     const scope = { ...original, signal, admit: () => { signal.throwIfAborted(); original.admit() } }
     scope.admit()
     // Count input in the current generation before coordinator admission can yield.
-    let lifecycle = this.worlds.get(scope.workspaceId)?.lifecycle
+    let world = this.worlds.get(scope.workspaceId)
+    let lifecycle = readOnly && world?.mode === 'single-vm' ? undefined : world?.lifecycle
     let reservation = lifecycle?.reserve(signal)
     if (reservation !== undefined) void reservation.catch(() => {})
     let selected: Awaited<ReturnType<WorkspaceModeRouting['acquireExecution']>>
     try { selected = await this.routing.acquireExecution(scope) }
     catch (error) { if (reservation !== undefined) await (await reservation).release(); throw error }
     try {
-      const taskManaged = isSingleSessionMode(selected.config.mode)
+      const mode = selected.config.mode
+      const taskManaged = isSingleSessionMode(mode) && !(readOnly && mode === 'single-vm')
       if (taskManaged) {
-        let world = this.worlds.get(scope.workspaceId)
-        if (world === undefined || world.backend !== selected.backend || world.project !== scope.project) {
+        world = this.worlds.get(scope.workspaceId)
+        if (world === undefined || world.mode !== mode || world.backend !== selected.backend || world.project !== scope.project) {
           if (reservation !== undefined) await (await reservation).release()
-          world = this.world(scope, selected.backend)
+          world = this.world(scope, mode, selected.backend)
           this.worlds.set(scope.workspaceId, world)
-          reservation = world.lifecycle.reserve(selected.scope.signal)
+          reservation = undefined
         }
         lifecycle = world.lifecycle
+        reservation ??= lifecycle.reserve(selected.scope.signal)
       } else if (reservation !== undefined) {
         await (await reservation).release()
         reservation = undefined
@@ -150,10 +158,16 @@ export default class WorkspaceModeBackend extends SandboxExecutionBackend {
     }
   }
 
-  private world(scope: WorkspaceFileScope, backend: WorkspaceModeTarget['execution']): TaskWorld {
+  private world(scope: WorkspaceFileScope, mode: WorkspaceMode, backend: WorkspaceModeTarget['execution']): TaskWorld {
+    const recover = backend.recoverTask?.bind(backend, scope.workspaceId)
     const lifecycle = new TaskSandboxLifecycle({
       open: async (signal) => { signal.throwIfAborted(); return backend.open(scope.workspaceId, scope.project) },
       close: async (target) => {
+        if (backend.closeTask !== undefined) {
+          const closed = await backend.closeTask(scope.workspaceId, target.containerId)
+          await this.ctx.get('workspaceSandboxState')?.query(scope.workspaceId, () => Promise.resolve(closed))
+          return
+        }
         const current = await backend.status(scope.workspaceId)
         if (current.state === 'closed') return
         if (current.state !== 'running' || current.containerId !== target.containerId) {
@@ -162,22 +176,24 @@ export default class WorkspaceModeBackend extends SandboxExecutionBackend {
         const closed = await backend.close(scope.workspaceId)
         await this.ctx.get('workspaceSandboxState')?.query(scope.workspaceId, () => Promise.resolve(closed))
       },
+      ...recover === undefined ? {} : { recover },
       failed: (error) => {
         this.ctx.logger.warn('workspace-mode: workspace %s could not complete %s; new tasks are blocked. Query the provider and reconcile its resources before restarting mode admission.', scope.workspaceId, error.phase)
       },
     })
-    return { project: scope.project, backend, lifecycle }
+    return { project: scope.project, mode, backend, lifecycle }
   }
 
   /**
    * Run a completed binary operation under one mode lease.
    * @param scope - Original HTTP authorization and registered project.
    * @param operation - Selected provider operation; no nested coordinator acquisition.
+   * @param readOnly - A listing may use the verified VFS independently of the execution VM.
    * @returns Original provider result, retaining descriptor/transport failures.
    */
   async binary<T>(scope: WorkspaceFileScope,
-    operation: (target: WorkspaceModeTarget, admitted: WorkspaceFileScope) => Promise<T>): Promise<T> {
-    const admission = await this.admit(scope)
+    operation: (target: WorkspaceModeTarget, admitted: WorkspaceFileScope) => Promise<T>, readOnly = false): Promise<T> {
+    const admission = await this.trackAdmission(scope, readOnly)
     try {
       if (admission.files === undefined) throw new Error('Mode admission did not capture its binary provider')
       return await operation({ execution: admission.backend, files: admission.files }, admission.scope)
@@ -192,7 +208,7 @@ export default class WorkspaceModeBackend extends SandboxExecutionBackend {
    * @returns Body and settlement including mode/task release failures.
    */
   async download(scope: WorkspaceFileScope, path: string, maxBytes: number): Promise<WorkspaceFileDownload> {
-    const admission = await this.admit(scope)
+    const admission = await this.trackAdmission(scope, true)
     try {
       if (admission.files === undefined) throw new Error('Mode admission did not capture its binary provider')
       const stream = await admission.files.download(admission.scope, path, maxBytes)

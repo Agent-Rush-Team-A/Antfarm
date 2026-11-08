@@ -26,11 +26,16 @@ export class WorkspaceModeCopyError extends Error {
  * @param destination - New private staging directory, absent on entry.
  * @param limits - Aggregate entry and byte budgets.
  * @param signal - Transition owner's cancellation.
- * @param ownership - Omitted for private checkpoints; publication retains destination uid/gid and root permissions.
+ * @param ownership - Omitted for private checkpoints. Shared destinations prepare access for their task group.
  * @returns A fully synchronized copy; partial staging remains owned by the caller on rejection.
  */
 export async function copyWorkspaceDirectory(source: string, destination: string, limits: WorkspaceModeCopyLimits,
-  signal: AbortSignal, ownership?: { readonly uid: number; readonly gid: number; readonly rootMode?: number }): Promise<void> {
+  signal: AbortSignal, ownership?: {
+    readonly uid: number
+    readonly gid: number
+    readonly rootMode?: number
+    readonly shareWithGroup?: true | undefined
+  }): Promise<void> {
   let entries = 0
   let total = 0
   const scan = async (directory: FileHandle, output: string): Promise<void> => {
@@ -72,7 +77,8 @@ export async function copyWorkspaceDirectory(source: string, destination: string
             }
             if ((await file.stat()).size !== stat.size) throw new WorkspaceModeCopyError('changed-extent')
             if (ownership !== undefined) await writer.chown(ownership.uid, ownership.gid)
-            await writer.chmod(stat.mode & 0o777)
+            const mode = stat.mode & 0o777
+            await writer.chmod(ownership?.shareWithGroup ? 0o660 | (mode & 0o110 ? 0o110 : 0) : mode)
             await writer.sync()
           } finally { await writer.close() }
           total += stat.size
@@ -82,7 +88,8 @@ export async function copyWorkspaceDirectory(source: string, destination: string
     const target = await open(output, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
     try {
       if (ownership !== undefined) await target.chown(ownership.uid, ownership.gid)
-      await target.chmod(output === destination ? ownership?.rootMode ?? (info.mode & 0o3777) : info.mode & 0o3777)
+      const mode = ownership?.shareWithGroup ? 0o2770 : info.mode & 0o3777
+      await target.chmod(output === destination ? ownership?.rootMode ?? mode : mode)
       await target.sync()
     } finally { await target.close() }
   }

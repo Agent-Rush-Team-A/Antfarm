@@ -6,12 +6,18 @@ import type {
   WorkspaceFileAccess, WorkspaceFileDownload, WorkspaceFileListing, WorkspaceFileScope, WorkspaceFileUpload,
 } from '@deepseek-ai/dsh-fs/workspace-access'
 import type { SandboxExecutionBackend } from './backend.ts'
-import type { RunnerClosedSandbox, RunnerRunningSandbox } from './runner-client.ts'
+import type { RunnerClosedSandbox, RunnerRunningSandbox, SandboxContainerId } from './runner-client.ts'
 
 /** One configured execution world and the file provider for its persistent workspace. */
 export interface WorkspaceModeTarget {
   readonly execution: Pick<SandboxExecutionBackend, 'open' | 'close' | 'status' | 'execute' | 'cancel' | 'files'>
     & Partial<Pick<SandboxExecutionBackend, 'activity' | 'progress'>>
+    & {
+      /** Close only the captured task generation using provider-owned recovery evidence. */
+      closeTask?(id: WorkspaceId, generation: SandboxContainerId): Promise<RunnerClosedSandbox>
+      /** Reconcile a failed generation before admitting another task. */
+      recoverTask?(id: WorkspaceId): Promise<void>
+    }
   readonly files: Pick<WorkspaceFileAccess, 'list' | 'download' | 'upload'>
 }
 

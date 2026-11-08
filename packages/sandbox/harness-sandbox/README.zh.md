@@ -107,6 +107,12 @@ SSH 关闭只释放 helper 及其受管理进程，不关闭或删除 VM。[Vult
 | `maxOutputBytes` | `65536` | 保留的命令输出字节上限。 |
 | `graceMs` | `5000` | 受管进程终止宽限期。 |
 
+单会话 VM 的目录提供方用登记项目的目录名定位独立 [VFS 工作区根](../../../team-docs/VULTR-VFS.md#执行-vm-的挂载和权限)下的文件。提供方核对当前整卷挂载和 Mount Tag。首次切入该模式时，Harness 在私有状态中预留 UID/GID，并以该组权限暂存完整文件副本。目录发布后，UID/GID 与该工作区永久绑定。回滚先清理暂存文件，再释放新预留的 UID/GID。网页直接从已验证目录上传、列表和下载，无需启动执行 VM。
+
+单会话分配提供方在发送创建请求前保存原代次、标签和卷标识。它核对实例归属和 Shared Memory Backing，再确认指定 VFS 的连接与 Mount Tag。固定主机密钥的 SSH 通道准备客体机整卷挂载和 `/workspace` 绑定，并以分配的任务用户运行探针。该代次的 helper 校验通过后才接纳命令和文本文件操作。中断的分配保留在私有状态中，占用容量直至回收结果得到确认。
+
+最后一个任务名额收尾后，提供方禁止原 helper 再次启动，确认任务进程退出，同步并卸载客体机的挂载，再核对 VFS 连接解除和实例消失。Harness 启动及后续接纳会按原标签和资源 ID 核对保留的记录。回收确认后，下一项任务可分配新 VM。
+
 <a id="workspace-text-tools"></a>
 ### Workspace 文本工具
 
@@ -262,7 +268,7 @@ Vultr 模式资源适配器在准备目标前，用现有快照路径保存源�
 <a id="known-limitations-and-deferred-work"></a>
 
 - **部署** — Runner 需要 Linux Unix socket 和单独配置的非 root 文件系统身份。Windows 命名管道仅用于通信测试。
-- **模式组合** — 部署必须提供协调器及显式后端映射；已分发的 profile 不会自动启用 `./modes`。单会话 VM 还需要经过共享文件系统验证的执行提供方。创建或删除结果未知时，提供方完成核实且模式准入重载之前不会分配新任务代次。
+- **模式组合** — 部署必须提供协调器及显式后端映射；已分发的 profile 不会自动启用 `./modes`。单会话 VM 还需要经过共享文件系统验证的执行提供方。创建或删除结果不明时，提供方核实原资源前会阻止分配新 VM。
 - **能力** — Runner overlay 只暴露 Bash。SSH 文本文件需要单独的 `./files` 入口和绑定代次的后端访问。搜索、PowerShell、后台、终端、浏览器和间接工具仍须先完成隔离。Runner overlay 启用网页管理控件。
 - **云端保留** — 删除工作区登记不会移除已保留的云快照或私有副本；部署运维负责已删除工作区的保留策略。关闭后的下载副本仅保留普通文件和目录，符号链接及特殊条目仅保留在完整磁盘快照中。
 - **云端验收** — `DSH_VULTR_TEST_CONFIG` 为[可选真实云端 Loader 测试](tests/vultr-loader.e2e.ts)指定私有部署 JSON，通过 `pnpm exec vitest run --config vitest.e2e.config.ts packages/sandbox/harness-sandbox/tests/vultr-loader.e2e.ts` 运行；`DSH_VULTR_TEST_EVIDENCE` 可选指定报告路径。测试创建两台计费 VM 和磁盘快照，以脚本模型验证真实 SSH 和已认证 HTTP，并移除带有唯一测试标签的资源；它不验证真实模型提供方或浏览器控件。

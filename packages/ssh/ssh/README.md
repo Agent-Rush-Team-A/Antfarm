@@ -78,6 +78,8 @@ For terminals opting into shell activity observation, root exit retains the rese
 
 The connection disables the helper’s SIGUSR1 debugger activation: the script invocation uses `--disable-sigusr1`, and the executable invocation supplies that flag through `NODE_OPTIONS`.
 
+The [VFS launcher](../../../team-docs/vfs/run-workspace-helper.sh) starts the installed helper at a verified, group-shared workspace using the assigned task UID/GID. It clears supplementary groups and capabilities and sets no new privileges. Its helper publishes new workspace text with mode 0660 and retains existing file modes on replacement.
+
 `signal` aborts on connection loss or disposal. `closeConfirmed()` joins local teardown and requires the original helper to acknowledge managed cleanup; it rejects after transport loss even if ordinary `dispose()` can finish releasing local resources. Workspace lifecycle owners use this distinction before accepting a replacement execution generation.
 
 </details>
