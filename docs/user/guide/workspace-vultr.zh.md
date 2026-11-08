@@ -82,4 +82,4 @@ export DSH_DOCKER_MODES_CONFIG_JSON="$(cat /srv/antfarm/workspace-modes.json)"
 pnpm run start:web --patch apps/cli/config/examples/harness-docker-modes.patch.yml --no-open
 ```
 
-此叠加层让新工作区默认使用多会话 Docker 模式。若覆盖 `workspace.defaultMode`，请选用 `single-vm` 以外的模式。在创建首个会话前选择 **单会话 · VM**，切换会准备 VFS 目录并迁入已上传的文件。执行 VM 关闭时，网页仍可从已校验的 VFS 目录上传、列表和下载。首个有效任务打开 VM，最后一个任务收尾后回收。同一会话再次收到消息时，会启动新 VM 并使用该 VFS 目录中的文件。出现 `cleanup_required` 时，已校验的 VFS 目录仍可列表和下载。
+此叠加层让新工作区默认使用多会话 Docker 模式。若覆盖 `workspace.defaultMode`，请选用 `single-vm` 以外的模式。在 Antfarm 中，请在创建首个会话前选择 **单会话 · Sandbox Pro (VM)**。DeepSeek Harness 中，这个选项显示为 **单会话 · VM**。切换会准备 VFS 目录并迁入已上传的文件。执行 VM 关闭时，网页仍可从已校验的 VFS 目录上传、列表和下载。首个有效任务打开 VM，最后一个任务收尾后回收。同一会话再次收到消息时，会启动新 VM 并使用该 VFS 目录中的文件。出现 `cleanup_required` 时，已校验的 VFS 目录仍可列表和下载。

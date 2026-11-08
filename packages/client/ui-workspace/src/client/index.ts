@@ -162,7 +162,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     }, WorkspaceUploadButton))
   })
   const productTitle: unknown = Reflect.get(globalThis, '__DSH_PRODUCT_TITLE__')
-  const modeControls = registerModeUi(ctx, workspaces, productTitle === 'Antfarm' ? 'single-docker' : 'single-vm')
+  const modeControls = registerModeUi(ctx, workspaces, productTitle === 'Antfarm')
   const uiWorkspace = new UiWorkspaceService(
     ctx, ctx.remote.directoryPicker, workspaces, sessions, viewInstance.actions, notify,
     (workspaceId, begin) => { modeControls.request(workspaceId, begin) },

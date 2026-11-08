@@ -2,7 +2,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { IWorkspaces, WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
-import type { WorkspaceMode } from '@deepseek-ai/dsh-workspace/types'
 import { modeFailureKey } from './mode-errors.ts'
 import { ModeOverlay, type ModeDialogInjected, type ModeSelection } from './ModeDialog.tsx'
 
@@ -16,10 +15,10 @@ export interface ModeControls {
  * Install the overlay and menu independently of optional execution providers.
  * @param ctx - Workspace plugin context.
  * @param workspaces - Authoritative client projection and mode commands.
- * @param preferredMode - Mode to preselect when the runtime offers it for a new Workspace.
+ * @param isAntfarm - Whether to use Antfarm workspace mode labels and defaults.
  * @returns Configuration gestures for the Workspace row and first-Session flow.
  */
-export function registerModeUi(ctx: Context, workspaces: IWorkspaces, preferredMode: WorkspaceMode): ModeControls {
+export function registerModeUi(ctx: Context, workspaces: IWorkspaces, isAntfarm: boolean): ModeControls {
   const selection = createSnapshotStore<ModeSelection | null>(null)
   const pending = createSnapshotStore<readonly WorkspaceId[]>([])
   const lifetime = new AbortController()
@@ -41,7 +40,7 @@ export function registerModeUi(ctx: Context, workspaces: IWorkspaces, preferredM
     return operation
   }
   const actions: ModeDialogInjected = {
-    preferredMode,
+    isAntfarm,
     hooks: { modeSelection: selection, modePending: pending },
     dismissMode: dismiss,
     refreshMode: (id) => {

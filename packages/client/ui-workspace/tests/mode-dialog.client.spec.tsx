@@ -23,7 +23,7 @@ function props(value = row): ModeFormProps {
   return {
     row: value,
     selection: { workspaceId: id, startsSession: true, availableModes: ['single-vm', 'multi-vm', 'single-docker', 'multi-docker'] },
-    pending: false, preferredMode: 'single-vm',
+    pending: false, isAntfarm: false,
     t: makeTranslate(en, commonEn), useWorkspaceAccess: vi.fn().mockReturnValue(true), dismissMode: vi.fn(),
     refreshMode: vi.fn(), saveMode: vi.fn().mockResolvedValue(true), beginModeSession: vi.fn(),
   }
@@ -41,12 +41,13 @@ it('offers four modes before the first Session and saves the captured revision',
 })
 
 it.each([
-  ['single-docker', 'Single session · Docker (default)'],
-  ['single-vm', 'Single session · VM (default)'],
-] as const)('preselects the frontend preference %s for a fresh workspace', (preferredMode, label) => {
+  { isAntfarm: true, label: 'Single session · Docker (default)', multiVmLabel: 'Multiple sessions · Sandbox Pro (VM)' },
+  { isAntfarm: false, label: 'Single session · VM (default)', multiVmLabel: 'Multiple sessions · VM' },
+])('uses the frontend labels and preselects $label for a fresh workspace', ({ isAntfarm, label, multiVmLabel }) => {
   const p = props({ ...row, modeConfig: { ...row.modeConfig, revision: 0 } })
-  render(<ModeForm {...p} preferredMode={preferredMode} />)
+  render(<ModeForm {...p} isAntfarm={isAntfarm} />)
   expect(screen.getByRole<HTMLInputElement>('radio', { name: label }).checked).toBe(true)
+  expect(screen.getByRole('radio', { name: multiVmLabel })).toBeTruthy()
   expect(p.saveMode).not.toHaveBeenCalled()
   expect(p.beginModeSession).not.toHaveBeenCalled()
 })
