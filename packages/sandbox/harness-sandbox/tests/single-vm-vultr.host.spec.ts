@@ -571,18 +571,24 @@ test('persistent VFS restart rechecks the original mount and helper before reusi
     return originalReconnect(...args)
   })
   const restarted = f.make('workspace')
-  const openings: Promise<RunnerRunningSandbox>[] = []
+  const openings: Promise<RunnerSandboxStatus>[] = []
   try {
     await restarted.initialize()
-    await expect(restarted.status(workspaceId)).resolves.toEqual({ state: 'starting' })
+    const observed = restarted.status(workspaceId)
+    openings.push(observed)
+    void observed.catch(() => {}) // The assertions below observe the result after releasing the reconnect barrier.
+    await reconnectEntered.promise
     const one = restarted.open(workspaceId, project)
     openings.push(one)
-    void one.catch(() => {}) // The assertions below observe the result after releasing the reconnect barrier.
-    await reconnectEntered.promise
+    void one.catch(() => {}) // Retain disposal failures if an earlier assertion interrupts this observer.
     const two = restarted.open(workspaceId, project)
     openings.push(two)
     void two.catch(() => {}) // Retain disposal failures if an earlier assertion interrupts this observer.
+    const concurrentStatus = restarted.status(workspaceId)
+    openings.push(concurrentStatus)
+    void concurrentStatus.catch(() => {}) // The barrier also bounds this concurrent status observer.
     await expect(restarted.close(workspaceId)).rejects.toMatchObject({ code: 'sandbox_closing' })
+    await expect(restarted.recoverTask(workspaceId)).rejects.toMatchObject({ code: 'sandbox_closing' })
     expect(() => restarted.execute(workspaceId, executionRequest.parse({
       expectedContainerId: running.containerId, executionId: 'before-reconnect',
       command: 'true', workdir: '.', timeoutMs: 1000,
@@ -592,6 +598,8 @@ test('persistent VFS restart rechecks the original mount and helper before reusi
     expect(reconnected).toMatchObject({ state: 'running' })
     expect(reconnected.containerId).not.toBe(running.containerId)
     await expect(two).resolves.toEqual(reconnected)
+    await expect(observed).resolves.toEqual(reconnected)
+    await expect(concurrentStatus).resolves.toEqual(reconnected)
     expect(() => restarted.execute(workspaceId, executionRequest.parse({
       expectedContainerId: running.containerId, executionId: 'stale-after-reconnect',
       command: 'true', workdir: '.', timeoutMs: 1000,
@@ -607,6 +615,41 @@ test('persistent VFS restart rechecks the original mount and helper before reusi
     reconnectRelease.resolve(undefined)
     await Promise.allSettled(openings)
     await restarted.dispose()
+  }
+})
+
+test('persistent restart becomes idle-reclaimable through a status query without a user opening the workspace', async () => {
+  const f = fixture()
+  f.handshake.resolve(undefined)
+  const first = f.make('workspace')
+  await first.initialize()
+  await first.open(workspaceId, project)
+  await first.dispose()
+  const restarted = f.make('workspace')
+  const ctx = new Context()
+  await ctx.plugin(WorkspaceSandboxState)
+  const state = ctx.workspaceSandboxState
+  state.attach(Symbol('management'))
+  try {
+    await restarted.initialize()
+    expect(state.activity(workspaceId).idleSince).toBeNull()
+    const status = await state.query(workspaceId, () => restarted.status(workspaceId))
+    expect(status.state).toBe('running')
+    expect(state.activity(workspaceId)).toMatchObject({ busy: false, sandbox: status })
+    expect(state.activity(workspaceId).idleSince).toEqual(expect.any(Number))
+    expect(f.reconnect).toHaveBeenCalledOnce()
+    expect(f.requests.filter(request => request === 'POST /instances')).toHaveLength(1)
+    await expect(state.close(workspaceId, () => restarted.close(workspaceId)))
+      .resolves.toEqual({ state: 'closed', reconciled: true })
+    expect(state.activity(workspaceId).idleSince).toBeNull()
+    expect(f.requests.filter(request => request.startsWith('DELETE '))).toEqual([
+      'DELETE /vfs/' + volumeId + '/attachments/' + instanceId,
+      'DELETE /instances/' + instanceId,
+    ])
+    expect(f.records.remove).toHaveBeenCalledWith(workspaceId)
+  } finally {
+    await restarted.dispose()
+    await ctx.fiber.dispose()
   }
 })
 
@@ -745,7 +788,6 @@ test('persistent workspace teardown retires a restored VM without opening anothe
   const restarted = f.make('workspace')
   try {
     await restarted.initialize()
-    await expect(restarted.status(workspaceId)).resolves.toEqual({ state: 'starting' })
     await restarted.recoverTask(workspaceId)
     await expect(restarted.status(workspaceId)).resolves.toEqual({ state: 'closed', reconciled: true })
     expect(f.reconnect).not.toHaveBeenCalled()

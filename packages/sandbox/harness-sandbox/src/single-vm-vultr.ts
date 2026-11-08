@@ -136,10 +136,7 @@ export class SingleVmVultrBackend {
         await this.recoverTask(id)
         return this.open(id, project)
       }
-      if (current.needsReconnect) {
-        current.opening = this.reconnectOnce(id, current).finally(() => { delete current.opening })
-        return current.opening
-      }
+      if (current.needsReconnect) return this.reconnectExisting(id, current)
       const status = await this.status(id)
       if (status.state === 'running') { this.current(id, status.containerId); return status }
       throw new RunnerResponseError('sandbox_cleanup_required', 409, true)
@@ -151,6 +148,11 @@ export class SingleVmVultrBackend {
     this.slots.set(id, slot)
     slot.opening = this.openOnce(id, slot).finally(() => { delete slot.opening })
     return slot.opening
+  }
+
+  private reconnectExisting(id: WorkspaceId, slot: Slot): Promise<RunnerRunningSandbox> {
+    this.lifetime.signal.throwIfAborted()
+    return slot.opening ??= this.reconnectOnce(id, slot).finally(() => { delete slot.opening })
   }
 
   private async reconnectOnce(id: WorkspaceId, slot: Slot): Promise<RunnerRunningSandbox> {
@@ -329,7 +331,8 @@ export class SingleVmVultrBackend {
   }
 
   /**
-   * Observe preparation or the matching live helper without creating anything.
+   * Observe preparation or the matching live helper without allocating a VM. A retained running
+   * allocation reconnects its original instance and verifies its VFS mount and pinned helper first.
    * @param id - Authorized workspace.
    * @returns Current execution state; closed carries reconciliation evidence only after confirmed original-resource removal.
    */
@@ -337,8 +340,8 @@ export class SingleVmVultrBackend {
     const slot = this.slots.get(id)
     if (slot === undefined) return this.closedStatus(id)
     if (slot.closing !== undefined) return { state: 'closing' }
+    if (slot.needsReconnect) return this.reconnectExisting(id, slot)
     if (slot.opening !== undefined) return { state: 'starting' }
-    if (slot.needsReconnect) return { state: 'starting' }
     if (slot.record?.state !== 'running') return { state: 'cleanup_required' }
     const live = await this.runtime.status(id)
     return live.state === 'running' && live.containerId === (slot.runtimeGeneration ?? slot.record.generation)
@@ -382,6 +385,7 @@ export class SingleVmVultrBackend {
    */
   async recoverTask(id: WorkspaceId): Promise<void> {
     const slot = this.slots.get(id)
+    if (slot?.opening !== undefined) throw new RunnerResponseError('sandbox_closing', 409, false)
     if (slot?.closing !== undefined) await slot.closing
     else if (slot?.record !== undefined && (slot.record.state === 'cleanup_required' || slot.needsReconnect)) {
       await this.reclaim(slot, slot.record.generation)
