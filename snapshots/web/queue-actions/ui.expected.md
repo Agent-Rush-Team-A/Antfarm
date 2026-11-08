@@ -14,6 +14,7 @@
 - text: Deep diving for {{duration}} ···
 - list:
   - listitem:
+    - status: Queued
     - text: Edited queue item
     - button "Edit queued message"
     - button "Remove queued message"

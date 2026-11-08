@@ -2,7 +2,6 @@
 .body { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .body p { margin: 0; color: var(--dsw-alias-label-primary); }
 .workspace { overflow-wrap: anywhere; font-weight: 500; }
-.identity { overflow-wrap: anywhere; font-size: 13px; }
 .choices { display: flex; flex-direction: column; gap: 12px; border: 0; padding: 0; margin: 0; min-width: 0; }
 .choices legend { padding: 0; margin-bottom: 12px; }
 .option { display: flex; align-items: center; gap: 4px; }

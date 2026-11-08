@@ -60,6 +60,10 @@
 - id: ui-user-credentials
   disabled: false
 
+# Omit Harness plugin customization menus from Antfarm.
+- id: entry-customization
+  disabled: true
+
 # Multiuser inference uses only account-owned credentials, including the default model.
 - id: agent-default-model
   config:

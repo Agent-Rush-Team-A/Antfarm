@@ -193,8 +193,9 @@ export function QueueDock({ useSession, useProjection, updateQueue, notify, load
             const text = textOf(row.content)
             return (
               <li key={row.id} className={css.row}>
-                {/* Single-item strip has no count header, so the row itself carries the queue glyph. */}
+                {/* The single row labels the accepted message because it has no count header. */}
                 {rowCount === 1 && <span className={css.lead} aria-hidden><IconQueueOutlineRegular /></span>}
+                {rowCount === 1 && <span className={css.status} role="status">{t('queue.queued')}</span>}
                 {editing?.id === row.id
                   ? (
                     <InlineEditor

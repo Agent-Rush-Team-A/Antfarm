@@ -275,10 +275,13 @@ export async function connectFreshWorkspace(page: Page, root: string, name = 'wo
   await pathInput.fill(join(root, name))
   await pathInput.press('Enter')
   await dialog.getByRole('button', { name: 'Open', exact: true }).click()
-  // The pick connected the workspace: the blank session's live composer
-  // replaces the locked placeholder and enables.
-  await page.locator('[data-composer-input][contenteditable="true"][data-placeholder="Describe what you want to build, / commands, @ files or sessions"]')
-    .waitFor({ timeout: 15_000 })
+  const composer = page.locator('[data-composer-input][contenteditable="true"][data-placeholder="Describe what you want to build, / commands, @ files or sessions"]')
+  const configuration = page.getByRole('dialog', { name: 'Workspace configuration', exact: true })
+  await composer.or(configuration).first().waitFor({ timeout: 15_000 })
+  if (await configuration.isVisible()) {
+    await configuration.getByRole('button', { name: 'Start session', exact: true }).click()
+  }
+  await composer.waitFor({ timeout: 15_000 })
 }
 
 /**

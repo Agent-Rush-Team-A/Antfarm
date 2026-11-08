@@ -247,7 +247,8 @@ export default class WorkspaceSandbox extends TypertRemoteService {
   async statusForUser(userId: UserId, workspaceId: WorkspaceId, signal?: AbortSignal): Promise<RunnerSandboxStatus> {
     this.authorize(userId, workspaceId, 'status')
     this.available()
-    if (this.state.closing(workspaceId)) return Promise.resolve({ state: 'closing' })
+    const closure = this.state.closing(workspaceId)
+    if (closure !== undefined) return { state: closure }
     const barrier = this.client.barrier(workspaceId)
     if (barrier !== undefined) return barrier
     return this.withAdmission(userId, workspaceId, 'status', async resources => this.state.query(workspaceId, async () => {

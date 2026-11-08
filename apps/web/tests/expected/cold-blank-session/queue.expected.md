@@ -1,5 +1,6 @@
 - list:
   - listitem:
+    - status: Queued
     - text: Accepted before the Host restarted
     - button "Edit queued message"
     - button "Remove queued message"

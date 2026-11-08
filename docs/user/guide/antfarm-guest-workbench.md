@@ -24,7 +24,7 @@ export DSH_GUEST_INFERENCE_KEY_FILE=/srv/antfarm-demo/secrets/guest-inference.ke
 pnpm dsh web --patch apps/cli/config/antfarm-web.patch.yml --patch apps/cli/config/examples/harness-docker-modes.patch.yml --patch apps/cli/config/examples/antfarm-guest-workbench.patch.yml --dump-config
 ```
 
-The [workbench overlay](../../../apps/cli/config/examples/antfarm-guest-workbench.patch.yml) enables visitor access, the Antfarm palette, and one validated Web bootstrap for the workspace dashboard and right file panel. Its literal module name `./antfarm-workbench-boot.mjs` resolves beside the overlay, so profile storage does not determine its location. Its presentation settings are `workbench: true`, `initiallyExpanded: true`, and `defaultPage: workspace-files`. Saved panel layouts remain authoritative; a fresh desktop Session opens the file panel, while narrow screens keep it collapsed.
+The [workbench overlay](../../../apps/cli/config/examples/antfarm-guest-workbench.patch.yml) enables visitor access, the Antfarm palette, and one validated Web bootstrap for the workspace dashboard and right file panel. Its literal module name `./antfarm-workbench-boot.mjs` resolves beside the overlay, so profile storage does not determine its location. Its presentation settings are `workbench: true`, `initiallyExpanded: true`, and `defaultPage: workspace-files`. Saved panel layouts remain authoritative; a fresh desktop Session opens the file panel, while narrow screens keep it collapsed. The Antfarm Web overlay omits the Harness plugin customization menus, including **More** in the left sidebar.
 
 Launch the same profile after the Runner and private deployment settings are ready:
 
@@ -37,6 +37,8 @@ Choose the Web port and listener through the existing deployment configuration. 
 ## Try a task
 
 Open the preview and choose **Try it as a guest**. The application creates a separate visitor identity with an HttpOnly login cookie. Every visitor owns only their own workspaces and conversations; the browser does not ask visitors for a password or model key.
+
+In the expanded sidebar, the account card groups the account name, **Sign out**, and the language setting. Signed-in team members can open **My credentials** above the card.
 
 Choose the sales example to prepare `sales.csv` and a task draft, then send the task. The agent produces a Markdown report and CSV summary. The file panel shows uploaded files and generated results. Download a result after the task finishes, then continue the conversation to use the retained files in a fresh environment. Choose the project brief example for a plan, or create a workspace to upload your own files.
 

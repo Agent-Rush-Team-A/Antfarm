@@ -51,6 +51,8 @@ it('configures four modes, preserves permanent locks, and keeps Workspace admiss
     await dialog.waitFor({ state: 'hidden' })
     await page.reload()
     await page.getByRole('button', { name: 'Choose workspace', exact: true }).waitFor()
+    const navigation = page.getByRole('navigation', { name: 'Global panels' })
+    expect(await navigation.getByRole('button', { name: 'More', exact: true }).count()).toBe(0)
     expect(scaffold.ctx.sessions.list()).toHaveLength(0)
     const workspaceRow = (title: string) => page.getByRole('treeitem').filter({ has: page.getByText(title, { exact: true }) }).first()
     async function configure(title: string) {
@@ -188,13 +190,14 @@ it('configures four modes, preserves permanent locks, and keeps Workspace admiss
   } finally { await browser.close() }
 })
 
-it.runIf(process.platform === 'linux')('lets an Antfarm visitor choose any sandbox mode before the first session', async () => {
+it.runIf(process.platform === 'linux')('supports guest mode selection and keeps signed-in Antfarm controls readable', async () => {
   const root = await mkdtemp(join(tmpdir(), 'antfarm-guest-modes-'))
   onTestFinished(() => rm(root, { recursive: true, force: true }))
   const overlay = join(root, 'guest.yml')
   await writeFile(overlay, JSON.stringify([
     { id: 'multiuser', config: { workspaceRoot: join(root, 'workspaces'), guestAccess: true } },
     { id: 'antfarm-workbench', config: { workbench: true } },
+    { id: 'locale', config: { preference: 'en', browserPreferenceKey: 'dsh.locale.preference' } },
   ]))
   const scaffold = await launchWebScaffold({ firstUse: true, accountAuthentication: true, compareReplaySession: false,
     extraOverlayPath: [fileURLToPath(new URL('../../cli/config/antfarm-web.patch.yml', import.meta.url)), overlay] })
@@ -211,6 +214,8 @@ it.runIf(process.platform === 'linux')('lets an Antfarm visitor choose any sandb
     await page.getByRole('button', { name: 'Try it as a guest', exact: true }).click()
     await page.getByRole('heading', { name: 'What should your agent work on?' }).waitFor()
     expect(await page.title()).toBe('Antfarm')
+    const navigation = page.getByRole('navigation', { name: 'Global panels' })
+    await navigation.getByRole('button', { name: 'Overview', exact: true }).waitFor()
     await page.getByRole('button', { name: 'New workspace', exact: true }).first().click()
     const setup = page.getByRole('dialog', { name: 'Your workspace, your way' })
     await setup.getByRole('textbox', { name: 'Workspace name' }).fill('Visitor VM test')
@@ -228,5 +233,29 @@ it.runIf(process.platform === 'linux')('lets an Antfarm visitor choose any sandb
     await expect.poll(() => scaffold.ctx.workspaceRegistry.list()[0]?.modeConfig).toMatchObject({
       mode: 'single-vm', modeLocked: true,
     })
+    expect(await navigation.getByRole('button', { name: 'More', exact: true }).count()).toBe(0)
+
+    const password = randomUUID()
+    await scaffold.ctx.multiuser.provisionUser('judge-01', password)
+    const signedIn = await browser.newPage({ locale: 'en-US', viewport: { width: 1024, height: 768 } })
+    await signedIn.goto(new URL(scaffold.authenticatedUrl).origin)
+    await signedIn.getByText('Sign in with an account', { exact: true }).click()
+    await signedIn.getByLabel('Username', { exact: true }).fill('judge-01')
+    await signedIn.getByLabel('Password', { exact: true }).fill(password)
+    await signedIn.getByRole('button', { name: 'Sign in', exact: true }).click()
+    const credentials = signedIn.getByRole('button', { name: 'My credentials', exact: true })
+    const dock = signedIn.locator('[data-dsh-account-dock][data-wide]')
+    const name = dock.getByText('judge-01', { exact: true })
+    await name.waitFor()
+    await credentials.waitFor()
+    const launcherBox = await credentials.boundingBox()
+    const dockBox = await dock.boundingBox()
+    expect(launcherBox).not.toBeNull()
+    expect(dockBox?.y).toBeGreaterThanOrEqual((launcherBox?.y ?? 0) + (launcherBox?.height ?? 0))
+    expect(await name.evaluate(element => element.scrollWidth <= element.clientWidth && getComputedStyle(element).whiteSpace === 'nowrap')).toBe(true)
+    await dock.getByRole('button', { name: 'Sign out', exact: true }).waitFor()
+    await dock.getByRole('combobox', { name: 'Language' }).waitFor()
+    await credentials.click()
+    await signedIn.getByRole('dialog', { name: 'My credentials', exact: true }).waitFor()
   } finally { await browser.close() }
 })

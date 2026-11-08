@@ -1,4 +1,4 @@
-.accountDock { flex: 1 1 100%; min-width: 0; }
+.accountDock { min-width: 0; }
 .accountDock:not([data-wide]) { display: none; }
 .page { --wb-sand: var(--af-sand, #a35f0b); --wb-sand-tint: var(--af-sand-tint, #f8eedd); height: 100%; min-width: 0; overflow: auto; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); }
 :global(body[data-ds-dark-theme]) .page { --wb-sand: var(--af-sand, #f0b45e); --wb-sand-tint: var(--af-sand-tint, #2c2417); }
