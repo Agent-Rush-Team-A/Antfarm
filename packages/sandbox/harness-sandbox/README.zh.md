@@ -54,7 +54,7 @@ kind: "package-reference"
 
 `close` 先授权，再同步撤销旧消息许可，取消该工作区活跃和排队中的 Agent 输入。它等待已接纳的目录校验和 PUT 请求后再发送 DELETE；关闭期间新开启立即失败。只有确认 DELETE 且不存在结果不明的旧修改时才允许重开。阻止标记存在时 `status` 返回本地 `closing`；其他时候查询 Runner 的 `closed`、`starting`、`running`、`closing` 或 `cleanup_required`。工作区登记、文件和会话均保留。
 
-移除原生工作区登记前需要 Runner 的本次查询明确返回 `closed`。已有开启请求或其他状态以 `workspace/sandbox-active` 和 `{ workspaceId, state }` 拒绝删除，需先关闭沙箱。查询失败保留登记和归属。删除保护持续到注册表写入或回滚完成，期间拒绝该工作区的新开启，其他工作区仍可操作。保护由注册表拥有，跨越管理器卸载和重载：每次解析当前活跃服务，管理离线时以 `sandbox/failed` 的 `runner_unavailable` 原因拒绝删除原生工作区。插件卸载等待已接纳的删除保护完成；重载替换具名保护，不保留旧服务。
+删除或归档原生工作区会停止其会话活动、阻止新的资源准入、等待现有模式租约收尾，并在提交前确认沙箱回收。回收失败保留登记和所有权；结果未知的修改必须由提供者协调后才能确认为已关闭。登记服务在 `SandboxExecutionBackend.closeWorkspace` 期间持有独占锁，因此模式提供者直接选择已提交的目标，不再获取租约。归档保留文件与会话，恢复不会启动沙箱。登记服务在管理器卸载和重载期间持有删除与归档保护；管理器不可用时以 `sandbox/failed`、原因 `runner_unavailable` 拒绝回收。
 
 Runner 失败使用 `sandbox/failed`，详情为 `{ reason, outcomeUnknown }`。稳定原因区分 `sandbox_capacity`、`sandbox_not_ready`、`sandbox_closing`、`sandbox_cleanup_required`、`sandbox_workspace_conflict`、`sandbox_name_conflict`、`sandbox_outcome_unknown`、`invalid_workspace_directory`、`docker_unavailable`、`runner_unavailable` 和 `runner_outcome_unknown`。关闭失败时保留阻止标记，可重试关闭。PUT 或 DELETE 结果不明时，后续 DELETE 也不会解除 `closing`：现有协议无法证明响应丢失的旧修改已收束。查询和插件重载都不清除这种不确定性。消息不含 Runner 原始诊断、路径或堆栈。
 

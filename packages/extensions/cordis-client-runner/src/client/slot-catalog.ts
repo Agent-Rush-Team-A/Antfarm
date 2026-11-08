@@ -5726,7 +5726,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     doc: 'Environment status supplied by an isolated provider inside the workspace file panel.',
     registerOptions: [],
     ownerProps: [
-      '/** One durable Workspace projected for browser consumers. */\nexport interface WorkspaceView {\n  /** Permanent mode locking and monotonic operation metadata. */\n  readonly modeConfig: WorkspaceModeConfig\n  readonly workspaceId: WorkspaceId\n  /** Canonical host directory path. */\n  readonly path: string\n  /** User-visible title. */\n  readonly title: string\n  /** Sessions accounted to this Workspace in manual order. */\n  readonly sessionIds: readonly SessionId[]\n  /** ISO-8601 creation instant. */\n  readonly createdAt: string\n  /** ISO-8601 last-mutation instant. */\n  readonly updatedAt: string\n}',
+      '/** One durable Workspace projected for browser consumers. */\nexport interface WorkspaceView {\n  /** Archived Workspaces retain history but require restoration before runtime use. */\n  readonly archived?: boolean\n  /** Permanent mode locking and monotonic operation metadata. */\n  readonly modeConfig: WorkspaceModeConfig\n  readonly workspaceId: WorkspaceId\n  /** Canonical host directory path. */\n  readonly path: string\n  /** User-visible title. */\n  readonly title: string\n  /** Sessions accounted to this Workspace in manual order. */\n  readonly sessionIds: readonly SessionId[]\n  /** ISO-8601 creation instant. */\n  readonly createdAt: string\n  /** ISO-8601 last-mutation instant. */\n  readonly updatedAt: string\n}',
     ],
     ownerPropsReferences: [
       'SessionId',

@@ -22,6 +22,8 @@ export interface Config {
   uid: number
   /** Non-root numeric GID inside the container. */
   gid: number
+  /** Maximum occupied workspace containers, shared by all accounts and Docker modes. */
+  maxInstances?: number
   /** Total deadline for a Docker JSON request, in milliseconds. */
   requestTimeoutMs?: number
   /** Supervisor cleanup and result-confirmation budget, in milliseconds. */
@@ -32,6 +34,8 @@ export interface Config {
 
 /** Deployment settings after the Loader applies timing defaults. */
 export type ResolvedConfig = Config & {
+  /** Effective shared container capacity. */
+  maxInstances: number
   /** Effective Docker JSON request deadline, in milliseconds. */
   requestTimeoutMs: number
   /** Effective supervisor cleanup budget, in milliseconds. */
@@ -49,6 +53,7 @@ export const Config: Schema<Config, ResolvedConfig> = Schema.object({
   image: Schema.string().pattern(/^[^\s@]+@sha256:[a-f0-9]{64}$/u).required(),
   uid: Schema.natural().min(1).max(0xffff_fffe).required(),
   gid: Schema.natural().min(1).max(0xffff_fffe).required(),
+  maxInstances: Schema.natural().min(1).max(100).default(2),
   requestTimeoutMs: Schema.natural().min(1).max(2_147_483_647).default(10_000),
   cleanupTimeoutMs: Schema.natural().min(1).max(60_000).default(2_000),
   termGraceMs: Schema.natural().max(59_999).default(250),

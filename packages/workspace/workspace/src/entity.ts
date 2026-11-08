@@ -117,6 +117,17 @@ export class WorkspaceEntity implements Workspace {
     return this.record.title
   }
 
+  get archived(): boolean | undefined { return this.record.archived }
+
+  /**
+   * Persist archival after registry-owned runtime cleanup.
+   * @param archived - Whether runtime admission remains disabled.
+   * @returns After the record is durable.
+   */
+  async setArchived(archived: boolean): Promise<void> {
+    await this.mutate(record => ({ ...record, archived }))
+  }
+
   get createdAt(): string {
     return this.record.createdAt
   }

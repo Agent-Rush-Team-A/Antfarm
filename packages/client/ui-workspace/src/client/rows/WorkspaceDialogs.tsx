@@ -1,17 +1,20 @@
-/** Workspace rename and removal dialogs, keyed by their captured request. */
+/** Workspace rename, archival and removal dialogs, keyed by their captured request. */
 import { useEffect, useRef, useState } from 'react'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { WorkspaceActionRequest, WorkspaceBrowserProps } from '../contract/slots.ts'
 import css from './WorkspaceBrowser.module.css'
+import { modeFailureKey } from '../mode-errors.ts'
 
-type Props = Pick<WorkspaceBrowserProps, 'renameWorkspace' | 'deleteWorkspace' | 'settleWorkspaceAction' | 't'> & {
+type Props = Pick<WorkspaceBrowserProps, 'renameWorkspace' | 'deleteWorkspace' | 'setWorkspaceArchived' | 'settleWorkspaceAction' | 't'> & {
   request: WorkspaceActionRequest
   workspaces: readonly WorkspaceView[]
 }
 
 /** @param props - captured request, current Workspace list, and existing mutations. @returns the active dialog. */
-export function WorkspaceDialogs({ request, workspaces, renameWorkspace, deleteWorkspace, settleWorkspaceAction, t }: Props) {
+export function WorkspaceDialogs({
+  request, workspaces, renameWorkspace, deleteWorkspace, setWorkspaceArchived, settleWorkspaceAction, t,
+}: Props) {
   const composingRef = useRef(false)
   const renameTarget = request.action === 'rename' ? request : null
   const [renameDraft, setRenameDraft] = useState(request.displayTitle)
@@ -43,7 +46,8 @@ export function WorkspaceDialogs({ request, workspaces, renameWorkspace, deleteW
     })
   }
 
-  const deleteTarget = request.action === 'delete' ? request : null
+  const deleteTarget = request.action !== 'rename' ? request : null
+  const lifecycleAction = request.action === 'archive' ? 'archive' : request.action === 'unarchive' ? 'unarchive' : 'delete'
   const [deleting, setDeleting] = useState(false)
   const [deleteCommittedId, setDeleteCommittedId] = useState<WorkspaceId | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -65,14 +69,18 @@ export function WorkspaceDialogs({ request, workspaces, renameWorkspace, deleteW
     setDeleting(true)
     setDeleteCommittedId(null)
     setDeleteError(null)
-    deleteWorkspace(deleteTarget.workspaceId).then(() => {
+    const mutation = deleteTarget.action === 'delete'
+      ? deleteWorkspace(deleteTarget.workspaceId)
+      : setWorkspaceArchived(deleteTarget.workspaceId, deleteTarget.action === 'archive')
+    mutation.then(() => {
       // Keep the confirmation pending until this component has rendered the
       // committed list projection without the deleted id. Closing earlier
       // exposes one stale React frame to the next Create Workspace gesture.
-      setDeleteCommittedId(deleteTarget.workspaceId)
+      if (deleteTarget.action === 'delete') setDeleteCommittedId(deleteTarget.workspaceId)
+      else { setDeleting(false); settleWorkspaceAction() }
     }).catch((reason: unknown) => {
       setDeleting(false)
-      setDeleteError(reason instanceof Error ? reason.message : String(reason))
+      setDeleteError(t(modeFailureKey(reason, 'workspace.lifecycleFailed')))
     })
   }
 
@@ -116,10 +124,10 @@ export function WorkspaceDialogs({ request, workspaces, renameWorkspace, deleteW
       open={deleteTarget !== null}
       onClose={closeDelete}
       closeLabel={t('close')}
-      title={t('delete.workspace')}
+      title={t(`${lifecycleAction}.workspace`)}
       {...deleteTarget === null
         ? {}
-        : { description: t('delete.desc', { name: deleteTarget.displayTitle }) }}
+        : { description: t(`${lifecycleAction}.workspaceDesc`, { name: deleteTarget.displayTitle }) }}
       footer={(
         <>
           <Button variant="outline" disabled={deleting} onClick={closeDelete}>{t('cancel')}</Button>
@@ -129,12 +137,12 @@ export function WorkspaceDialogs({ request, workspaces, renameWorkspace, deleteW
             disabled={deleting}
             onClick={confirmDelete}
           >
-            {t('delete.workspace')}
+            {t(`${lifecycleAction}.workspace`)}
           </Button>
         </>
       )}
     >
-      {deleting && <div className={css.deleteStatus} role="status">{t('delete.pending')}</div>}
+      {deleting && <div className={css.deleteStatus} role="status">{t(`${lifecycleAction}.workspacePending`)}</div>}
       {deleteError !== null && <div className={css.renameError} role="alert">{deleteError}</div>}
     </Modal>
   </>

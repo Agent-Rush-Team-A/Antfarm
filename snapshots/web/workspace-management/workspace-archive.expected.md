@@ -1,0 +1,6 @@
+- dialog "Archive workspace":
+  - heading "Archive workspace" [level=2]
+  - button "Close"
+  - paragraph: Stop work in “Archive example” and release its VM or Docker sandbox. Files and sessions are kept. Restore it from the show archived view.
+  - button "Cancel"
+  - button "Archive workspace"

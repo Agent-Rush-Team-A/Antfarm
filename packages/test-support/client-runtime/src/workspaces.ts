@@ -185,6 +185,23 @@ export class TestWorkspaces implements IWorkspaces {
   }
 
   /**
+   * Record archival and publish the matching Workspace row.
+   * @param workspaceId - Existing test Workspace.
+   * @param archived - Desired archival state.
+   * @returns Updated row or the configured stub result.
+   */
+  async setArchived(workspaceId: WorkspaceId, archived: boolean): Promise<WorkspaceView> {
+    this.calls.push({ method: 'setArchived', args: [workspaceId, archived] })
+    const stub = this.stubs.get('setArchived')
+    if (stub !== undefined) return await (stub(workspaceId, archived) as Promise<WorkspaceView>)
+    const previous = this.list.getSnapshot().items.find(row => row.workspaceId === workspaceId)
+    if (previous === undefined) throw new Error('Test Workspace is missing')
+    const workspace = { ...previous, archived }
+    await this.update((draft) => { draft.items = draft.items.map(row => row.workspaceId === workspaceId ? workspace : row) })
+    return workspace
+  }
+
+  /**
    * Unarchive a session (recorded). The default mirrors the production face's
    * observable effect: the id leaves the list state's archive set.
    * @param sessionId - session to unarchive.

@@ -165,6 +165,18 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
   }
 
   /**
+   * Set archival and merge the confirmed record into the reconnect-safe list.
+   * @param workspaceId - Target registration.
+   * @param archived - Desired archival state.
+   * @returns Generated Remote result, preserving cleanup failures.
+   */
+  async setArchived(workspaceId: WorkspaceId, archived: boolean): Promise<RemoteResult<WorkspaceValue>> {
+    const result = await this.remote.setArchived({ workspaceId, archived })
+    if (result.ok) this.upsert(result.value.workspace)
+    return result
+  }
+
+  /**
    * Optimistically move a Workspace and reconcile the returned complete order.
    * @param workspaceId - Workspace to move.
    * @param beforeWorkspaceId - anchor Workspace; omitted appends.

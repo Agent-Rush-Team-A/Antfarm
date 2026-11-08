@@ -395,6 +395,14 @@ abstract status(workspaceId: WorkspaceId): Promise<RunnerSandboxStatus>
 abstract close(workspaceId: WorkspaceId): Promise<RunnerClosedSandbox>
 
 /**
+ * Release resources while the registry holds exclusive Workspace admission.
+ * Mode providers select the committed backend without acquiring a nested lease.
+ * @param workspaceId - Registration being archived or deleted by its lifecycle owner.
+ * @returns Confirmed absence; cleanup failures prevent the registry mutation.
+ */
+closeWorkspace(workspaceId: WorkspaceId): Promise<RunnerClosedSandbox>
+
+/**
  * Execute once or retrieve the unchanged original request's result.
  * @param workspaceId - Authorized identity.
  * @param request - Unchanged original request.

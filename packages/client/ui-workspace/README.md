@@ -241,6 +241,10 @@ These pages cover the sidebar host, the hero surface, and the picking backends.
 -----
 
 <a id="model-experience"></a>
+### Archive or remove a workspace
+
+Open a Workspace menu to archive, restore or delete its registration. Archival stops tasks and waits for the VM or Docker sandbox to be released, keeping files and conversations. Use the show archived or only archived filter to find it and choose Restore workspace. Archived Workspaces cannot start new Sessions or reopen their conversations. Restoration starts resources with the next task. Deletion also waits for cleanup and retains files and Session logs. A cleanup error stays in the confirmation dialog and leaves the Workspace registered.
+
 ## Model Experience
 
 None, as the package is a browser-side UI plugin layer that registers nothing model-facing.

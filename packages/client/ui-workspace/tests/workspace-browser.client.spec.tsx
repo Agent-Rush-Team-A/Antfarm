@@ -149,6 +149,7 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     notifyArchivedNotOpenable: vi.fn(),
     renameWorkspace: vi.fn(async () => {}),
     deleteWorkspace: vi.fn(async () => {}),
+    setWorkspaceArchived: vi.fn(async () => {}),
     unarchiveSession: vi.fn(async () => {}),
     insertWorkspaceBefore: vi.fn(async () => {}),
     createWorkspace: vi.fn(async () => workspace('created', [])),
@@ -159,7 +160,7 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     ...overrides,
   }
   const view = render(<WorkspaceBrowser {...props} />)
-  return { view, props, store, controls, openDialog: (workspaceId: WorkspaceId, displayTitle: string, action: 'rename' | 'delete') => {
+  return { view, props, store, controls, openDialog: (workspaceId: WorkspaceId, displayTitle: string, action: 'rename' | 'delete' | 'archive' | 'unarchive') => {
     const storedTitle = props.useWorkspaces(state => state.items.find(row => row.workspaceId === workspaceId)?.title ?? displayTitle)
     act(() => { request.set({ action, workspaceId, displayTitle, storedTitle }) })
   } }
@@ -2528,7 +2529,7 @@ describe('WorkspaceBrowser', () => {
     browser.openDialog(wid('alpha'), 'Alpha', 'rename')
     fireEvent.change(screen.getByLabelText('工作区名称'), { target: { value: 'Other' } })
     fireEvent.click(screen.getByRole('button', { name: '重命名' }))
-    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('denied') })
+    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('无法确认操作完成。请刷新工作区与沙箱状态后重试。') })
   })
 
   it('confirms Workspace deletion, explains retention, and blocks duplicate submission', async () => {
@@ -2551,7 +2552,7 @@ describe('WorkspaceBrowser', () => {
     expect(deleteWorkspace).toHaveBeenCalledWith(wid('alpha'))
     expect(confirm.disabled).toBe(true)
     expect(screen.getByRole<HTMLButtonElement>('button', { name: '取消' }).disabled).toBe(true)
-    expect(screen.getByRole('status').textContent).toBe('正在删除工作区…')
+    expect(screen.getByRole('status').textContent).toBe('正在停止任务并回收沙箱…')
     fireEvent.keyDown(document, { key: 'Escape' })
     fireEvent.click(screen.getByRole('button', { name: '关闭' }))
     expect(screen.getByRole('dialog', { name: '删除工作区' })).toBeTruthy()
@@ -2574,10 +2575,10 @@ describe('WorkspaceBrowser', () => {
     })
     browser.openDialog(wid('alpha'), 'Alpha', 'delete')
     fireEvent.click(screen.getByRole('button', { name: '删除工作区' }))
-    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('storage unavailable') })
+    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('无法确认操作完成。请刷新工作区与沙箱状态后重试。') })
     expect(screen.getByRole('dialog', { name: '删除工作区' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '删除工作区' }))
-    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('denied') })
+    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('无法确认操作完成。请刷新工作区与沙箱状态后重试。') })
     fireEvent.click(screen.getByRole('button', { name: '取消' }))
     expect(screen.queryByRole('dialog', { name: '删除工作区' })).toBeNull()
   })
@@ -2817,4 +2818,24 @@ describe('Workspace tree grouping', () => {
     expect(b.props.insertWorkspaceBefore).toHaveBeenCalledOnce()
     expect(b.props.insertWorkspaceBefore).toHaveBeenCalledWith(wid('alpha'), wid('gamma'))
   })
+})
+
+
+it('keeps an archived empty Workspace discoverable through the archived filter', async () => {
+  const browser = mount({ useWorkspaces: hook(workspaceState([{ ...workspace('archived', [], 'Archived project'), archived: true }])) })
+  expect(screen.queryByText('Archived project')).toBeNull()
+  await act(async () => { browser.store.actions.setArchivedFilter('only') })
+  expect(screen.getByText('Archived project')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: '在“Archived project”中新建会话' })).toBeNull()
+})
+
+it('waits for resource cleanup before closing the archive confirmation and shows a localized failure', async () => {
+  const setWorkspaceArchived = vi.fn(async () => { throw new Error('internal transport failure') })
+  const browser = mount({ useWorkspaces: hook(workspaceState([workspace('alpha', [], 'Alpha')])), setWorkspaceArchived })
+  browser.openDialog(wid('alpha'), 'Alpha', 'archive')
+  expect(screen.getByRole('dialog', { name: '归档工作区' }).textContent).toContain('文件和会话保留')
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: '归档工作区' })) })
+  expect(setWorkspaceArchived).toHaveBeenCalledExactlyOnceWith(wid('alpha'), true)
+  expect(screen.getByRole('alert').textContent).toBe('无法确认操作完成。请刷新工作区与沙箱状态后重试。')
+  expect(screen.getByRole('dialog', { name: '归档工作区' })).toBeTruthy()
 })

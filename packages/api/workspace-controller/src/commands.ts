@@ -22,6 +22,7 @@ import type {
   WorkspaceCreateRequest,
   WorkspaceCreateValue,
   WorkspaceDeleteRequest,
+  WorkspaceSetArchivedRequest,
   WorkspaceDeleteValue,
   WorkspaceInsertBeforeRequest,
   WorkspaceInsertSessionBeforeRequest,
@@ -157,11 +158,12 @@ export class WorkspaceCommands {
   /**
    * Delete one Workspace registration without deleting its directory or Sessions.
    * @param request - Workspace identity to remove.
+   * @param admit - Original caller's live access check.
    * @returns deletion confirmation.
    */
-  delete(request: WorkspaceDeleteRequest): Promise<WorkspaceDeleteValue> {
+  delete(request: WorkspaceDeleteRequest, admit: () => void = () => {}): Promise<WorkspaceDeleteValue> {
     return this.enqueue(async () => {
-      if (!await this.ctx.workspaceRegistry.delete(WorkspaceId(request.workspaceId))) {
+      if (!await this.ctx.workspaceRegistry.delete(WorkspaceId(request.workspaceId), admit)) {
         throw workspaceNotFound(request.workspaceId)
       }
       const multiuser = this.ctx.get('multiuser')
@@ -173,6 +175,22 @@ export class WorkspaceCommands {
         }
       }
       return { deleted: true }
+    })
+  }
+
+  /**
+   * Archive after resource cleanup or restore without starting a sandbox.
+   * @param request - Workspace identity and desired archival state.
+   * @param admit - Original caller's live access check.
+   * @returns Committed Workspace projection.
+   */
+  setArchived(request: WorkspaceSetArchivedRequest, admit: () => void = () => {}): Promise<WorkspaceValue> {
+    return this.enqueue(async () => {
+      this.requireWorkspace(request.workspaceId)
+      try {
+        const workspace = await this.ctx.workspaceRegistry.setArchived(request.workspaceId, request.archived, admit)
+        return { workspace: workspaceView(workspace) }
+      } catch (error) { rejectModeError(error) }
     })
   }
 

@@ -225,6 +225,48 @@ describe('web e2e: workspace management (create / rename / grouping / hover affo
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
+  it('archives a Workspace, preserves its files across reload and restores without starting work', async () => {
+    const path = join(scaffold.workspaceCwd, 'archive-workspace')
+    await mkdir(path, { recursive: true })
+    await writeFile(join(path, 'kept.txt'), 'kept')
+    const workspace = await scaffold.ctx.workspaceRegistry.create(path)
+    await workspace.setTitle('Archive example')
+    const row = page.locator('[role="treeitem"]').filter({ hasText: 'Archive example' }).first()
+    await row.waitFor({ timeout: 10_000 })
+    await clickHoverAction(row, 'Workspace actions for Archive example')
+    await page.getByRole('menuitem', { name: 'Archive workspace', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Archive workspace', exact: true })
+    await dialog.waitFor()
+    const archiveAria = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'workspace-archive.expected.md'), archiveAria, MODE)
+    await dialog.getByRole('button', { name: 'Archive workspace', exact: true }).click()
+    await expect.poll(() => scaffold.ctx.workspaceRegistry.get(workspace.id)?.archived).toBe(true)
+    await expect.poll(() => row.count()).toBe(0)
+    expect(await readFile(join(path, 'kept.txt'), 'utf8')).toBe('kept')
+    const warningStart = tripwire.warnings.length
+    await page.reload({ waitUntil: 'load' })
+    await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    acknowledgeReloadConnectionLoss(tripwire, warningStart)
+    await page.getByRole('button', { name: 'View options', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Archived only', exact: true }).click()
+    await row.waitFor()
+    await clickHoverAction(row, 'Workspace actions for Archive example')
+    await page.getByRole('menuitem', { name: 'Restore workspace', exact: true }).click()
+    const restore = page.getByRole('dialog', { name: 'Restore workspace', exact: true })
+    await restore.waitFor()
+    const restoreAria = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'workspace-restore.expected.md'), restoreAria, MODE)
+    await restore.getByRole('button', { name: 'Restore workspace', exact: true }).click()
+    await expect.poll(() => scaffold.ctx.workspaceRegistry.get(workspace.id)?.archived).toBe(false)
+    expect(scaffold.ctx.workspaceRegistry.get(workspace.id)?.sessionIds).toEqual([])
+    expect(await readFile(join(path, 'kept.txt'), 'utf8')).toBe('kept')
+    await page.getByRole('button', { name: 'View options', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Hide archived', exact: true }).click()
+    await row.waitFor()
+    await scaffold.ctx.workspaceRegistry.delete(workspace.id)
+    await expect.poll(() => row.count()).toBe(0)
+  })
+
   it('deletes only the Workspace registration and keeps its current Session, folder, and log', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-ws-delete'))
     const slotConsoleErrors: string[] = []
@@ -1017,6 +1059,7 @@ describe('web e2e: workspace management (create / rename / grouping / hover affo
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
       '.gitkeep', 'directory-browser.expected.md', 'new-session.expected.md',
+      'workspace-archive.expected.md', 'workspace-restore.expected.md',
     ])
   })
 })

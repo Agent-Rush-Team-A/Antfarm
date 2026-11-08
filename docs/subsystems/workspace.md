@@ -208,6 +208,8 @@ Consumers see only the `Workspace` interface; the implementation stays package-p
  * implementation stays private.
  */
 interface Workspace {
+  /** Archived registrations retain files and Sessions but refuse new runtime admission. */
+  readonly archived?: boolean | undefined
   /** Committed mode metadata and current operation admission state. */
   readonly modeConfig: WorkspaceModeConfig
 
@@ -585,6 +587,13 @@ Host service backing the generated `ctx.remote.workspace` namespace.
 @Remote('delete') delete(request: WorkspaceDeleteRequest): Promise<WorkspaceDeleteValue>
 
 /**
+ * Stop and archive an owned Workspace, or restore its registration without starting resources.
+ * @param request - Workspace identity and desired archival state.
+ * @returns Workspace after durable publication and confirmed cleanup.
+ */
+@Remote('setArchived') setArchived(request: WorkspaceSetArchivedRequest): Promise<WorkspaceValue>
+
+/**
  * Move one Workspace within the registry display order.
  * @param request - moved Workspace and optional anchor.
  * @returns the complete resulting Workspace order.
@@ -781,8 +790,9 @@ assertSessionOperation(sessionId: SessionId, operation: 'fork' | 'archive'): voi
 list(): Workspace[]
 
 /**
- * Install a named deletion guard owned by this registry, replacing the same name without binding to the caller's lifetime.
- * The callback receives the registry's context and must resolve current services instead of retaining a disposable provider.
+ * Install a named deletion and archival guard owned by this registry, replacing the same name independently of caller lifetime.
+ * Guards run under exclusive Workspace admission before either durable mutation. The callback receives the registry's context
+ * and must resolve current services instead of retaining a disposable provider.
  * @param name - Stable plugin registration name.
  * @param guard - Middleware that remains installed until replacement or registry disposal.
  */
@@ -795,9 +805,20 @@ registerDeletionGuard( name: string, guard: (scope: Context, workspaceId: Worksp
  * published. Composed deletion guards run before writes and may refuse the operation.
  * Unknown ids are an idempotent no-op and do not dispatch guards.
  * @param id - Workspace registration to remove.
+ * @param admit - Recheck the original caller before cleanup and the durable mutation.
  * @returns `true` when a record was deleted, `false` when it was unknown.
  */
-delete(id: WorkspaceId): Promise<boolean>
+delete(id: WorkspaceId, admit: () => void = () => {}): Promise<boolean>
+
+/**
+ * Archive a registration after stopping its work and confirming provider cleanup, or restore it without starting resources.
+ * Files, Session logs and manual order are retained. A cleanup failure leaves archival unchanged.
+ * @param id - Existing Workspace identity.
+ * @param archived - Target archival state.
+ * @param admit - Recheck the original caller before cleanup and publication.
+ * @returns The durable Workspace entity.
+ */
+setArchived(id: WorkspaceId, archived: boolean, admit: () => void = () => {}): Promise<Workspace>
 
 /**
  * Move one workspace within the durable display order, DOM-insertBefore-like.
@@ -893,6 +914,24 @@ Source: [`packages/api/workspace-upload/src/index.ts`](../../packages/api/worksp
 <a id="workspace-events"></a>
 
 ### `workspace/*` events
+
+<a id="workspacebefore-archive--waterfall"></a>
+
+#### `workspace/before-archive` — waterfall
+
+Release Workspace resources before archival while exclusive admission is held.
+
+```ts cordis-catalog
+/**
+ * Release Workspace resources before archival while exclusive admission is held.
+ * @param workspaceId - Registration being archived.
+ * @param next - Persist archival after all providers confirm cleanup.
+ * @mode waterfall
+ */
+'workspace/before-archive'(workspaceId: WorkspaceId, next: () => Promise<boolean>): Promise<boolean>
+```
+
+Source: [`packages/workspace/workspace/src/index.ts`](../../packages/workspace/workspace/src/index.ts)
 
 <a id="workspacebefore-delete--waterfall"></a>
 

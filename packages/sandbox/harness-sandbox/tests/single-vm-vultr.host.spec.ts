@@ -1,10 +1,13 @@
 /** Real Vultr HTTP parsing and allocation sequencing with a controlled account and helper. */
 import { brandString } from '@deepseek-ai/dsh-brand'
+import { Context } from '@deepseek-ai/cordis'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import { expect, test, vi } from 'vitest'
 import { z } from 'zod'
 import { executionIdentity, executionRequest } from '../src/execution.ts'
 import { TaskSandboxLifecycle } from '../src/mode-reclamation.ts'
+import WorkspaceSandboxState from '../src/lifecycle.ts'
 import type { RunnerRunningSandbox, RunnerSandboxStatus, SandboxContainerId } from '../src/runner-client.ts'
 import { SingleVmVultrBackend, singleVmAllocation, type SingleVmAllocation } from '../src/single-vm-vultr.ts'
 import { VultrApi, vultrVolumeId, type VultrInstance } from '../src/vultr-api.ts'
@@ -244,7 +247,7 @@ test('retains an allocation if the VFS Mount Tag changes and reclaims it after t
     f.setMountTag(113849250)
     await backend.recoverTask(workspaceId)
     expect(f.retire).toHaveBeenCalledOnce()
-    await expect(backend.status(workspaceId)).resolves.toEqual({ state: 'closed' })
+    await expect(backend.status(workspaceId)).resolves.toEqual({ state: 'closed', reconciled: true })
   } finally { await backend.dispose() }
 })
 
@@ -327,7 +330,7 @@ test('retains an unanswered create by unique label across restart and charges it
   f.revealInstance()
   await restarted.recoverTask(workspaceId)
   expect(f.requests).toContain('DELETE /instances/' + instanceId)
-  await expect(restarted.status(workspaceId)).resolves.toEqual({ state: 'closed' })
+  await expect(restarted.status(workspaceId)).resolves.toEqual({ state: 'closed', reconciled: true })
   await restarted.dispose()
 })
 
@@ -417,7 +420,7 @@ test.each(['detach-timeout', 'delete-timeout'] as const)('resumes %s after resta
   await restarted.recoverTask(workspaceId)
   expect(f.retire).toHaveBeenCalledOnce()
   expect(f.requests.filter(value => value === 'POST /instances')).toHaveLength(1)
-  await expect(restarted.status(workspaceId)).resolves.toEqual({ state: 'closed' })
+  await expect(restarted.status(workspaceId)).resolves.toEqual({ state: 'closed', reconciled: true })
   await restarted.dispose()
 })
 
@@ -426,11 +429,55 @@ test.each(['detach-applied', 'delete-applied'] as const)('confirms %s after its 
   const backend = f.make()
   await backend.initialize()
   const ready = await backend.open(workspaceId, project)
-  await expect(backend.closeTask(workspaceId, ready.containerId)).resolves.toEqual({ state: 'closed' })
+  await expect(backend.closeTask(workspaceId, ready.containerId)).resolves.toEqual({ state: 'closed', reconciled: true })
   expect(f.requests.filter(value => value.startsWith('DELETE '))).toEqual([
     'DELETE /vfs/' + volumeId + '/attachments/' + instanceId, 'DELETE /instances/' + instanceId,
   ])
   await backend.dispose()
+})
+
+test('confirmed Single VM retry clears management quarantine and a new allocation withdraws that evidence', async () => {
+  const f = fixture('delete-timeout')
+  f.handshake.resolve(undefined)
+  const backend = f.make()
+  const ctx = new Context()
+  await ctx.plugin(WorkspaceSandboxState)
+  const state = ctx.workspaceSandboxState
+  try {
+    await backend.initialize()
+    await expect(backend.status(secondId)).resolves.toEqual({ state: 'closed' })
+    const ready = await backend.open(workspaceId, project)
+    await expect(state.close(workspaceId, async () => {
+      try { return await backend.closeTask(workspaceId, ready.containerId) }
+      catch (cause) {
+        throw new RemoteError('sandbox/failed', 'Original VM deletion is unconfirmed', {
+          reason: 'runner_outcome_unknown', outcomeUnknown: true,
+        }, { cause })
+      }
+    })).rejects.toMatchObject({ code: 'sandbox/failed' })
+    expect(state.closing(workspaceId)).toBe('cleanup_required')
+    f.setFault()
+    await expect(state.close(workspaceId, async () => {
+      await backend.recoverTask(workspaceId)
+      const current = await backend.status(workspaceId)
+      if (current.state !== 'closed') throw new Error('Original allocation remains')
+      return current
+    })).resolves.toEqual({ state: 'closed', reconciled: true })
+    expect(state.closing(workspaceId)).toBeUndefined()
+    expect(f.requests.filter(request => request === 'POST /instances')).toHaveLength(1)
+    f.setFault('region')
+    await expect(backend.open(workspaceId, project)).rejects.toMatchObject({ code: 'cloud_open_failed' })
+    await expect(backend.status(workspaceId)).resolves.toEqual({ state: 'closed' })
+    f.setFault()
+    const fresh = await backend.open(workspaceId, project)
+    expect(fresh.containerId).not.toBe(ready.containerId)
+    await expect(backend.status(workspaceId)).resolves.toEqual(fresh)
+    await backend.closeTask(workspaceId, fresh.containerId)
+  } finally {
+    f.setFault()
+    await backend.dispose()
+    await ctx.fiber.dispose()
+  }
 })
 
 test('a failed guest sync blocks detach and the next task first reconciles the old VM', async () => {

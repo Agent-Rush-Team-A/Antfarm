@@ -13,6 +13,7 @@ export function modeFailureKey(error: unknown, fallback: WorkspaceKey = 'mode.fa
   const failure = error instanceof Error && 'rpcError' in error
     ? (error as WorkspaceModeCommandError).rpcError : remoteErrorOf(error)
   switch (failure?.code) {
+    case 'workspace/archived': return 'toast.archivedNotOpenable'
     case 'workspace/mode-locked': return 'mode.locked'
     case 'workspace/mode-revision-conflict': return 'mode.conflict'
     case 'workspace/mode-unsupported': return 'mode.unsupported'

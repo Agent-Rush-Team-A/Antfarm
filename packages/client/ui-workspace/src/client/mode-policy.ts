@@ -18,7 +18,7 @@ export function multipleSessions(workspace: WorkspaceView): boolean {
  * @returns Whether a new ordinary Session may be offered.
  */
 export function canCreateSession(workspace: WorkspaceView): boolean {
-  return workspace.modeConfig.operationState === 'ready'
+  return !workspace.archived && workspace.modeConfig.operationState === 'ready'
     && (multipleSessions(workspace) || workspace.modeConfig.firstSessionId === null)
 }
 
@@ -53,6 +53,7 @@ export function recentWorkspace(workspaces: readonly WorkspaceView[], sessions: 
   let selected: WorkspaceId | undefined
   let selectedTime = Number.NEGATIVE_INFINITY
   for (const workspace of workspaces) {
+    if (workspace.archived) continue
     let latest = Number.NEGATIVE_INFINITY
     for (const sessionId of workspace.sessionIds) {
       const session = sessions[sessionId]

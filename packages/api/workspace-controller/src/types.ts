@@ -21,6 +21,8 @@ export interface WorkspaceModeOptionsValue extends WorkspaceModeValue {
 
 /** One durable Workspace projected for browser consumers. */
 export interface WorkspaceView {
+  /** Archived Workspaces retain history but require restoration before runtime use. */
+  readonly archived?: boolean
   /** Permanent mode locking and monotonic operation metadata. */
   readonly modeConfig: WorkspaceModeConfig
   readonly workspaceId: WorkspaceId
@@ -100,6 +102,12 @@ export interface WorkspaceValue {
 /** Workspace registration deletion. */
 export interface WorkspaceDeleteRequest {
   readonly workspaceId: WorkspaceId
+}
+
+/** Workspace archival or restoration, preserving files and Sessions. */
+export interface WorkspaceSetArchivedRequest {
+  readonly workspaceId: WorkspaceId
+  readonly archived: boolean
 }
 
 /** Receipt after one Workspace registration is deleted. */

@@ -202,7 +202,9 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   }
   // Registry-global sets as Sets, rebuilt only when the Workspace snapshot changes.
   const pinnedSet = derive(workspaces.list, snapshot => new Set<SessionId>(snapshot.pinnedSessionIds))
-  const archivedSet = derive(workspaces.list, snapshot => new Set<SessionId>(snapshot.archivedSessionIds))
+  const archivedSet = derive(workspaces.list, snapshot => new Set<SessionId>([
+    ...snapshot.archivedSessionIds, ...snapshot.items.filter(workspace => workspace.archived).flatMap(workspace => workspace.sessionIds),
+  ]))
   // Plugin-private facts the row actions and their overlay surfaces share:
   // the pending rename request and the notice on display. Each business
   // writes through its own injected callback and the surface reads through
@@ -310,9 +312,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     dismissToast: () => { rowToast.set(null) },
   })
   const workspaceActionRequest = createSnapshotStore<WorkspaceActionRequest | null>(null)
-  const requestWorkspaceAction = (workspaceId: WorkspaceId, displayTitle: string, action: 'rename' | 'delete'): void => {
+  const requestWorkspaceAction = (workspaceId: WorkspaceId, displayTitle: string, action: WorkspaceActionRequest['action']): void => {
     const workspace = workspaces.list.getSnapshot().items.find(row => row.workspaceId === workspaceId)
-    if (workspace === undefined || !ctx.remoteAccess.source('workspace', workspaceId, `workspace/${action}`).getSnapshot()) return
+    const method = action === 'archive' || action === 'unarchive' ? 'setArchived' : action
+    if (workspace === undefined || !ctx.remoteAccess.source('workspace', workspaceId, `workspace/${method}`).getSnapshot()) return
     workspaceActionRequest.set({ action, workspaceId, displayTitle, storedTitle: workspace.title })
   }
   ctx.slots.inject('contextMenu.icon', function* () {
@@ -328,6 +331,16 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     resolve: ({ workspaceId, displayTitle }) => ctx.remoteAccess.source('workspace', workspaceId, 'workspace/rename').getSnapshot()
       ? [{ id: 'rename', label: ctx.locale.bind(NS)('rename'), icon: { key: 'workspace.rename' }, run: () => { requestWorkspaceAction(workspaceId, displayTitle, 'rename') } }] : [],
   }), 'workspace: rename menu action')
+  ctx.effect(() => ctx.contextMenus.register({
+    id: 'workspace.archive', target: 'workspace', order: 200,
+    resolve: ({ workspaceId, displayTitle }) => {
+      if (!ctx.remoteAccess.source('workspace', workspaceId, 'workspace/setArchived').getSnapshot()) return []
+      const archived = workspaces.list.getSnapshot().items.find(workspace => workspace.workspaceId === workspaceId)?.archived === true
+      return [{ id: 'archive', label: ctx.locale.bind(NS)(archived ? 'unarchive.workspace' : 'archive.workspace'),
+        icon: { key: archived ? 'workspace.unarchive' : 'workspace.archive' },
+        run: () => { requestWorkspaceAction(workspaceId, displayTitle, archived ? 'unarchive' : 'archive') } }]
+    },
+  }), 'workspace: archive menu action')
   ctx.effect(() => ctx.contextMenus.register({
     id: 'workspace.delete', target: 'workspace', order: 300,
     resolve: ({ workspaceId, displayTitle }) => ctx.remoteAccess.source('workspace', workspaceId, 'workspace/delete').getSnapshot()
@@ -357,6 +370,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     notifyArchivedNotOpenable: () => { notify({ kind: 'archivedNotOpenable' }) },
     renameWorkspace: async (workspaceId, title) => { await workspaces.rename(workspaceId, title) },
     deleteWorkspace: async (workspaceId) => { await workspaces.delete(workspaceId) },
+    setWorkspaceArchived: async (workspaceId, archived) => { await workspaces.setArchived(workspaceId, archived) },
     insertWorkspaceBefore: async (workspaceId, beforeWorkspaceId) => {
       await workspaces.insertBefore(workspaceId, beforeWorkspaceId)
     },

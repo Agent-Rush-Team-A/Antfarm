@@ -51,6 +51,10 @@ Documents 查询占用注册表变更队列，因此其他 Workspace 变更（�
 -----
 
 <a id="model-experience"></a>
+### 工作区归档
+
+使用 `workspace/setArchived` 与 `{ workspaceId, archived }` 归档或恢复拥有的工作区。归档等待资源回收并返回已提交的记录；失败时保留登记。状态流携带可选 `archived` 字段，缺省表示活动状态。归档保留所有权。访客账号可以归档、恢复和删除自己的工作区登记；这些操作不删除文件或会话日志。
+
 ## 模型体验
 
 无，因为 Workspace 组织属于浏览器和 Host 的控制状态，并且不注册提示词、工具或会话事件。

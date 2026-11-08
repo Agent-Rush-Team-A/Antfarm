@@ -75,6 +75,10 @@ The fixed Bash wrapper resolves the requested directory from `/workspace` and ch
 - [Application profiles](../../boot/app-boot/README.md#profiles) — compose a standalone service with the normal launcher.
 
 <a id="model-experience"></a>
+### Container capacity
+
+Set the Runner `maxInstances` configuration to the maximum occupied workspace containers shared by all accounts and Docker modes. It accepts 1 through 100 and defaults to 2. Starting, running and unconfirmed cleanup retain their slots; confirmed deletion releases them. Changing this field does not change Docker Engine limits or preallocate containers.
+
 ## Model Experience
 
 None, as the Runner does not contribute model context or tool output.

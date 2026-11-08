@@ -915,6 +915,7 @@ export function WorkspaceBrowser({
   notifyArchivedNotOpenable,
   renameWorkspace, useWorkspaceActionRequest, settleWorkspaceAction,
   deleteWorkspace,
+  setWorkspaceArchived,
   insertWorkspaceBefore,
   unarchiveSession,
   createWorkspace,
@@ -951,7 +952,10 @@ export function WorkspaceBrowser({
   )
   const workspacePhase = useWorkspaces(state => state.phase)
   const workspaceStreamState = useWorkspaces(state => state.state)
-  const archivedSessionIds = useWorkspaces(state => state.archivedSessionIds)
+  const storedArchivedSessionIds = useWorkspaces(state => state.archivedSessionIds)
+  const archivedSessionIds = useMemo(() => [
+    ...storedArchivedSessionIds, ...workspaces.filter(workspace => workspace.archived).flatMap(workspace => workspace.sessionIds),
+  ], [storedArchivedSessionIds, workspaces])
   const pinnedSessionIds = useWorkspaces(state => state.pinnedSessionIds)
   // Live occupancy of this surface's directory-flow hole (the same source the
   // flow reads): a composition without a picking affordance can add nothing.
@@ -1441,7 +1445,8 @@ export function WorkspaceBrowser({
       </div>
 
       {workspaceActionRequest !== null && <WorkspaceDialogs key={`${workspaceActionRequest.action}/${workspaceActionRequest.workspaceId}`}
-        request={workspaceActionRequest} workspaces={workspaces} renameWorkspace={renameWorkspace} deleteWorkspace={deleteWorkspace}
+        request={workspaceActionRequest} workspaces={workspaces} renameWorkspace={renameWorkspace}
+        deleteWorkspace={deleteWorkspace} setWorkspaceArchived={setWorkspaceArchived}
         settleWorkspaceAction={settleWorkspaceAction} t={t} />}
     </div>
   )

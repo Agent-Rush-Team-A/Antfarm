@@ -60,7 +60,7 @@ async function failureOf(result: Promise<unknown>): Promise<unknown> {
 
 const upgradeHeaders = 'HTTP/1.1 101 UPGRADED\r\nConnection: Upgrade\r\nUpgrade: tcp\r\n\r\n'
 
-async function fixture(t: TestContext, requestTimeoutMs = 5_000, cleanupTimeoutMs = 100) {
+async function fixture(t: TestContext, requestTimeoutMs = 5_000, cleanupTimeoutMs = 100, maxInstances = 2) {
   const temp = await mkdtemp(join(await realpath(tmpdir()), 'dsh-life-'))
   t.onTestFinished(() => rm(temp, { recursive: true, force: true }))
   const root = join(temp, 'workspaces')
@@ -177,7 +177,7 @@ async function fixture(t: TestContext, requestTimeoutMs = 5_000, cleanupTimeoutM
   function mount(ctx: Context) {
     const fiber = ctx.plugin(SandboxRunner, {
       dockerSocket: socket, deploymentId: deployment, workspaceRoot: root, requestTimeoutMs,
-      cleanupTimeoutMs, termGraceMs: 20,
+      cleanupTimeoutMs, termGraceMs: 20, maxInstances,
       image: `debian@sha256:${'b'.repeat(64)}`, uid: 10001, gid: 10001,
     })
     t.onTestFinished(async () => { await fiber.dispose() })
@@ -1462,4 +1462,18 @@ test.for(['before-start', 'after-start', 'not-running'])('rejects an unconfirmed
     await expect(runner.status(A)).resolves.toEqual({ state: 'closed' })
   }
   await expect(runner.open(A, f.directory(A))).resolves.toMatchObject({ state: 'running' })
+})
+
+
+test('a configured capacity of 100 accepts the hundredth workspace and refuses the next until cleanup confirms absence', async (t) => {
+  const f = await fixture(t, 5_000, 100, 100)
+  const runner = await f.boot()
+  const ids = Array.from({ length: 101 }, (_, index) => brandString<WorkspaceId>(`capacity-${index}`))
+  await Promise.all(ids.map(id => mkdir(f.directory(id), { recursive: true })))
+  for (const id of ids.slice(0, 100)) await runner.open(id, f.directory(id))
+  const first = ids[0]!
+  const extra = ids[100]!
+  await expect(runner.open(extra, f.directory(extra))).rejects.toMatchObject({ code: 'sandbox_capacity' })
+  await runner.close(first)
+  await expect(runner.open(extra, f.directory(extra))).resolves.toMatchObject({ state: 'running' })
 })

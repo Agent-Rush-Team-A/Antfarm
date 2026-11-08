@@ -275,7 +275,7 @@ function WorkspaceProjectRow({ workspaceId, ...props }: ProjectRowItemProps & { 
   const { useWorkspaceAccess } = props
   const modeAllowsCreation = props.useWorkspaces((snapshot) => {
     const row = snapshot.items.find(item => item.workspaceId === workspaceId)
-    return row !== undefined && canCreateSession(row)
+    return row !== undefined && !row.archived && canCreateSession(row)
   })
   const access: ProjectRowAccess = {
     create: useWorkspaceAccess(workspaceId, 'session/create')

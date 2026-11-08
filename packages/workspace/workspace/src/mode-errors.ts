@@ -5,6 +5,7 @@ import type { WorkspaceModeErrorDetailsMap } from './mode-types.ts'
 /** All mode-domain failures, including an absent registration. */
 export type WorkspaceModeErrorDetails = WorkspaceModeErrorDetailsMap & {
   'workspace/not-found': { readonly workspaceId: WorkspaceId }
+  'workspace/archived': { readonly workspaceId: WorkspaceId }
 }
 
 /** Business failure with machine-readable details and an optional diagnostic cause. */

@@ -18,6 +18,7 @@ import type {
   WorkspaceCreateRequest,
   WorkspaceCreateValue,
   WorkspaceDeleteRequest,
+  WorkspaceSetArchivedRequest,
   WorkspaceDeleteValue,
   WorkspaceFollowFrame,
   WorkspaceId,
@@ -108,7 +109,7 @@ export class WorkspaceController extends TypertRemoteService {
     return this.commands.setMode(request, { signal, admit })
   }
 
-  private modeAuthority(workspaceId: WorkspaceId, method: 'getMode' | 'setMode'): () => void {
+  private modeAuthority(workspaceId: WorkspaceId, method: 'getMode' | 'setMode' | 'delete' | 'setArchived'): () => void {
     const caller = principalOf(this.ctx.invocation)
     const authorize = (): void => {
       if (caller === undefined) return
@@ -181,7 +182,17 @@ export class WorkspaceController extends TypertRemoteService {
    */
   @Remote('delete')
   delete(request: WorkspaceDeleteRequest): Promise<WorkspaceDeleteValue> {
-    return this.commands.delete(request)
+    return this.commands.delete(request, this.modeAuthority(request.workspaceId, 'delete'))
+  }
+
+  /**
+   * Stop and archive an owned Workspace, or restore its registration without starting resources.
+   * @param request - Workspace identity and desired archival state.
+   * @returns Workspace after durable publication and confirmed cleanup.
+   */
+  @Remote('setArchived')
+  setArchived(request: WorkspaceSetArchivedRequest): Promise<WorkspaceValue> {
+    return this.commands.setArchived(request, this.modeAuthority(request.workspaceId, 'setArchived'))
   }
 
   /**

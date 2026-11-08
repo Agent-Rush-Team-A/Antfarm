@@ -88,6 +88,8 @@ export interface WorkspaceModesHost {
   entity(id: WorkspaceId): WorkspaceEntity | undefined
   /** @returns all original registrations currently present. */
   list(): readonly WorkspaceEntity[]
+  /** Whether a registry lifecycle mutation has stopped new admission. */
+  deactivating?(id: WorkspaceId): boolean
   /** @param error - Diagnostic failure retained by trusted maintenance logs. */
   report(error: unknown): void
 }
@@ -343,7 +345,10 @@ export class WorkspaceModes implements IWorkspaceModes {
   /** Refuse admission while a durable operation remains pending.
    * @param entity - Registration whose pending intent prevents resource admission.
    */
-  assertReady(entity: WorkspaceEntity): void {
+  assertReady(entity: WorkspaceEntity, lifecycle = false): void {
+    if (!lifecycle && (entity.archived || this.host.deactivating?.(entity.id))) {
+      throw new WorkspaceModeError('workspace/archived', { workspaceId: entity.id })
+    }
     const record = entity.modeRecord()
     if (record.modeIntent !== undefined || record.modeOperationState !== 'ready') {
       throw new WorkspaceModeError('workspace/mode-recovery-required', {

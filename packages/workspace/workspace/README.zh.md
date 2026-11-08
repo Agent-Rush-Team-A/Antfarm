@@ -154,6 +154,10 @@ Workspace 注册不意味着拥有其目录。未来的破坏性文件系统操�
 
 -----
 <a id="model-experience"></a>
+### 归档工作区
+
+通过 `workspaceRegistry.setArchived(id, true)` 归档工作区，保留目录、会话历史与顺序，并由组合的提供者释放执行资源。登记服务停止会话工作、拒绝新准入、等待现有租约收尾，再通过 `workspace/before-archive` 完成回收后写入。回收失败保留归档状态。通过 `setArchived(id, false)` 恢复；后续任务需要时才启动资源。删除使用相同回收路径，保留目录与会话日志。工作区域版本 4 接受缺少归档字段的版本 3 记录；旧区域读取器拒绝版本 4 数据。
+
 ## 模型体验
 
 ### Workspace 记录与会话记账

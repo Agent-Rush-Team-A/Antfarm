@@ -6,7 +6,7 @@ import type { SupervisorFinished } from './protocol.ts'
 
 const failures = {
   sandbox_not_ready: 'Sandbox Runner has not completed startup cleanup',
-  sandbox_capacity: 'Both workspace sandbox slots are occupied',
+  sandbox_capacity: 'The configured workspace sandbox capacity is occupied',
   sandbox_closing: 'The workspace sandbox is closing; retry after it closes',
   sandbox_cleanup_required: 'The old sandbox must be confirmed removed before opening another',
   sandbox_workspace_conflict: 'The workspace directory does not match the sandbox reservation or mount',

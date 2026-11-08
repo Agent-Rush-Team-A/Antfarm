@@ -38,7 +38,8 @@ export default class WorkspaceModeFixture extends Service {
 /** Runs the real user-facing flow after all Loader rows have initialized. */
 export const acceptance = {
   name: 'workspace-mode-acceptance',
-  inject: ['workspaceModeFixture', 'workspaceRegistry', 'sandboxConversation', 'sandboxRunner', 'agents', 'llm', 'webServer'],
+  // The controller outlives the providers it unloads; their teardown must not await this run.
+  inject: ['workspaceModeFixture', 'workspaceRegistry', 'sandboxRunner', 'agents', 'llm', 'webServer'],
   apply(ctx: Context) {
     const report = process.env.DSH_MODE_TEST_REPORT
     if (report === undefined) throw new Error('Mode acceptance requires a report path')
@@ -62,6 +63,9 @@ async function run(ctx: Context, signal: AbortSignal, report: string) {
     writeFileSync(report + '.progress', JSON.stringify({ checks, generations }))
   }
   const fixture = ctx.workspaceModeFixture
+  const sandbox = ctx.get('workspaceSandbox')
+  const conversation = ctx.get('sandboxConversation')
+  if (sandbox === undefined || conversation === undefined) throw new Error('Mode runtime providers did not load')
   const [a, b] = fixture.accounts
   if (a === undefined || b === undefined) throw new Error('Mode fixture accounts did not load')
   const base = `http://127.0.0.1:${ctx.webServer.port}`
@@ -78,25 +82,25 @@ async function run(ctx: Context, signal: AbortSignal, report: string) {
       body: JSON.stringify({ type: 'client-request', rpcId: randomUUID(), method, payload: { args } }), signal })
     return (await response.json() as { result: Reply<T> }).result
   }
-  const opened = ctx.workspaceSandbox.openForUser(b.user.userId, b.workspace.id)
-  const opening = ctx.workspaceSandbox.activityForUser(b.user.userId, b.workspace.id)
+  const opened = sandbox.openForUser(b.user.userId, b.workspace.id)
+  const opening = sandbox.activityForUser(b.user.userId, b.workspace.id)
   check(opening.busy && opening.openings === 1 && opening.idleSince === null,
     'Manual open immediately counts preparation through the real mode coordinator')
   await opened
-  const idle = ctx.workspaceSandbox.activityForUser(b.user.userId, b.workspace.id)
+  const idle = sandbox.activityForUser(b.user.userId, b.workspace.id)
   if (idle.sandbox.state !== 'running' || idle.idleSince === null) throw new Error('Expected running idle Docker workspace')
   await delay(2)
   const scan = new AbortController()
-  const cancelled = ctx.workspaceSandbox.closeIfIdleForUser(b.user.userId, b.workspace.id,
+  const cancelled = sandbox.closeIfIdleForUser(b.user.userId, b.workspace.id,
     { containerId: idle.sandbox.containerId, version: idle.version, revision: idle.revision, idleSince: idle.idleSince },
     1, scan.signal)
   scan.abort()
   const skipped = await cancelled
-  const afterScan = ctx.workspaceSandbox.activityForUser(b.user.userId, b.workspace.id)
+  const afterScan = sandbox.activityForUser(b.user.userId, b.workspace.id)
   check(skipped.state === 'skipped' && !afterScan.closing && afterScan.revision === idle.revision
     && (await ctx.sandboxRunner.status(b.workspace.id)).state === 'running',
   'Cancelling idle admission returns skipped and preserves the real Docker generation')
-  await ctx.workspaceSandbox.closeForUser(b.user.userId, b.workspace.id)
+  await sandbox.closeForUser(b.user.userId, b.workspace.id)
   const upload = await fetch(base + '/api/workspace/uploadFileBinary?' + new URLSearchParams({ workspaceId: a.workspace.id, name: 'input.csv' }).toString(),
     { method: 'POST', headers: { cookie, origin: base, 'content-type': 'application/octet-stream' }, body: 'amount\n10\n15\n7\n', signal })
   check(upload.ok, 'Authenticated upload persists before any execution')
@@ -140,7 +144,7 @@ async function run(ctx: Context, signal: AbortSignal, report: string) {
   ctx.on('session/event', (_session, event) => { if (event.type === 'tool/result') results.push(event) }, { global: true })
   ctx.on('agent/pre-step', (event, next) => {
     if (event.agent === agent) {
-      const id = ctx.sandboxConversation.forTurn(agent, event.turn).containerId
+      const id = conversation.forTurn(agent, event.turn).containerId
       if (!generations.includes(id)) generations.push(id)
     }
     return next()
@@ -202,6 +206,13 @@ async function run(ctx: Context, signal: AbortSignal, report: string) {
   'Queued messages execute in order and retain one Docker generation through final cleanup')
   const timed = await native([{ name: 'bash', args: { command: 'sleep 86400 & child=$!; printf "%s %s\n" "$$" "$child" > timeout.pids; wait "$child"', description: 'Exercise real command timeout', timeoutMs: 500 } }], false)
   check(JSON.stringify(timed).includes('Process cleanup is confirmed'), 'Timeout settles real process cleanup before environment destruction')
+  await ctx.workspaceRegistry.setArchived(b.workspace.id, true)
+  check(ctx.workspaceRegistry.get(b.workspace.id)?.archived === true
+    && (await ctx.sandboxRunner.status(b.workspace.id)).state === 'closed',
+  'Archival releases the real multi-session Docker container under exclusive Workspace admission')
+  await ctx.workspaceRegistry.setArchived(b.workspace.id, false)
+  check((await ctx.sandboxRunner.status(b.workspace.id)).state === 'closed',
+    'Workspace restoration does not allocate a Docker container')
   const request = { sessionId: agent.id, requestId: randomUUID(), mode: 'queue', content: [{ type: 'text', text: 'files:' + JSON.stringify([
     { name: 'bash', args: { command: 'echo ready > cancellation.ready; sleep 86400', description: 'Exercise provider unload during execution', timeoutMs: 60_000 } },
   ]) }] }

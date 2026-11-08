@@ -77,6 +77,10 @@ class FakeWorkspaceRemote implements WorkspaceRemote {
     config: { ...workspace(String(workspaceId)).modeConfig, mode, revision: expectedRevision + 3 },
   }))
   readonly initializeDefault = vi.fn<WorkspaceRemote['initializeDefault']>(async () => remoteOk({ workspace: workspace('default') }))
+  readonly setArchived = vi.fn<WorkspaceRemote['setArchived']>(async (request) => {
+    this.record('setArchived', request)
+    return remoteOk({ workspace: { ...workspace(String(request.workspaceId)), archived: request.archived } })
+  })
   readonly calls: Array<{ readonly method: string; readonly request: unknown }> = []
   onCreate: (request: WorkspaceCreateRequest) => Promise<RemoteResult<WorkspaceCreateValue>> = request =>
     Promise.resolve(remoteOk({ workspace: workspace((request.path ?? 'workspace').split('/').pop() ?? 'workspace'), created: true }))

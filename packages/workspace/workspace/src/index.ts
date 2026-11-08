@@ -145,6 +145,13 @@ declare module '@deepseek-ai/cordis' {
      */
     'workspace/before-delete'(workspaceId: WorkspaceId, next: () => Promise<boolean>): Promise<boolean>
     /**
+     * Release Workspace resources before archival while exclusive admission is held.
+     * @param workspaceId - Registration being archived.
+     * @param next - Persist archival after all providers confirm cleanup.
+     * @mode waterfall
+     */
+    'workspace/before-archive'(workspaceId: WorkspaceId, next: () => Promise<boolean>): Promise<boolean>
+    /**
      * Ask the composed providers what still runs for a session before it is
      * archived. A listener prepends its own {@link SessionActivity} entries to
      * the result of `next()`; the registry's innermost callback returns an
@@ -224,6 +231,7 @@ export class WorkspaceRegistry extends Service {
   private readonly invalidSessionPaths = new Map<SessionId, string>()
   private readonly deletionOwner: Context
   private readonly deletionGuards = new Map<string, () => void>()
+  private readonly deactivating = new Set<WorkspaceId>()
   private operationTail: Promise<void> = Promise.resolve()
 
   private readonly host: WorkspaceEntityHost = {
@@ -244,6 +252,7 @@ export class WorkspaceRegistry extends Service {
       defaultMode: config.defaultMode,
       entity: id => this.entities.get(id),
       list: () => [...this.entities.values()],
+      deactivating: id => this.deactivating.has(id),
       report: error => ctx.logger.warn(`workspace mode recovery failed; dependent operations remain blocked: ${String(error)}`),
     })
     this.modeSessions = new WorkspaceModeSessions(this.modeCoordinator, {
@@ -422,8 +431,9 @@ export class WorkspaceRegistry extends Service {
   }
 
   /**
-   * Install a named deletion guard owned by this registry, replacing the same name without binding to the caller's lifetime.
-   * The callback receives the registry's context and must resolve current services instead of retaining a disposable provider.
+   * Install a named deletion and archival guard owned by this registry, replacing the same name independently of caller lifetime.
+   * Guards run under exclusive Workspace admission before either durable mutation. The callback receives the registry's context
+   * and must resolve current services instead of retaining a disposable provider.
    * @param name - Stable plugin registration name.
    * @param guard - Middleware that remains installed until replacement or registry disposal.
    */
@@ -433,7 +443,9 @@ export class WorkspaceRegistry extends Service {
   ): void {
     const owner = this.deletionOwner
     this.deletionGuards.get(name)?.()
-    this.deletionGuards.set(name, owner.on('workspace/before-delete', (workspaceId, next) => guard(owner, workspaceId, next)))
+    const removeDelete = owner.on('workspace/before-delete', (workspaceId, next) => guard(owner, workspaceId, next))
+    const removeArchive = owner.on('workspace/before-archive', (workspaceId, next) => guard(owner, workspaceId, next))
+    this.deletionGuards.set(name, () => { removeDelete(); removeArchive() })
   }
 
   /**
@@ -443,16 +455,60 @@ export class WorkspaceRegistry extends Service {
    * published. Composed deletion guards run before writes and may refuse the operation.
    * Unknown ids are an idempotent no-op and do not dispatch guards.
    * @param id - Workspace registration to remove.
+   * @param admit - Recheck the original caller before cleanup and the durable mutation.
    * @returns `true` when a record was deleted, `false` when it was unknown.
    */
-  delete(id: WorkspaceId): Promise<boolean> {
+  delete(id: WorkspaceId, admit: () => void = () => {}): Promise<boolean> {
     return this.enqueueOperation(async () => {
       if (!this.entities.has(id)) return false
-      return this.modeCoordinator.exclusive(id, { signal: new AbortController().signal, admit: () => {} }, async (entity) => {
-        this.modeCoordinator.assertReady(entity)
-        return this.ctx.waterfall('workspace/before-delete', id, () => this.deleteKnown(id))
-      })
+      return this.deactivate(id, entity => this.ctx.waterfall('workspace/before-delete', entity.id, () => { admit(); return this.deleteKnown(id) }), admit)
     })
+  }
+
+  /**
+   * Archive a registration after stopping its work and confirming provider cleanup, or restore it without starting resources.
+   * Files, Session logs and manual order are retained. A cleanup failure leaves archival unchanged.
+   * @param id - Existing Workspace identity.
+   * @param archived - Target archival state.
+   * @param admit - Recheck the original caller before cleanup and publication.
+   * @returns The durable Workspace entity.
+   */
+  setArchived(id: WorkspaceId, archived: boolean, admit: () => void = () => {}): Promise<Workspace> {
+    return this.enqueueOperation(async () => {
+      const entity = this.entities.get(id)
+      admit()
+      if (entity === undefined) throw new WorkspaceModeError('workspace/not-found', { workspaceId: id })
+      if (Boolean(entity.archived) === archived) return entity
+      if (archived) {
+        await this.deactivate(id, workspace => this.ctx.waterfall('workspace/before-archive', id, async () => {
+          admit()
+          await workspace.setArchived(true)
+          return true
+        }), admit)
+      } else {
+        await this.modeCoordinator.exclusive(id, { signal: new AbortController().signal, admit: () => {} }, async (workspace) => {
+          this.modeCoordinator.assertReady(workspace, true)
+          admit()
+          await workspace.setArchived(false)
+        })
+      }
+      return entity
+    })
+  }
+
+  private async deactivate(id: WorkspaceId, commit: (entity: WorkspaceEntity) => Promise<boolean>,
+    admit: () => void = () => {}): Promise<boolean> {
+    admit()
+    this.deactivating.add(id)
+    try {
+      const entity = this.entities.get(id)
+      if (entity === undefined) return false
+      await Promise.all(entity.sessionIds.map(sessionId => this.ctx.parallel('workspace/session-stop', { sessionId })))
+      return await this.modeCoordinator.exclusive(id, { signal: new AbortController().signal, admit: () => {} }, async (workspace) => {
+        this.modeCoordinator.assertReady(workspace, true)
+        return commit(workspace)
+      })
+    } finally { this.deactivating.delete(id) }
   }
 
   /**

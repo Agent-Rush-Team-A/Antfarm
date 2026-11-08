@@ -954,7 +954,7 @@ it('captures Workspace menu requests, rechecks mutable access, and withdraws reg
   expect(vi.spyOn(b.ctx.contextMenus, 'close')).toHaveBeenCalledOnce()
   const menu = b.ctx.contextMenus.resolve(target)
   await menu.ready
-  expect(menu.source.getSnapshot().map(item => item.id)).toEqual(['workspace.rename/rename', 'workspace.mode/configure', 'workspace.delete/delete'])
+  expect(menu.source.getSnapshot().map(item => item.id)).toEqual(['workspace.rename/rename', 'workspace.mode/configure', 'workspace.archive/archive', 'workspace.delete/delete'])
   menu.select('workspace.rename/rename')
   expect(browser.hooks.workspaceActionRequest.getSnapshot()).toEqual({ action: 'rename', workspaceId: 'alpha', displayTitle: 'Alpha', storedTitle: 'alpha' })
   browser.settleWorkspaceAction()

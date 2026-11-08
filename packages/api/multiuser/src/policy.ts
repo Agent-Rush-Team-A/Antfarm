@@ -75,6 +75,7 @@ const WORKSPACE_ACTIONS = [
   'session/create',
   'workspace/rename',
   'workspace/delete',
+  'workspace/setArchived',
   'workspace/insertBefore',
   'workspace/insertSessionBefore',
   'workspaceUpload/limits',
@@ -143,7 +144,7 @@ const GUEST_GLOBAL_ROLE: RemoteAccessRole<'global'> = {
 }
 const GUEST_WORKSPACE_ROLE: RemoteAccessRole<'workspace'> = {
   name: 'multiuser:visitor-workspace', resource: 'workspace',
-  actions: WORKSPACE_ACTIONS.filter(action => action !== 'workspace/delete'),
+  actions: WORKSPACE_ACTIONS,
 }
 
 /** Allow only the resources the account currently owns, rechecked at decision time. */

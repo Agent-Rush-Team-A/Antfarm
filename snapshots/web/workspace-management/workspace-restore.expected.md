@@ -1,0 +1,6 @@
+- dialog "Restore workspace":
+  - heading "Restore workspace" [level=2]
+  - button "Close"
+  - paragraph: Restore “Archive example” for continued use. Its sandbox starts with the next task.
+  - button "Cancel"
+  - button "Restore workspace"

@@ -63,6 +63,8 @@ export interface SingleVmVultrConfig extends Omit<VultrSettings, 'remoteRoot' | 
 /** One provider owns cloud preparation, recovery evidence and the matching SSH generation. */
 export class SingleVmVultrBackend {
   private readonly slots = new Map<WorkspaceId, Slot>()
+  /** Confirmed original-resource removal, retained only until this workspace allocates again. */
+  private readonly confirmedReclamations = new Set<WorkspaceId>()
   private readonly lifetime = new AbortController()
   private initialized = false
   private disposal: Promise<void> | undefined
@@ -131,6 +133,7 @@ export class SingleVmVultrBackend {
     if (this.slots.size >= this.settings.maxInstances) throw new RunnerResponseError('sandbox_capacity', 429, false)
     this.records.outside(project)
     const slot: Slot = { project }
+    this.confirmedReclamations.delete(id)
     this.slots.set(id, slot)
     slot.opening = this.openOnce(id, slot).finally(() => { delete slot.opening })
     return slot.opening
@@ -270,11 +273,11 @@ export class SingleVmVultrBackend {
   /**
    * Observe preparation or the matching live helper without creating anything.
    * @param id - Authorized workspace.
-   * @returns Current execution state.
+   * @returns Current execution state; closed carries reconciliation evidence only after confirmed original-resource removal.
    */
   async status(id: WorkspaceId): Promise<RunnerSandboxStatus> {
     const slot = this.slots.get(id)
-    if (slot === undefined) return { state: 'closed' }
+    if (slot === undefined) return this.closedStatus(id)
     if (slot.closing !== undefined) return { state: 'closing' }
     if (slot.opening !== undefined) return { state: 'starting' }
     if (slot.record?.state !== 'running') return { state: 'cleanup_required' }
@@ -285,11 +288,11 @@ export class SingleVmVultrBackend {
   /**
    * Confirm absence of an allocation or preserve the original record for the cleanup owner.
    * @param id - Authorized workspace.
-   * @returns Closed only when no allocation is retained.
+   * @returns Closed only when no allocation is retained, with reconciliation evidence after confirmed removal.
    */
   close(id: WorkspaceId): Promise<RunnerClosedSandbox> {
     return this.slots.has(id) ? Promise.reject(new RunnerResponseError('sandbox_cleanup_required', 409, true))
-      : Promise.resolve({ state: 'closed' })
+      : Promise.resolve(this.closedStatus(id))
   }
 
   /**
@@ -301,7 +304,7 @@ export class SingleVmVultrBackend {
   closeTask(id: WorkspaceId, generation: SandboxContainerId): Promise<RunnerClosedSandbox> {
     const slot = this.slots.get(id)
     if (slot?.opening !== undefined) return Promise.reject(new RunnerResponseError('sandbox_closing', 409, false))
-    return slot === undefined ? Promise.resolve({ state: 'closed' }) : this.reclaim(slot, generation)
+    return slot === undefined ? Promise.resolve(this.closedStatus(id)) : this.reclaim(slot, generation)
   }
 
   /**
@@ -380,8 +383,8 @@ export class SingleVmVultrBackend {
         await this.confirmRemoval(() => this.api.deleteInstance(target, signal), originalInstance, signal)
       }
       if (await attachment() !== undefined) throw new Error('Original attachment remains after deletion')
-      await this.forget(slot, record)
-      return { state: 'closed' }
+      await this.forget(slot, record, true)
+      return { state: 'closed', reconciled: true }
     } catch (error) {
       this.report(record, error)
       throw new RunnerResponseError('sandbox_cleanup_required', 503, true, { cause: error })
@@ -398,9 +401,14 @@ export class SingleVmVultrBackend {
     }
   }
 
-  private async forget(slot: Slot, record: SingleVmAllocation): Promise<void> {
+  private closedStatus(id: WorkspaceId): RunnerClosedSandbox {
+    return this.confirmedReclamations.has(id) ? { state: 'closed', reconciled: true } : { state: 'closed' }
+  }
+
+  private async forget(slot: Slot, record: SingleVmAllocation, confirmed = false): Promise<void> {
     slot.record = { ...record, state: 'cleanup_required' }
     await this.records.remove(record.workspaceId)
+    if (confirmed) this.confirmedReclamations.add(record.workspaceId)
     this.slots.delete(record.workspaceId)
   }
 

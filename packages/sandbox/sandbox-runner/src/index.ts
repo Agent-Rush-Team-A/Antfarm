@@ -187,7 +187,7 @@ export default class SandboxRunner extends Service {
       return this.trackObservation(this.reuseOrReplaceSlot(workspaceId, directory, slot))
     } else {
       const occupied = [...this.slots.values()].filter(entry => entry.directory !== null || entry.container !== null).length
-      if (occupied >= 2) throw new SandboxLifecycleError('sandbox_capacity')
+      if (occupied >= this.config.maxInstances) throw new SandboxLifecycleError('sandbox_capacity')
       slot = { directory, container: null, phase: { state: 'cleanup_required' }, executions: new Map() }
       this.slots.set(workspaceId, slot)
     }

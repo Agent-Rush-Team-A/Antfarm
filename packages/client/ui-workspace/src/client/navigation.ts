@@ -302,6 +302,10 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   }
 
   openSession(target: SessionTarget): void {
+    if (typeof target === 'string' && this.workspaces.list.getSnapshot().items.some(workspace => workspace.archived && workspace.sessionIds.includes(target))) {
+      this.notify({ kind: 'archivedNotOpenable' })
+      return
+    }
     this.replaceMain(target, this.lifetime.signal, 'reveal')
   }
 
@@ -311,6 +315,10 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     options: Pick<StartSessionOptions, 'agentPreset'> = {},
   ): Promise<void> {
     const row = this.workspaces.list.getSnapshot().items.find(item => item.workspaceId === workspaceId)
+    if (row?.archived) {
+      this.notify({ kind: 'archivedNotOpenable' })
+      return Promise.resolve()
+    }
     if (row?.modeConfig.firstSessionId === null) {
       let opening: Promise<void> | undefined
       this.configureMode(workspaceId, () => {
@@ -497,6 +505,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     const summary = saved.sessionId === undefined ? undefined : sessions.byId[saved.sessionId]
     const workspace = summary === undefined ? undefined
       : workspaces.items.find(item => item.sessionIds.includes(summary.id))
+    if (workspace?.archived) { this.clearMain(); return }
     if (summary !== undefined && (!summary.blank || workspace === undefined)) {
       this.replaceMain(summary.id, this.lifetime.signal, 'preserve')
       return
@@ -537,8 +546,10 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   /** @returns true when an archived current selection was cleared. */
   private clearArchivedCurrent(): boolean {
     const current = this.mainReference?.sessionId
-    if (current === undefined
-      || !this.workspaces.list.getSnapshot().archivedSessionIds.includes(current)) return false
+    if (current === undefined) return false
+    const snapshot = this.workspaces.list.getSnapshot()
+    if (!snapshot.archivedSessionIds.includes(current)
+      && !snapshot.items.some(workspace => workspace.archived && workspace.sessionIds.includes(current))) return false
     this.clearMain()
     return true
   }

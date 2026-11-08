@@ -153,6 +153,10 @@ Read these pages when this package's view is not enough: the subsystem reference
 -----
 
 <a id="model-experience"></a>
+### Archiving workspaces
+
+Archive a Workspace with `workspaceRegistry.setArchived(id, true)` to keep its directory, Session history and order while releasing execution resources through composed providers. The registry stops Session work, refuses new admission, drains existing leases and awaits `workspace/before-archive` before writing. Cleanup failure keeps the archival state unchanged. Restore with `setArchived(id, false)`; resources start only when another task needs them. Deletion uses the same cleanup path and retains directories and Session logs. Workspace domain version 4 accepts version 3 records with missing archival fields; older domain readers refuse version 4 data.
+
 ## Model Experience
 
 ### Workspace records and session accounts

@@ -51,6 +51,10 @@ Documents lookup holds the registry mutation queue, so other Workspace mutations
 -----
 
 <a id="model-experience"></a>
+### Workspace archival
+
+Use `workspace/setArchived` with `{ workspaceId, archived }` to archive or restore an owned Workspace. Archival waits for resource cleanup and returns the committed row; a failure leaves it registered. The feed carries the optional `archived` field, with omission meaning active. Ownership remains intact during archival. Guest accounts can archive, restore and delete their own Workspace registrations; these actions do not erase files or Session logs.
+
 ## Model Experience
 
 None, as Workspace organization is browser and Host control state and registers no prompt, tool, or session event.

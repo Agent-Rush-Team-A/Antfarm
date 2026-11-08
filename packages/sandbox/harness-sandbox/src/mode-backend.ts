@@ -230,6 +230,29 @@ export default class WorkspaceModeBackend extends SandboxExecutionBackend {
 
   override open(workspaceId: WorkspaceId, workspaceDir: string) { return this.routing.open(this.scope(workspaceId, workspaceDir), 'manual') }
   override close(workspaceId: WorkspaceId) { return this.routing.close(this.scope(workspaceId), 'manual') }
+  override async closeWorkspace(workspaceId: WorkspaceId) {
+    this.scope(workspaceId).admit()
+    const target = this.config.targets.get(this.config.modes.get(workspaceId).mode)
+    if (target === undefined) throw new RunnerResponseError('sandbox_workspace_conflict', 409, false)
+    const world = this.worlds.get(workspaceId)
+    if (world !== undefined) {
+      await world.lifecycle.reconcile()
+      await world.lifecycle.dispose()
+      this.worlds.delete(workspaceId)
+    }
+    const current = await target.execution.status(workspaceId)
+    if (current.state === 'closed') return current
+    if (target.execution.recoverTask !== undefined) {
+      await target.execution.recoverTask(workspaceId)
+      const recovered = await target.execution.status(workspaceId)
+      if (recovered.state === 'closed') return recovered
+      if (recovered.state !== 'running' || target.execution.closeTask === undefined) {
+        throw new RunnerResponseError('sandbox_cleanup_required', 409, true)
+      }
+      return target.execution.closeTask(workspaceId, recovered.containerId)
+    }
+    return target.execution.close(workspaceId)
+  }
   override status(workspaceId: WorkspaceId) {
     const barrier = this.barrier(workspaceId)
     if (barrier !== undefined) return Promise.resolve(barrier)

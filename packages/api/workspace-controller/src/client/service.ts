@@ -97,6 +97,13 @@ export interface IWorkspaces {
    */
   delete(workspaceId: WorkspaceId): Promise<void>
   /**
+   * Archive after resource cleanup or restore without starting resources.
+   * @param workspaceId - Target Workspace.
+   * @param archived - Desired archival state.
+   * @returns Confirmed Workspace projection.
+   */
+  setArchived(workspaceId: WorkspaceId, archived: boolean): Promise<WorkspaceView>
+  /**
    * Move a Workspace within the Host registry order.
    * @param workspaceId - Workspace to move.
    * @param beforeWorkspaceId - anchor Workspace; omitted appends.
@@ -187,6 +194,12 @@ export class WorkspaceController extends Service implements IWorkspaces {
   async delete(workspaceId: WorkspaceId): Promise<void> {
     const result = await this.model.delete(workspaceId)
     if (!result.ok) throw commandError('delete', result.error)
+  }
+
+  async setArchived(workspaceId: WorkspaceId, archived: boolean): Promise<WorkspaceView> {
+    const result = await this.model.setArchived(workspaceId, archived)
+    if (!result.ok) throw new WorkspaceModeCommandError(result.error)
+    return result.value.workspace
   }
 
   async insertBefore(workspaceId: WorkspaceId, beforeWorkspaceId?: WorkspaceId): Promise<void> {

@@ -27,6 +27,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap extends WorkspaceModeErrorDetailsMap {
     /** No registration carries that Workspace identity. */
     'workspace/not-found': { readonly workspaceId: WorkspaceId }
+    /** Archived or deactivating registrations cannot admit new runtime use. */
+    'workspace/archived': { readonly workspaceId: WorkspaceId }
   }
 }
 
@@ -70,6 +72,8 @@ export interface SessionActivity {
  * implementation stays private.
  */
 export interface Workspace {
+  /** Archived registrations retain files and Sessions but refuse new runtime admission. */
+  readonly archived?: boolean | undefined
   /** Committed mode metadata and current operation admission state. */
   readonly modeConfig: WorkspaceModeConfig
 

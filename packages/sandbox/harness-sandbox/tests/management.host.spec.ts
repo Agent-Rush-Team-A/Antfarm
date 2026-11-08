@@ -75,7 +75,7 @@ test.each(['sandbox_capacity', 'sandbox_not_ready', 'sandbox_closing', 'sandbox_
   expect(f.calls).toHaveLength(1)
 })
 
-test.each(['timeout', 'invalid', 'incomplete'])('unconfirmed %s modification keeps reopening blocked even after a later DELETE', async (kind) => {
+test.each(['timeout', 'invalid', 'incomplete'])('unconfirmed %s modification keeps reopening blocked without reconciliation evidence', async (kind) => {
   const f = await fixture(100)
   f.control.respond = (response) => {
     if (kind === 'invalid') response.end('{"state":"closed"}')
@@ -84,7 +84,7 @@ test.each(['timeout', 'invalid', 'incomplete'])('unconfirmed %s modification kee
   expect(await f.rpc(f.alice.cookie, 'open', { workspaceId: f.alice.id })).toMatchObject({ ok: false, error: { details: { outcomeUnknown: true } } })
   expect(f.calls.map(call => call.method)).toEqual(['PUT'])
   f.control.respond = (response) => { response.end(JSON.stringify(running)) }
-  expect(await f.rpc(f.alice.cookie, 'status', { workspaceId: f.alice.id })).toEqual({ ok: true, value: { workspaceId: f.alice.id, state: 'closing' } })
+  expect(await f.rpc(f.alice.cookie, 'status', { workspaceId: f.alice.id })).toEqual({ ok: true, value: { workspaceId: f.alice.id, state: 'cleanup_required' } })
   f.control.respond = (response) => { response.end(JSON.stringify({ state: 'closed' })) }
   expect(await f.rpc(f.alice.cookie, 'close', { workspaceId: f.alice.id })).toMatchObject({ ok: false, error: { details: { reason: 'sandbox_outcome_unknown', outcomeUnknown: true } } })
   expect(await f.rpc(f.alice.cookie, 'open', { workspaceId: f.alice.id })).toMatchObject({ ok: false, error: { details: { reason: 'sandbox_closing' } } })
@@ -173,32 +173,24 @@ test('an owned workspace with a moved directory can still be queried and closed,
   expect(f.calls.map(call => call.method)).toEqual(['PUT', 'GET', 'DELETE'])
 })
 
-test.each(['starting', 'running', 'closing', 'cleanup_required'])('deletion refuses a %s sandbox and retains its registration and owner', async (state) => {
+test.each(['starting', 'running', 'closing', 'cleanup_required'])('deletion closes a %s sandbox before removing its registration', async (state) => {
   const f = await fixture()
-  f.control.respond = (response) => { response.end(JSON.stringify(state === 'running' ? running : { state })) }
-  expect(await f.remove(f.alice.cookie, f.alice.id)).toMatchObject({ ok: false,
-    error: { code: 'workspace/sandbox-active', details: { workspaceId: f.alice.id, state } } })
-  expect(f.ctx.workspaceRegistry.get(f.alice.id)).toBe(f.alice.workspace)
-  expect(f.ctx.multiuser.ownsWorkspace(f.alice.user.userId, f.alice.id)).toBe(true)
-  expect(f.calls.map(call => call.method)).toEqual(['GET'])
+  f.control.respond = (response, method) => { response.end(JSON.stringify(method === 'DELETE' ? { state: 'closed' } : state === 'running' ? running : { state })) }
+  expect(await f.remove(f.alice.cookie, f.alice.id)).toEqual({ ok: true, value: { deleted: true } })
+  expect(f.ctx.workspaceRegistry.get(f.alice.id)).toBeUndefined()
+  expect(f.ctx.multiuser.ownsWorkspace(f.alice.user.userId, f.alice.id)).toBe(false)
+  expect(f.calls.map(call => call.method)).toEqual(['DELETE'])
 })
 
-test('close confirmation permits registration deletion while keeping the directory and blocking future opens', async () => {
+test('deletion releases the sandbox while keeping the directory and blocking future opens', async () => {
   const f = await fixture()
   await writeFile(join(f.alice.workspace.path, 'keep.txt'), 'kept')
-  let state: 'running' | 'closed' = 'running'
-  f.control.respond = (response, method) => {
-    if (method === 'DELETE') state = 'closed'
-    response.end(JSON.stringify(state === 'running' ? running : { state }))
-  }
-  expect((await f.remove(f.alice.cookie, f.alice.id)).ok).toBe(false)
-  expect((await f.rpc(f.alice.cookie, 'close', { workspaceId: f.alice.id })).ok).toBe(true)
   expect(await f.remove(f.alice.cookie, f.alice.id)).toEqual({ ok: true, value: { deleted: true } })
   expect(f.ctx.workspaceRegistry.get(f.alice.id)).toBeUndefined()
   expect(f.ctx.multiuser.ownerOfWorkspace(f.alice.id)).toBeUndefined()
   expect(await readFile(join(f.alice.workspace.path, 'keep.txt'), 'utf8')).toBe('kept')
   expect((await f.rpc(f.alice.cookie, 'open', { workspaceId: f.alice.id })).ok).toBe(false)
-  expect(f.calls.map(call => call.method)).toEqual(['GET', 'DELETE', 'GET'])
+  expect(f.calls.map(call => call.method)).toEqual(['DELETE'])
 })
 
 test('deletion fails without changing ownership when Runner cannot confirm closed', async () => {
@@ -209,21 +201,27 @@ test('deletion fails without changing ownership when Runner cannot confirm close
   expect(f.ctx.workspaceRegistry.get(f.alice.id)).toBe(f.alice.workspace)
   expect(f.ctx.multiuser.ownsWorkspace(f.alice.user.userId, f.alice.id)).toBe(true)
   f.control.respond = (response) => { response.end(JSON.stringify(running)) }
-  expect((await f.rpc(f.alice.cookie, 'open', { workspaceId: f.alice.id })).ok).toBe(true)
+  expect((await f.rpc(f.alice.cookie, 'open', { workspaceId: f.alice.id })).ok).toBe(false)
+  f.control.respond = (response, method) => { response.end(JSON.stringify(method === 'DELETE' ? { state: 'closed' } : running)) }
+  expect(await f.remove(f.alice.cookie, f.alice.id)).toMatchObject({ ok: false, error: { details: { reason: 'sandbox_outcome_unknown' } } })
+  expect(f.ctx.workspaceRegistry.get(f.alice.id)).toBe(f.alice.workspace)
 })
 
-test('an admitted opening prevents deletion even before the Runner reports its generation', async () => {
+test('deletion waits for an admitted opening before confirming resource release', async () => {
   const f = await fixture()
   const received = Promise.withResolvers<undefined>()
-  let release: (() => void) | undefined
-  f.control.respond = (response) => { release = () => { response.end(JSON.stringify(running)) }; received.resolve(undefined) }
+  const release = Promise.withResolvers<undefined>()
+  f.control.respond = (response, method) => {
+    if (method === 'PUT') { received.resolve(undefined); void release.promise.then(() => response.end(JSON.stringify(running))) }
+    else response.end(JSON.stringify({ state: 'closed' }))
+  }
   const opening = f.rpc(f.alice.cookie, 'open', { workspaceId: f.alice.id })
   await received.promise
-  expect(await f.remove(f.alice.cookie, f.alice.id)).toMatchObject({ ok: false,
-    error: { code: 'workspace/sandbox-active', details: { state: 'starting' } } })
-  release!()
-  expect((await opening).ok).toBe(true)
-  expect(f.calls.map(call => call.method)).toEqual(['PUT'])
+  const removing = f.remove(f.alice.cookie, f.alice.id)
+  release.resolve(undefined)
+  await opening
+  expect(await removing).toEqual({ ok: true, value: { deleted: true } })
+  expect(f.calls.map(call => call.method)).toEqual(['PUT', 'DELETE'])
 })
 
 test('deletion blocks late opens through the registry commit', async () => {
@@ -231,7 +229,7 @@ test('deletion blocks late opens through the registry commit', async () => {
   const checking = Promise.withResolvers<undefined>()
   let release: (() => void) | undefined
   f.control.respond = (response, method) => {
-    if (method === 'GET') {
+    if (method === 'DELETE') {
       release = () => { response.end(JSON.stringify({ state: 'closed' })) }
       checking.resolve(undefined)
     } else response.end(JSON.stringify(running))
@@ -254,7 +252,7 @@ test('deletion blocks late opens through the registry commit', async () => {
   finish.resolve(undefined)
   expect(await remove).toEqual({ ok: true, value: { deleted: true } })
   dispose()
-  expect(f.calls.map(call => call.method)).toEqual(['GET', 'PUT'])
+  expect(f.calls.map(call => call.method)).toEqual(['DELETE', 'PUT'])
 })
 
 test('a refused deletion releases admission and preserves the existing workspace', async () => {
@@ -283,11 +281,8 @@ test('deletion remains guarded while the sandbox plugin is offline and uses the 
   expect(f.ctx.multiuser.ownsWorkspace(f.alice.user.userId, f.alice.id)).toBe(true)
   expect(f.calls.map(call => call.method)).toEqual(['PUT'])
   await f.ctx.plugin(WorkspaceSandbox, { socketPath: f.socketPath, workspaceRoot: f.workspaceRoot })
-  expect(await f.remove(f.alice.cookie, f.alice.id)).toMatchObject({ ok: false,
-    error: { code: 'workspace/sandbox-active' } })
-  expect((await f.rpc(f.alice.cookie, 'close', { workspaceId: f.alice.id })).ok).toBe(true)
   expect(await f.remove(f.alice.cookie, f.alice.id)).toEqual({ ok: true, value: { deleted: true } })
-  expect(f.calls.map(call => call.method)).toEqual(['PUT', 'GET', 'DELETE', 'GET'])
+  expect(f.calls.map(call => call.method)).toEqual(['PUT', 'DELETE'])
 })
 
 test('deleting an unowned backend registration does not depend on Runner', async () => {
@@ -307,5 +302,5 @@ test.each(['replaced', 'starting', 'cleanup_required'])('execution cleanup refus
   await expect(f.ctx.workspaceSandbox.closeForUser(f.alice.user.userId, f.alice.id, { containerId: original.containerId, version }))
     .rejects.toMatchObject({ code: 'sandbox/failed', details: { reason: 'sandbox_workspace_conflict' } })
   expect(f.calls.map(call => call.method)).toEqual(['PUT', 'GET'])
-  expect(await f.ctx.workspaceSandbox.statusForUser(f.alice.user.userId, f.alice.id)).toEqual({ state: 'closing' })
+  expect(await f.ctx.workspaceSandbox.statusForUser(f.alice.user.userId, f.alice.id)).toEqual({ state: 'cleanup_required' })
 })

@@ -403,7 +403,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-api-workspace-controller`
 
 - `inject`: `remoteAccess` · `typert` · `workspaceRegistry`
-- `source`: [`packages/api/workspace-controller/src/index.ts:39`](../packages/api/workspace-controller/src/index.ts)
+- `source`: [`packages/api/workspace-controller/src/index.ts:40`](../packages/api/workspace-controller/src/index.ts)
 
 ```ts config-catalog
 /** First-use directory policy for the Host account. */
@@ -3181,11 +3181,13 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-sandbox-runner`
 
-- `source`: [`packages/sandbox/sandbox-runner/src/config.ts:34`](../packages/sandbox/sandbox-runner/src/config.ts)
+- `source`: [`packages/sandbox/sandbox-runner/src/config.ts:36`](../packages/sandbox/sandbox-runner/src/config.ts)
 
 ```ts config-catalog
 /** Deployment settings after the Loader applies timing defaults. */
 export type ResolvedConfig = Config & {
+  /** Effective shared container capacity. */
+  maxInstances: number
   /** Effective Docker JSON request deadline, in milliseconds. */
   requestTimeoutMs: number
   /** Effective supervisor cleanup budget, in milliseconds. */
@@ -3210,6 +3212,8 @@ export interface Config {
   uid: number
   /** Non-root numeric GID inside the container. */
   gid: number
+  /** Maximum occupied workspace containers, shared by all accounts and Docker modes. */
+  maxInstances?: number
   /** Total deadline for a Docker JSON request, in milliseconds. */
   requestTimeoutMs?: number
   /** Supervisor cleanup and result-confirmation budget, in milliseconds. */
@@ -5092,7 +5096,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-workspace`
 
 - `inject`: `storageDomain` · `sessionPersistence`
-- `source`: [`packages/workspace/workspace/src/index.ts:180`](../packages/workspace/workspace/src/index.ts)
+- `source`: [`packages/workspace/workspace/src/index.ts:187`](../packages/workspace/workspace/src/index.ts)
 
 ```ts config-catalog
 /** Workspace registration deployment policy. */

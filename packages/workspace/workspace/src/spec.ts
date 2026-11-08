@@ -44,6 +44,7 @@ export type WorkspaceModeIntent = z.infer<typeof workspaceModeIntent>
  * order is display order); timestamps are ISO-8601 strings.
  */
 export const workspaceRecord = z.object({
+  archived: z.boolean().optional(),
   mode: workspaceMode,
   modeRevision: z.number().int().nonnegative(),
   firstSessionId: sessionId.nullable(),
@@ -129,7 +130,8 @@ export type WorkspaceDomainState = z.infer<typeof workspaceDomainState>
  */
 export const workspaceDomainSpec = defineDomain({
   name: 'workspace',
-  version: 3,
+  version: 4,
+  compatibleVersions: [3],
   global: {
     schema: workspaceDomainState,
     initial: { initialized: false, workspaceIds: [], archivedSessionIds: [], pinnedSessionIds: [] },

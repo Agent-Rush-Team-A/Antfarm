@@ -27,6 +27,7 @@ type WorkspaceFeedFrame = Exclude<WorkspaceFollowFrame, { readonly type: 'replac
 export function workspaceView(workspace: Workspace): WorkspaceView {
   return {
     workspaceId: workspace.id,
+    ...workspace.archived === undefined ? {} : { archived: workspace.archived },
     modeConfig: workspace.modeConfig,
     path: workspace.path,
     title: workspace.title,
@@ -40,6 +41,7 @@ function changedWorkspaceView(workspaceId: string, value: unknown): WorkspaceVie
   const record: WorkspaceRecord = workspaceRecord.parse(value)
   return {
     workspaceId: WorkspaceId(workspaceId),
+    ...record.archived === undefined ? {} : { archived: record.archived },
     modeConfig: workspaceModeConfig(WorkspaceId(workspaceId), record),
     path: record.path,
     title: record.title,

@@ -2792,6 +2792,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Closure after managed work is quiescent; lost acknowledgement rejects.',
       },
       {
+        signature: 'closeWorkspace(workspaceId: WorkspaceId): Promise<RunnerClosedSandbox>',
+        description: 'Release resources while the registry holds exclusive Workspace admission. Mode providers select the committed backend without acquiring a nested lease.',
+        parameters: [{ name: 'workspaceId', description: 'Registration being archived or deleted by its lifecycle owner.' }],
+        returns: 'Confirmed absence; cleanup failures prevent the registry mutation.',
+      },
+      {
         signature: 'abstract execute(workspaceId: WorkspaceId, request: RunnerExecutionRequest, signal?: AbortSignal): Promise<RunnerExecutionResult>',
         description: 'Execute once or retrieve the unchanged original request\'s result.',
         parameters: [{ name: 'workspaceId', description: 'Authorized identity.' }, { name: 'request', description: 'Unchanged original request.' }, { name: 'signal', description: 'Wait cancellation, without remote cancellation.' }],
@@ -4839,6 +4845,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'deletion confirmation.',
       },
       {
+        signature: '@Remote(\'setArchived\') setArchived(request: WorkspaceSetArchivedRequest): Promise<WorkspaceValue>',
+        description: 'Stop and archive an owned Workspace, or restore its registration without starting resources.',
+        parameters: [{ name: 'request', description: 'Workspace identity and desired archival state.' }],
+        returns: 'Workspace after durable publication and confirmed cleanup.',
+      },
+      {
         signature: '@Remote({ resources: { workspace: (request: WorkspaceInsertBeforeRequest) => [ request.workspaceId, ...request.beforeWorkspaceId === undefined ? [] : [request.beforeWorkspaceId], ], }, }) insertBefore(request: WorkspaceInsertBeforeRequest): Promise<WorkspaceOrderValue>',
         description: 'Move one Workspace within the registry display order.',
         parameters: [{ name: 'request', description: 'moved Workspace and optional anchor.' }],
@@ -5003,14 +5015,20 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'registerDeletionGuard( name: string, guard: (scope: Context, workspaceId: WorkspaceId, next: () => Promise<boolean>) => Promise<boolean>, ): void',
-        description: 'Install a named deletion guard owned by this registry, replacing the same name without binding to the caller\'s lifetime. The callback receives the registry\'s context and must resolve current services instead of retaining a disposable provider.',
+        description: 'Install a named deletion and archival guard owned by this registry, replacing the same name independently of caller lifetime. Guards run under exclusive Workspace admission before either durable mutation. The callback receives the registry\'s context and must resolve current services instead of retaining a disposable provider.',
         parameters: [{ name: 'name', description: 'Stable plugin registration name.' }, { name: 'guard', description: 'Middleware that remains installed until replacement or registry disposal.' }],
       },
       {
-        signature: 'delete(id: WorkspaceId): Promise<boolean>',
+        signature: 'delete(id: WorkspaceId, admit: () => void = () => {}): Promise<boolean>',
         description: 'Delete one workspace registration while retaining its directory and every session log. The durable order is updated before the table deletion; a failed table write restores the prior order and keeps the entity published. Composed deletion guards run before writes and may refuse the operation. Unknown ids are an idempotent no-op and do not dispatch guards.',
-        parameters: [{ name: 'id', description: 'Workspace registration to remove.' }],
+        parameters: [{ name: 'id', description: 'Workspace registration to remove.' }, { name: 'admit', description: 'Recheck the original caller before cleanup and the durable mutation.' }],
         returns: '`true` when a record was deleted, `false` when it was unknown.',
+      },
+      {
+        signature: 'setArchived(id: WorkspaceId, archived: boolean, admit: () => void = () => {}): Promise<Workspace>',
+        description: 'Archive a registration after stopping its work and confirming provider cleanup, or restore it without starting resources. Files, Session logs and manual order are retained. A cleanup failure leaves archival unchanged.',
+        parameters: [{ name: 'id', description: 'Existing Workspace identity.' }, { name: 'archived', description: 'Target archival state.' }, { name: 'admit', description: 'Recheck the original caller before cleanup and publication.' }],
+        returns: 'The durable Workspace entity.',
       },
       {
         signature: 'insertBefore(id: WorkspaceId, beforeId?: WorkspaceId): Promise<readonly WorkspaceId[]>',
@@ -5872,6 +5890,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'A workflow run started — the script\'s meta block validated, the body about to execute.',
     description: 'A workflow run started — the script\'s meta block validated, the body about to execute. Paired with Events[\'workflow/end\'].',
     parameters: [{ name: 'info', description: 'the run\'s identity snapshot (id + meta).' }],
+  },
+  {
+    name: 'workspace/before-archive',
+    mode: 'waterfall',
+    signature: '\'workspace/before-archive\'(workspaceId: WorkspaceId, next: () => Promise<boolean>): Promise<boolean>',
+    summary: 'Release Workspace resources before archival while exclusive admission is held.',
+    description: 'Release Workspace resources before archival while exclusive admission is held.',
+    parameters: [{ name: 'workspaceId', description: 'Registration being archived.' }, { name: 'next', description: 'Persist archival after all providers confirm cleanup.' }],
   },
   {
     name: 'workspace/before-delete',
@@ -8667,7 +8693,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SandboxExecutionBackend',
-    declaration: 'export abstract class SandboxExecutionBackend extends Service {\n    constructor(ctx: Context);\n    admit(scope: WorkspaceFileScope): SandboxExecutionAdmission | Promise<SandboxExecutionAdmission>;\n    abstract open(workspaceId: WorkspaceId, workspaceDir: string): Promise<RunnerRunningSandbox>;\n    abstract status(workspaceId: WorkspaceId): Promise<RunnerSandboxStatus>;\n    abstract close(workspaceId: WorkspaceId): Promise<RunnerClosedSandbox>;\n    abstract execute(workspaceId: WorkspaceId, request: RunnerExecutionRequest, signal?: AbortSignal): Promise<RunnerExecutionResult>;\n    abstract cancel(workspaceId: WorkspaceId, request: RunnerExecutionIdentity): Promise<RunnerCancellationResult>;\n    activity(_workspaceId: WorkspaceId): Pick<SandboxActivity, \'openings\' | \'executions\' | \'closing\'> | undefined;\n    barrier(_workspaceId: WorkspaceId): Extract<RunnerSandboxStatus, {\n        state: \'closing\' | \'starting\' | \'cleanup_required\';\n    }> | undefined;\n    progress(_workspaceId: WorkspaceId): SandboxProgress | undefined;\n    files(_workspaceId: WorkspaceId, _target: SandboxContainerId, _signal?: AbortSignal): Promise<WorkspaceRuntimeFiles>;\n}',
+    declaration: 'export abstract class SandboxExecutionBackend extends Service {\n    constructor(ctx: Context);\n    admit(scope: WorkspaceFileScope): SandboxExecutionAdmission | Promise<SandboxExecutionAdmission>;\n    abstract open(workspaceId: WorkspaceId, workspaceDir: string): Promise<RunnerRunningSandbox>;\n    abstract status(workspaceId: WorkspaceId): Promise<RunnerSandboxStatus>;\n    abstract close(workspaceId: WorkspaceId): Promise<RunnerClosedSandbox>;\n    closeWorkspace(workspaceId: WorkspaceId): Promise<RunnerClosedSandbox>;\n    abstract execute(workspaceId: WorkspaceId, request: RunnerExecutionRequest, signal?: AbortSignal): Promise<RunnerExecutionResult>;\n    abstract cancel(workspaceId: WorkspaceId, request: RunnerExecutionIdentity): Promise<RunnerCancellationResult>;\n    activity(_workspaceId: WorkspaceId): Pick<SandboxActivity, \'openings\' | \'executions\' | \'closing\'> | undefined;\n    barrier(_workspaceId: WorkspaceId): Extract<RunnerSandboxStatus, {\n        state: \'closing\' | \'starting\' | \'cleanup_required\';\n    }> | undefined;\n    progress(_workspaceId: WorkspaceId): SandboxProgress | undefined;\n    files(_workspaceId: WorkspaceId, _target: SandboxContainerId, _signal?: AbortSignal): Promise<WorkspaceRuntimeFiles>;\n}',
   },
   {
     name: 'SandboxExecutionId',
@@ -10815,7 +10841,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'Workspace',
-    declaration: 'export interface Workspace {\n    readonly modeConfig: WorkspaceModeConfig;\n    readonly id: WorkspaceId;\n    readonly path: string;\n    readonly title: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly sessionIds: readonly SessionId[];\n    setTitle(title: string): Promise<void>;\n    attachSession(sessionId: SessionId): Promise<void>;\n    insertSessionBefore(sessionId: SessionId, beforeSessionId?: SessionId): Promise<void>;\n    detachSession(sessionId: SessionId): Promise<void>;\n    status(): Promise<\'ok\' | \'missing-dir\'>;\n}',
+    declaration: 'export interface Workspace {\n    readonly archived?: boolean | undefined;\n    readonly modeConfig: WorkspaceModeConfig;\n    readonly id: WorkspaceId;\n    readonly path: string;\n    readonly title: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly sessionIds: readonly SessionId[];\n    setTitle(title: string): Promise<void>;\n    attachSession(sessionId: SessionId): Promise<void>;\n    insertSessionBefore(sessionId: SessionId, beforeSessionId?: SessionId): Promise<void>;\n    detachSession(sessionId: SessionId): Promise<void>;\n    status(): Promise<\'ok\' | \'missing-dir\'>;\n}',
   },
   {
     name: 'WorkspaceArchiveSessionRequest',
@@ -11030,6 +11056,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface WorkspaceSessionAdmission {\n    readonly sessionId: SessionId;\n    readonly mode: WorkspaceMode;\n    readonly single: boolean;\n    readonly reuseOnly: boolean;\n    readonly signal: AbortSignal;\n    reserve(id: SessionId): Promise<void>;\n}',
   },
   {
+    name: 'WorkspaceSetArchivedRequest',
+    declaration: 'export interface WorkspaceSetArchivedRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly archived: boolean;\n}',
+  },
+  {
     name: 'WorkspaceSetModeRequest',
     declaration: 'export interface WorkspaceSetModeRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly mode: WorkspaceMode;\n    readonly expectedRevision: number;\n}',
   },
@@ -11055,7 +11085,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WorkspaceView',
-    declaration: 'export interface WorkspaceView {\n    readonly modeConfig: WorkspaceModeConfig;\n    readonly workspaceId: WorkspaceId;\n    readonly path: string;\n    readonly title: string;\n    readonly sessionIds: readonly SessionId[];\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+    declaration: 'export interface WorkspaceView {\n    readonly archived?: boolean;\n    readonly modeConfig: WorkspaceModeConfig;\n    readonly workspaceId: WorkspaceId;\n    readonly path: string;\n    readonly title: string;\n    readonly sessionIds: readonly SessionId[];\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
 ]
 

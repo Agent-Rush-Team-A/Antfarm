@@ -75,6 +75,10 @@ Start 后结果不明时，同步将该代标为 `cleanup_required`，阻止新�
 - [应用 profile](../../boot/app-boot/README.zh.md#profiles) — 通过正式入口加载独立服务。
 
 <a id="model-experience"></a>
+### 容器容量
+
+通过 Runner 的 `maxInstances` 配置设置所有账号和 Docker 模式共享的工作区容器占用上限。允许 1 至 100，默认值为 2。启动中、运行中及回收未确认的容器保留名额；确认删除后释放。该字段不修改 Docker Engine 限制，也不提前创建容器。
+
 ## 模型体验
 
 无。Runner 不提供模型上下文或工具输出。

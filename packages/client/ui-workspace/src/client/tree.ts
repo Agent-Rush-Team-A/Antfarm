@@ -343,7 +343,8 @@ function groupByWorkspace(
     }
     // The archived-only view lists archives, not the Workspace inventory, so
     // a Workspace without archived Sessions contributes no group.
-    if (archivedFilter === 'only' && members.length === 0) continue
+    if (workspace.archived && archivedFilter === 'default') continue
+    if (archivedFilter === 'only' && members.length === 0 && !workspace.archived) continue
     groups.push(buildGroup(
       workspace.workspaceId, workspace.workspaceId, workspace.path,
       Date.parse(workspace.createdAt), workspace.title, members,

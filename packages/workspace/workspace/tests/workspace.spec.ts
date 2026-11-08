@@ -22,8 +22,9 @@ import WorkspaceRegistry, {
 import type { WorkspaceDomainState, WorkspaceRecord } from '../src/index.ts'
 import { defaultWorkspaceTitle, fullyQualifiedWorkspacePath } from '../src/paths.ts'
 import * as workspacePaths from '../src/paths.ts'
+import { workspaceDomainSpec } from '../src/spec.ts'
 
-const DOMAIN_VERSION = 3
+const DOMAIN_VERSION = 4
 
 const header = (id: string, cwd?: string, createdAt = 0): SessionHeader => ({
   version: SESSION_FORMAT_VERSION,
@@ -1599,3 +1600,30 @@ declare module '@deepseek-ai/dsh-workspace/types' {
     'probe-items': true
   }
 }
+
+describe('Workspace archival persistence and admission', () => {
+  it('reads version 3 data, retains archival over restart and restores without losing membership', async () => {
+    const path = await makeDir('archive')
+    const old = await harness()
+    const workspace = await old.registry.create(path)
+    await old.fiber.dispose()
+    old.pool.versions.set('workspace', 3)
+    const current = await harness({ pool: old.pool })
+    expect(current.registry.get(workspace.id)?.archived).toBeUndefined()
+    await current.registry.setArchived(workspace.id, true)
+    expect(current.pool.versions.get('workspace')).toBe(4)
+    const older = await storageContext(current.pool)
+    await expect(older.storageDomain.open({ ...workspaceDomainSpec, version: 3, compatibleVersions: [] })).rejects.toMatchObject({ code: 'version-mismatch' })
+    await older.fiber.dispose()
+    await current.fiber.dispose()
+    const restarted = await harness({ pool: current.pool })
+    expect(restarted.registry.get(workspace.id)?.archived).toBe(true)
+    await expect(restarted.registry.modes.acquireUse(workspace.id, { signal: new AbortController().signal, admit: () => {} }))
+      .rejects.toMatchObject({ code: 'workspace/archived' })
+    await restarted.registry.setArchived(workspace.id, false)
+    const lease = await restarted.registry.modes.acquireUse(workspace.id, { signal: new AbortController().signal, admit: () => {} })
+    lease.release()
+    expect(restarted.registry.get(workspace.id)?.path).toBe(path)
+    await restarted.fiber.dispose()
+  })
+})

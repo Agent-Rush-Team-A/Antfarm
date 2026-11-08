@@ -140,6 +140,16 @@ export class TaskSandboxLifecycle {
     return this.disposal
   }
 
+  /**
+   * Reconcile retained cleanup failure without reserving or starting another task.
+   * @returns Confirmed cleanup, or the original failure retained for maintenance.
+   */
+  async reconcile(): Promise<void> {
+    if (this.state.kind !== 'cleanup-required') return
+    this.recovery ??= this.recover(this.state.failure).finally(() => { this.recovery = undefined })
+    await this.recovery
+  }
+
   private start(): Generation {
     const generation: Generation = {
       ready: Promise.withResolvers<RunnerRunningSandbox>(),

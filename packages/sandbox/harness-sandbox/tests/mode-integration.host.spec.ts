@@ -348,3 +348,14 @@ test('invalid file receipts never start a selected container', async () => {
   expect(f.backend.open).not.toHaveBeenCalled()
   expect(f.counts.get(f.alice.id)).toBe(0)
 })
+
+test.each(modes)('%s releases an exclusive Workspace without nested mode admission or opening a replacement', async (mode) => {
+  const f = await fixture(mode)
+  await f.backend.open(f.alice.id, f.alice.workspace.path)
+  f.coordinator.acquireUse.mockClear()
+  vi.mocked(f.backend.open).mockClear()
+  await expect(f.ctx.sandboxRunnerClient.closeWorkspace(f.alice.id)).resolves.toMatchObject({ state: 'closed' })
+  expect(f.backend.close).toHaveBeenCalledWith(f.alice.id)
+  expect(f.coordinator.acquireUse).not.toHaveBeenCalled()
+  expect(f.backend.open).not.toHaveBeenCalled()
+})

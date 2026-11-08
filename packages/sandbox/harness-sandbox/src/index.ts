@@ -379,6 +379,9 @@ export default class WorkspaceSandbox extends TypertRemoteService {
     this.available()
     const workspace = this.ctx.workspaceRegistry.get(workspaceId)
     if (workspace === undefined) this.denied(operation)
+    if (workspace.archived && operation !== 'close' && operation !== 'status') {
+      throw new RemoteError('workspace/archived', 'Restore this workspace before starting work', { workspaceId })
+    }
     const project = workspace.path
     const admit = () => {
       check?.()
@@ -473,20 +476,11 @@ export default class WorkspaceSandbox extends TypertRemoteService {
     if (this.ctx.multiuser.ownerOfWorkspace(workspaceId) === undefined) return next()
     const deletion = Promise.resolve().then(async () => {
       this.available()
-      const blocked = this.state.deletionBlock(workspaceId)
-      if (blocked !== undefined) this.activeSandbox(workspaceId, blocked)
-      const result = await this.runner(() => this.client.status(workspaceId))
-      if (result.state !== 'closed') this.activeSandbox(workspaceId, result.state)
-      const changed = this.state.deletionBlock(workspaceId)
-      if (changed !== undefined) this.activeSandbox(workspaceId, changed)
+      await this.state.close(workspaceId, () => this.runner(() => this.client.closeWorkspace(workspaceId)))
       return next()
     }).finally(() => { this.deleting.delete(workspaceId) })
     this.deleting.set(workspaceId, deletion)
     return deletion
-  }
-
-  private activeSandbox(workspaceId: WorkspaceId, state: Exclude<SandboxValue['state'], 'closed'>): never {
-    throw new RemoteError('workspace/sandbox-active', 'Close the workspace sandbox before deleting the workspace', { workspaceId, state })
   }
 
   private available(): void {
