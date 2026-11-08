@@ -247,7 +247,9 @@ export class VultrSshProvisioning implements VultrProvisioning {
       write(sudoers, 'workspace-exec ALL=(root) NOPASSWD: ' + guestLaunch + ' ""\n'),
       'chmod 0440 ' + sudoers, '/usr/sbin/visudo -cf ' + sudoers,
       write('/etc/ssh/sshd_config.d/00-antfarm.conf', sshd
-        + 'AuthorizedKeysFile ' + keys + '/%u\nAllowTcpForwarding no\nAllowStreamLocalForwarding local\nPermitUserEnvironment no\n'),
+        + 'AuthorizedKeysFile ' + keys + '/%u\nAllowTcpForwarding no\nAllowStreamLocalForwarding no\nPermitUserEnvironment no\n'
+        // OpenSSH also consults the local TCP forwarding policy when opening a Unix socket.
+        + 'Match User workspace-exec\n  AllowTcpForwarding local\n  AllowStreamLocalForwarding local\n'),
     ]
   }
 

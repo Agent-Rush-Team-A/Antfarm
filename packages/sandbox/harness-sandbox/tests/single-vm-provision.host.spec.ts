@@ -56,7 +56,9 @@ test('bootstrap assigns the stable identity and separates admin commands from th
   const taskKey = written(script, '/etc/ssh/antfarm-keys/workspace-exec')
   expect(taskKey).toContain('restrict,port-forwarding,command="/usr/bin/sudo -n /opt/antfarm-vfs/start-helper"')
   expect(written(script, '/etc/sudoers.d/antfarm-vfs')).toBe('workspace-exec ALL=(root) NOPASSWD: /opt/antfarm-vfs/start-helper ""\n')
-  expect(written(script, '/etc/ssh/sshd_config.d/00-antfarm.conf')).toContain('AllowTcpForwarding no\nAllowStreamLocalForwarding local\n')
+  const sshd = written(script, '/etc/ssh/sshd_config.d/00-antfarm.conf')
+  expect(sshd).toContain('AllowTcpForwarding no\nAllowStreamLocalForwarding no\n')
+  expect(sshd).toMatch(/\nMatch User workspace-exec\n  AllowTcpForwarding local\n  AllowStreamLocalForwarding local\n$/u)
   expect(written(script, '/var/lib/antfarm-workspace-ready')).toBe('unique-new-label\n')
 })
 
