@@ -95,7 +95,7 @@
   <text class="stage" x="855" y="300">保留产物</text>
   <text class="body" x="855" y="325">Docker · 工作区目录</text>
   <text class="body" x="855" y="345">单会话 VM · Vultr File System</text>
-  <text class="body" x="855" y="365">多会话 VM · 快照与文件副本</text>
+  <text class="body" x="855" y="365">多会话 VM · Vultr File System</text>
   <text class="strong accent" x="855" y="390">环境回收后仍可下载</text>
 
   <text class="body accent" x="502" y="469" text-anchor="middle">工具输出与退出状态</text>

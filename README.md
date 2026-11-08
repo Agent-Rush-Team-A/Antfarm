@@ -64,7 +64,7 @@ The recorded walkthrough uses single-session Docker. A single Antfarm deployment
 | File-based tasks | Upload inputs, follow tool execution in the conversation, and download the generated files. |
 | Workspace isolation | Each account owns its workspaces; tool execution uses the selected workspace environment. |
 | Disposable execution, retained files | Single-session Docker closes automatically after work settles. Inputs and outputs remain available. |
-| Continued work | Multi-session modes share an environment across conversations; VM mode can preserve it through a disk snapshot. |
+| Continued work | Multi-session modes share an environment across conversations; VM workspace files remain on Vultr File System after closure. |
 
 <a id="verification"></a>
 ## Evidence and verification
@@ -74,7 +74,7 @@ The demo uses real model calls and execution backends. These records cover diffe
 | Evidence | What it demonstrates |
 | --- | --- |
 | [Guest demo · PR #59](https://github.com/Agent-Rush-Team-A/Antfarm/pull/59) | A guest runs a task with Vultr Serverless Inference and single-session Docker, downloads its result, and retains access to files after container reclamation. |
-| [Cloud spreadsheet acceptance · PR #39](https://github.com/Agent-Rush-Team-A/Antfarm/pull/39) | An earlier full run with real Vultr inference and Workspace VMs produced **9 orders, 16 net units, and 1,719.50 net sales**, and checked workspace isolation and file retention after snapshot restore. |
+| [Cloud spreadsheet acceptance · PR #39](https://github.com/Agent-Rush-Team-A/Antfarm/pull/39) | An earlier full run with real Vultr inference and Workspace VMs produced **9 orders, 16 net units, and 1,719.50 net sales**, and checked workspace isolation and file retention. |
 | [Timeout containment · PR #39](https://github.com/Agent-Rush-Team-A/Antfarm/pull/39) | A focused follow-up checked a 1,000 ms Bash timeout through independent SSH inspection: both the shell and its child had terminated. |
 
 The [cloud acceptance fixture](apps/web/tests/fixtures/workspace-spreadsheet/README.md) contains its CSV inputs, independently computed expected results, and reproduction instructions. Running that scenario creates paid Vultr resources.
@@ -95,9 +95,9 @@ The Docker profile limits each container to **1 CPU, 512 MiB of memory, and 64 p
 | Single-session Docker | Starts on demand; closes automatically after work settles | Persistent workspace directory |
 | Multi-session Docker | Conversations share a container; manual or idle closure | Persistent workspace directory |
 | Single-session Vultr VM | Creates a VM on demand; destroys it after work settles | Assigned directory on Vultr File System |
-| Multi-session Vultr VM | Conversations share a VM; closing saves a snapshot before deletion | Downloads use a private file copy while closed; reopening restores the snapshot |
+| Multi-session Vultr VM | Conversations share a VM; manual or idle closure destroys the instance | Assigned directory on Vultr File System; reopening mounts the same files |
 
-The first conversation locks the workspace mode. See the [workspace execution design](team-docs/SANDBOX-DESIGN.md) for lifecycle and isolation details.
+Both VM modes mount their workspace on Vultr File System and create no disk snapshots. Files remain downloadable after closure; packages and other changes outside `/workspace` must be recreated in a new VM. The first conversation locks the workspace mode. See the [workspace execution design](team-docs/SANDBOX-DESIGN.md) for lifecycle and isolation details.
 
 <a id="system-architecture-and-vultr-integration"></a>
 ## Vultr integration
@@ -108,7 +108,7 @@ The first conversation locks the workspace mode. See the [workspace execution de
 | --- | --- |
 | Cloud Compute | Hosts the Web control plane; the VM provider manages separate execution instances through the Vultr API and reaches a verified helper over SSH. |
 | Serverless Inference | Provides the agent model through the OpenAI-compatible endpoint. The guest demo uses `deepseek-v4.1-flash-1017`; inference credentials stay on the Harness side. |
-| Vultr File System and snapshots | VFS retains single-session VM files; snapshots preserve multi-session VM environments for reopening. |
+| Vultr File System | Keeps workspace files for both VM modes independently of the execution instance. |
 
 <a id="run"></a>
 

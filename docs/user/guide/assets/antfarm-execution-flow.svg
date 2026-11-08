@@ -95,7 +95,7 @@
   <text class="stage" x="855" y="300">Keep the output</text>
   <text class="body" x="855" y="325">Docker · workspace directory</text>
   <text class="body" x="855" y="345">Single VM · Vultr File System</text>
-  <text class="body" x="855" y="365">Multi VM · snapshot + copy</text>
+  <text class="body" x="855" y="365">Multi VM · Vultr File System</text>
   <text class="strong accent" x="855" y="390">Download after reclaim</text>
 
   <text class="body accent" x="502" y="469" text-anchor="middle">Tool output and exit status</text>

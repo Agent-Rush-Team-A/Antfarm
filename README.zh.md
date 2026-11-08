@@ -64,7 +64,7 @@ Vultr Agent Rush Hackathon · Blast Radius Zero · 基于 [DeepSeek Harness](htt
 | 基于文件完成任务 | 上传输入，在对话中查看工具执行过程，下载生成的成果。 |
 | 工作区隔离 | 每个账号拥有自己的工作区，工具在所选工作区的执行环境中运行。 |
 | 自动回收环境、保留文件 | 单会话 Docker 在任务结束后自动关闭，输入和输出文件仍可访问。 |
-| 持续迭代 | 多会话模式在不同对话间共享执行环境；VM 模式可通过磁盘快照保留环境。 |
+| 持续迭代 | 多会话模式在不同对话间共享执行环境；VM 关闭后，工作区文件仍保留在 Vultr File System。 |
 
 <a id="verification"></a>
 ## 验证与证据
@@ -74,7 +74,7 @@ Vultr Agent Rush Hackathon · Blast Radius Zero · 基于 [DeepSeek Harness](htt
 | 证据 | 验证内容 |
 | --- | --- |
 | [访客演示 · PR #59](https://github.com/Agent-Rush-Team-A/Antfarm/pull/59) | 访客通过 Vultr Serverless Inference 和单会话 Docker 执行任务、下载结果，并在容器回收后继续访问文件。 |
-| [云端表格验收 · PR #39](https://github.com/Agent-Rush-Team-A/Antfarm/pull/39) | 较早的一次完整运行使用真实 Vultr 推理和工作区 VM，得到 **9 笔订单、16 件净销量、1,719.50 净销售额**，并检查了工作区隔离和快照恢复后的文件保留。 |
+| [云端表格验收 · PR #39](https://github.com/Agent-Rush-Team-A/Antfarm/pull/39) | 较早的一次完整运行使用真实 Vultr 推理和工作区 VM，得到 **9 笔订单、16 件净销量、1,719.50 净销售额**，并检查了工作区隔离和文件保留。 |
 | [超时清理 · PR #39](https://github.com/Agent-Rush-Team-A/Antfarm/pull/39) | 后续专项检查通过独立 SSH 检查确认：Bash 触发 1,000 ms 超时后，Shell 和子进程均已终止。 |
 
 [云端验收样例](apps/web/tests/fixtures/workspace-spreadsheet/README.zh.md)包含 CSV 输入、独立计算的预期结果与复现说明。运行该场景会创建付费 Vultr 资源。
@@ -95,9 +95,9 @@ Docker profile 将每个容器限制为 **1 CPU、512 MiB 内存、64 个进程*
 | 单会话 Docker | 按需启动，任务结束后自动关闭 | 保留在持久化工作区目录 |
 | 多会话 Docker | 多个对话共享容器，手动或空闲关闭 | 保留在持久化工作区目录 |
 | 单会话 Vultr VM | 按需创建 VM，任务结束后销毁 | 保留在 Vultr File System 的所属目录 |
-| 多会话 Vultr VM | 多个对话共享 VM，关闭时先保存快照再删除实例 | 关闭时从私有文件副本下载，重开时恢复快照 |
+| 多会话 Vultr VM | 多个对话共享 VM，手动或空闲关闭时销毁实例 | 保留在 Vultr File System 的所属目录，重开时挂载同一批文件 |
 
-首次创建对话后，工作区模式便锁定。生命周期与隔离细节见[工作区执行设计](team-docs/SANDBOX-DESIGN.md)。
+两种 VM 模式都将工作区挂载到 Vultr File System，不创建磁盘快照。关闭后文件仍可下载；`/workspace` 之外安装的软件包和其他修改需要在新 VM 中重新配置。首次创建对话后，工作区模式便锁定。生命周期与隔离细节见[工作区执行设计](team-docs/SANDBOX-DESIGN.md)。
 
 <a id="system-architecture-and-vultr-integration"></a>
 ## Vultr 集成
@@ -108,7 +108,7 @@ Docker profile 将每个容器限制为 **1 CPU、512 MiB 内存、64 个进程*
 | --- | --- |
 | Cloud Compute | 承载 Web 控制服务；VM provider 通过 Vultr API 管理独立执行实例，通过 SSH 连接经校验的 helper。 |
 | Serverless Inference | 通过兼容 OpenAI 的接口提供 agent 模型。访客 Demo 使用 `deepseek-v4.1-flash-1017`，推理凭证保留在 Harness 侧。 |
-| Vultr File System 与快照 | VFS 保留单会话 VM 的文件，快照保存多会话 VM 的环境以便重开。 |
+| Vultr File System | 独立于执行实例，保留两种 VM 模式的工作区文件。 |
 
 <a id="run"></a>
 

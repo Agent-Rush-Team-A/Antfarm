@@ -98,6 +98,6 @@
   <text class="body" x="283" y="590">Docker bind mount</text>
   <text class="strong" x="544" y="567">Vultr File System</text>
   <text class="body" x="544" y="590">Single-session VM mount</text>
-  <text class="strong" x="819" y="567">Snapshot + private file copy</text>
-  <text class="body" x="819" y="590">Restore VM / download files</text>
+  <text class="strong" x="819" y="567">Vultr File System</text>
+  <text class="body" x="819" y="590">Multi-session VM mount</text>
 </svg>

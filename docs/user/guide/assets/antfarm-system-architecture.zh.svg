@@ -98,6 +98,6 @@
   <text class="body" x="283" y="590">Docker 绑定挂载</text>
   <text class="strong" x="544" y="567">Vultr File System</text>
   <text class="body" x="544" y="590">单会话 VM 工作区挂载</text>
-  <text class="strong" x="819" y="567">快照与私有文件副本</text>
-  <text class="body" x="819" y="590">多会话 VM 恢复 / 文件下载</text>
+  <text class="strong" x="819" y="567">Vultr File System</text>
+  <text class="body" x="819" y="590">多会话 VM 挂载</text>
 </svg>
