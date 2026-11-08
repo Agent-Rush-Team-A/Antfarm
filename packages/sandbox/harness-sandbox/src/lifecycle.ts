@@ -119,9 +119,12 @@ export default class WorkspaceSandboxState extends Service {
   /**
    * Observe the local close barrier.
    * @param id - Authorized workspace.
-   * @returns Whether closure or uncertain mutations prohibit opening.
+   * @returns Whether closure is active or requires cleanup before opening.
    */
-  closing(id: WorkspaceId): boolean { return this.workspaces.get(id)?.closing ?? false }
+  closing(id: WorkspaceId): 'closing' | 'cleanup_required' | undefined {
+    const state = this.workspaces.get(id)
+    if (state?.closing) return state.close === undefined ? 'cleanup_required' : 'closing'
+  }
 
   /**
    * Reject a revoked or blocked admission generation.

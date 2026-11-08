@@ -370,6 +370,7 @@ test('a failed DELETE keeps the barrier and later idle requests cannot retry the
   advance(idleTimeoutMs)
   await expect(close(f, original)).rejects.toMatchObject({ code: 'sandbox/failed' })
   const before = f.calls.length
+  await expect(f.ctx.workspaceSandbox.statusForUser(f.alice.user.userId, f.alice.id)).resolves.toEqual({ state: 'cleanup_required' })
   await expect(close(f, original)).resolves.toEqual({ state: 'skipped' })
   expect(f.calls).toHaveLength(before)
   expect(f.ctx.workspaceSandboxState.activity(f.alice.id)).toMatchObject({ closing: true, idleSince: null })

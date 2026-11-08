@@ -66,8 +66,8 @@ it('shows a permanent lock even when the first Session is filtered from membersh
   const p = props({ ...row, modeConfig: { ...row.modeConfig, mode: 'single-vm', firstSessionId: first,
     modeLocked: true, lockReason: 'first-session-created' } })
   p.t = makeTranslate(zh, commonZh); render(<ModeForm {...p} />)
-  expect(screen.getByText(zh['mode.locked'])).toBeTruthy()
-  expect(screen.getByText(first)).toBeTruthy()
+  expect(screen.getByRole('status').textContent).toBe(zh['mode.locked'])
+  expect(screen.queryByText(first)).toBeNull()
   expect(screen.queryByRole('button', { name: zh['mode.save'] })).toBeNull()
   expect(screen.getAllByRole('radio').every(r => (r as HTMLInputElement).disabled)).toBe(true)
   expect(screen.getAllByRole('button', { name: /^了解/ }).map(button => button.getAttribute('aria-label')))

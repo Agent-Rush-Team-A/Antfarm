@@ -57,7 +57,8 @@ test.each([
 ] as const)('shows $state progress and disables duplicate operations', ({ state, pending, copy }) => {
   const f = fixture({ ...closed, state, pending })
   expect(screen.getByRole('status').textContent).toBe(copy)
-  fireEvent.click(screen.getByRole('button', { name: state === 'closing' ? en.retryClose : en.close }))
+  if (state === 'closing') expect(screen.queryByRole('button', { name: en.retryClose })).toBeNull()
+  else fireEvent.click(screen.getByRole('button', { name: en.close }))
   fireEvent.click(screen.getByRole('button', { name: en.refresh }))
   expect(f.props.change).not.toHaveBeenCalled()
   expect(f.props.refresh).not.toHaveBeenCalled()
@@ -148,14 +149,21 @@ test('withdrawn status permission unmounts the panel and its resource consumer',
   expect(f.props.useResource).toHaveBeenCalledTimes(1)
 })
 
-test.each([{ state: 'cleanup_required', copy: en.cleanup }, { state: 'closing', copy: en.retryClose }] as const)(
-  'allows confirmed cleanup for $state', ({ state, copy }) => {
-    const f = fixture({ ...closed, state })
-    fireEvent.click(screen.getByRole('button', { name: copy }))
-    fireEvent.click(screen.getByRole('button', { name: en.confirmClose }))
-    expect(f.props.change).toHaveBeenCalledWith(id, 'close')
-  },
-)
+test('an ongoing VM close can be refreshed; a failed close can be retried with confirmation', () => {
+  const f = fixture({ ...closed, state: 'closing' })
+  expect(screen.getByRole('status').textContent).toBe(en.closing)
+  expect(screen.queryByRole('button', { name: en.retryClose })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: en.refresh }))
+  expect(f.props.refresh).toHaveBeenCalledWith(id)
+  expect(f.props.change).not.toHaveBeenCalled()
+  vi.mocked(f.props.useResource).mockReturnValue({ status: 'live', failure: undefined,
+    value: { ...closed, state: 'cleanup_required' } })
+  f.rerender(<SandboxPanel {...f.props} />)
+  expect(screen.getByRole('status').textContent).toBe(en.cleanup_required)
+  fireEvent.click(screen.getByRole('button', { name: en.cleanup }))
+  fireEvent.click(screen.getByRole('button', { name: en.confirmClose }))
+  expect(f.props.change).toHaveBeenCalledWith(id, 'close')
+})
 
 
 test.each(['single-vm', 'single-docker'] as const)('shows automatic status and hides manual controls in %s', (mode) => {

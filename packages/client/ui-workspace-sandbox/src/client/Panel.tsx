@@ -53,8 +53,9 @@ function WorkspaceEntry({ workspaceId, mode, ...props }: EntryProps) {
   if (!props.useWorkspaceAccess(workspaceId, 'workspaceSandbox/status')) return null
   return <>
     <Tooltip label={props.t('title')} side="top" portal>
-      <Button variant="toolbar" size="sm" aria-label={props.t('title')} onClick={() => { props.request(workspaceId) }}>
+      <Button variant="toolbar" size="sm" className={css.launcher} aria-label={props.t('title')} onClick={() => { props.request(workspaceId) }}>
         <IconShieldOutlineRegular size={18} aria-hidden />
+        {mode.startsWith('multi-') && <span>{props.t('title')}</span>}
       </Button>
     </Tooltip>
     {mode.endsWith('-vm') && <VmStatus {...props} workspaceId={workspaceId} mode={mode} />}
@@ -110,6 +111,7 @@ function PanelBody(props: PanelProps) {
   const [confirmClose, setConfirmClose] = useState(false)
   const retryConnection = props.modeConfig.mode === 'multi-vm' && canRetryVmConnection(view)
   const busy = view?.pending !== undefined || (state === 'starting' && !retryConnection)
+  const savingVm = props.modeConfig.mode === 'multi-vm' && state === 'closing'
   const problem = view?.failure ?? view?.statusFailure
   const unknown = problem?.outcomeUnknown === true
   const unavailable = view?.connected !== true || resource.status !== 'live' || view.statusFailure !== undefined
@@ -133,7 +135,7 @@ function PanelBody(props: PanelProps) {
       {confirmClose && !single && state !== 'closed' ? <div className={css.confirm}>
         <p>{t('confirmNote')}</p>
         <div className={css.actions}>
-          <Button variant="outline" disabled={disabled || !closeAllowed} onClick={() => {
+          <Button variant="outline" disabled={disabled || savingVm || !closeAllowed} onClick={() => {
             setConfirmClose(false); props.change(workspaceId, 'close')
           }}>{t('confirmClose')}</Button>
           <Button variant="outline" onClick={() => { setConfirmClose(false) }}>{t('cancel')}</Button>
@@ -142,7 +144,7 @@ function PanelBody(props: PanelProps) {
         {!single && (state === 'closed' || retryConnection) && <Button disabled={disabled || !openAllowed} onClick={() => { props.change(workspaceId, 'open') }}>
           {t(retryConnection ? 'retryConnection' : 'open')}
         </Button>}
-        {!single && state !== undefined && state !== 'closed' && <Button variant="outline" disabled={disabled || !closeAllowed}
+        {!single && !savingVm && state !== undefined && state !== 'closed' && <Button variant="outline" disabled={disabled || !closeAllowed}
           onClick={() => { setConfirmClose(true) }}>{t(state === 'cleanup_required' ? 'cleanup' : state === 'closing' ? 'retryClose' : 'close')}</Button>}
         <Button variant="outline" disabled={busy || view?.connected !== true}
           onClick={() => { props.refresh(workspaceId) }}>{t('refresh')}</Button>

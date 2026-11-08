@@ -69,9 +69,9 @@ export function ModeForm(props: ModeFormProps) {
   return <Modal open title={t('mode.title')} closeLabel={t('close')} onClose={props.dismissMode} className={clsx(css.dialog)}>
     <div className={css.body}>
       <p className={css.workspace}>{row.title}</p>
-      <p role="status" aria-live="polite">{t(`mode.${config.operationState}`)}</p>
-      <p>{t(config.modeLocked ? 'mode.locked' : 'mode.unlocked')}</p>
-      {config.modeLocked && config.firstSessionId !== null && <code className={css.identity}>{config.firstSessionId}</code>}
+      <p role="status" aria-live="polite">{t(config.modeLocked && config.operationState === 'ready'
+        ? 'mode.locked' : `mode.${config.operationState}`)}</p>
+      {(!config.modeLocked || config.operationState !== 'ready') && <p>{t(config.modeLocked ? 'mode.locked' : 'mode.unlocked')}</p>}
       <fieldset className={css.choices}>
         <legend>{t('mode.choose')}</legend>
         {visibleModes.map((mode) => {

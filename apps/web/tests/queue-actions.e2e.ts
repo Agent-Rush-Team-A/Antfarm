@@ -139,7 +139,7 @@ describe('web e2e: queue row actions', () => {
     expect((await admitted).ok()).toBe(true)
     await expect.poll(() => page.getByRole('button', { name: 'Remove queued message' }).isEnabled()).toBe(true)
     expect(await page.locator('[data-queue-dock] [data-submission-echo]').count()).toBe(0)
-    expect(await page.locator('[data-queue-dock]').getByRole('status').count()).toBe(0)
+    expect(await page.locator('[data-queue-dock]').getByRole('status').textContent()).toBe('Queued')
     await input.fill(EDIT)
     await input.press('Enter')
     // The Host queue row can arrive before the prompt reply that clears the composer.

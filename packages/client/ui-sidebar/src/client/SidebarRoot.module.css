@@ -795,6 +795,11 @@
   display: flex;
 }
 
+.footerActions:has(:global([data-dsh-account-dock][data-wide])) {
+  flex-direction: column;
+  gap: 4px;
+}
+
 .collapsed .footArea {
   align-items: center;
 }

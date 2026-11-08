@@ -248,7 +248,7 @@ describe('QueueDock', () => {
     })
     expect(view.getAllByText('等待上传')).toHaveLength(1)
     expect(view.container.querySelector('[data-submission-echo]')).toBeNull()
-    expect(view.queryByRole('status')).toBeNull()
+    expect(view.getByRole('status').textContent).toBe('已排队')
     for (const name of ['编辑排队消息', '删除排队消息', '插话发送']) {
       expect((view.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(false)
     }
@@ -333,7 +333,7 @@ describe('QueueDock', () => {
     expect(view.getAllByRole('status')).toHaveLength(1)
     expect(view.getByRole('status').closest('[data-submission-echo]')).not.toBeNull()
     act(() => { source.push(snapshotWith([row('accepted', '已排队')])) })
-    expect(view.queryByRole('status')).toBeNull()
+    expect(view.getByRole('status').textContent).toBe('已排队')
   })
 
   it('leaves pending steering to the conversation flow', () => {
@@ -470,7 +470,7 @@ describe('QueueDock', () => {
     expect(renderFactory).toHaveBeenCalledWith('conversation.user.text', {
       text, facts: { collapseWhitespace: true, trimWhitespace: true }, interactive: false, ellipsis: true,
     })
-    expect(view.getByRole('listitem').textContent).toBe(`before ${'🙂'.repeat(201)} after`)
+    expect(view.getByRole('listitem').textContent).toBe(`已排队before ${'🙂'.repeat(201)} after`)
     fireEvent.click(view.getByLabelText('编辑排队消息'))
     expect((view.getByRole('textbox') as HTMLTextAreaElement).value).toBe(text)
   })
@@ -529,7 +529,7 @@ describe('QueueDock', () => {
     const loadImage = vi.fn(() => Promise.resolve('blob:thumb-1'))
     const snap = snapshotWith([imageRow('i-img', 'att-9', '带图消息')])
     const source = liveSession(snap)
-    const { container } = render(
+    const { container, getByText } = render(
       <QueueDock {...kitFor(snap, { loadImage })} useSession={source.useSession} useProjection={source.useProjection} />,
     )
 
@@ -538,7 +538,7 @@ describe('QueueDock', () => {
     })
     expect(loadImage).toHaveBeenCalledWith(expect.objectContaining({ attachmentId: 'att-9' }))
     expect(container.querySelector('img')?.getAttribute('alt')).toBe('排队消息图片')
-    expect(container.querySelector('li')?.textContent).toBe('带图消息')
+    expect(getByText('带图消息').closest('li')).toBe(container.querySelector('li'))
   })
 
   it('renders durable files and images in their original queue order', async () => {

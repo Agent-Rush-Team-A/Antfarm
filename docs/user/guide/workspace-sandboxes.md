@@ -40,9 +40,11 @@ pnpm dsh web --patch apps/cli/config/antfarm-web.patch.yml --patch apps/cli/conf
 <a id="use-the-web-controls"></a>
 ## Use the Web controls
 
-With the overlay enabled, choose **Workspace sandbox** from the workspace actions menu, or use the shield button in a conversation's input bar. Both entries open the same panel for that workspace; opening the panel only queries status.
+With the overlay enabled, choose **Workspace sandbox** from the workspace actions menu or the conversation input bar. The input bar shows the name alongside the shield in multiple-session workspaces. Both entries open the same panel and only query status.
 
 Click **Open sandbox** to start it. The panel shows **Starting…**, then **Running** after confirmation. Click **Close sandbox**, then **Confirm close** to stop it; the panel shows **Closing…**, then **Closed** after removal. Cancelling the confirmation or dismissing the panel keeps the sandbox running. Closing retains files and conversations, but stops active and queued tasks.
+
+For a multiple-session Vultr VM, **Closing…** means the close is still in progress. If the panel shows **Cleanup required**, select **Clean up sandbox** and confirm to retry the close. Antfarm keeps the original VM until it confirms the snapshot is complete.
 
 When both slots are occupied, the panel says **Sandbox capacity is full. Close one or try again later.** Close a running sandbox before retrying the failed opening. Status refresh does not retry opening or closing. A failed query labels the last observed status and disables mutations until a successful query; an unknown operation result blocks opening and requires administrator assistance. Loss of connection or workspace permission dismisses the panel; reopen it after access returns.
 

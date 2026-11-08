@@ -15,7 +15,7 @@ import type { WorkspaceSshServices } from './ssh-runtime.ts'
 import { RunnerResponseError, type RunnerRunningSandbox, type RunnerSandboxStatus, type RunnerClosedSandbox,
   type SandboxContainerId } from './runner-client.ts'
 import type { RunnerExecutionRequest, RunnerExecutionIdentity, RunnerExecutionResult, RunnerCancellationResult } from './execution.ts'
-import { VultrApiError, type VultrApi, type VultrInstance } from './vultr-api.ts'
+import { VultrApiError, type VultrApi, type VultrInstance, type VultrSnapshotId } from './vultr-api.ts'
 import { CloudWorkspaceStore, type CloudRecord } from './vultr-storage.ts'
 import type { ResolvedConfig } from './vultr-config.ts'
 import { delay, type VultrProvisioning } from './vultr-provision.ts'
@@ -52,7 +52,7 @@ export class VultrWorkspaceController {
     private readonly provisioning: VultrProvisioning, private readonly report: (id: WorkspaceId,
       failure: CloudRecord['failure']) => void) {}
 
-  /** Reconcile recorded resources after restart without creating or deleting anything. */
+  /** Reconcile recorded resources and continue a verified, previously started close. */
   async initialize(): Promise<void> {
     this.lifetime.signal.throwIfAborted()
     return this.track(this.reconcile())
@@ -62,6 +62,7 @@ export class VultrWorkspaceController {
     const records = await this.store.load()
     const instances = await this.api.instances(this.lifetime.signal)
     const reconnect: Slot[] = []
+    const resumeClose: WorkspaceId[] = []
     for (const record of records) {
       if (record.deploymentId !== this.settings.deploymentId
         || record.remoteRoot !== this.settings.remoteRoot) throw new Error('Cloud deployment configuration differs from persisted ownership')
@@ -90,6 +91,9 @@ export class VultrWorkspaceController {
           // No execution receipt survives a new SSH connection.
           await this.commit(slot, { ...current, state: 'starting', phase: 'connecting', failure: undefined })
           reconnect.push(slot)
+        } else if (current.state === 'closing' && current.pendingSnapshotId !== undefined
+          && current.candidateCache !== undefined) {
+          resumeClose.push(current.workspaceId)
         }
       } else if (current.state !== 'closed') await this.failed(slot, 'interrupted')
     }
@@ -105,6 +109,10 @@ export class VultrWorkspaceController {
     for (const { record } of reconnect) {
       if (this.unassignedOrphan || this.orphanWorkspaces.has(record.workspaceId)) continue
       void this.open(record.workspaceId, record.project).catch((_error: unknown) => { /* openOnce records and reports the failure. */ })
+    }
+    for (const id of resumeClose) {
+      if (this.unassignedOrphan || this.orphanWorkspaces.has(id)) continue
+      void this.close(id).catch((_error: unknown) => { /* closeOnce records and reports the failure. */ })
     }
   }
 
@@ -220,7 +228,8 @@ export class VultrWorkspaceController {
     const slot = this.slots.get(id)
     if (this.unassignedOrphan || this.orphanWorkspaces.has(id)) return { state: 'cleanup_required' }
     if (slot === undefined || slot.record.state === 'closed') return { state: 'closed', reconciled: true }
-    if (slot.revocation.signal.aborted && slot.operation?.kind !== 'close') return { state: 'cleanup_required' }
+    if (slot.operation?.kind === 'close') return { state: 'closing' }
+    if (slot.revocation.signal.aborted || slot.record.state === 'closing') return { state: 'cleanup_required' }
     if (slot.record.state === 'running') {
       const status = await this.runtime.status(id)
       if (status.state !== 'running' || status.containerId !== slot.record.generation) {
@@ -371,17 +380,11 @@ export class VultrWorkspaceController {
         }
         await this.commit(slot, { ...slot.record, pendingSnapshotId: snapshot.id, mutation: undefined, phase: 'saving_snapshot' })
       }
-      while (true) {
-        const id = slot.record.pendingSnapshotId
-        if (id === undefined) throw new Error('Snapshot identity is missing')
-        const snapshot = await this.api.snapshot(id, signal)
-        if (snapshot === undefined || snapshot.status === 'error'
-          || snapshot.status === 'failed') throw new Error('Workspace snapshot failed')
-        if (snapshot.status === 'complete') break
-        await delay(this.settings.pollIntervalMs, signal)
-      }
+      const snapshotId = slot.record.pendingSnapshotId
+      if (snapshotId === undefined) throw new Error('Snapshot identity is missing')
+      await this.waitForSnapshot(snapshotId, signal)
       const oldCache = slot.record.cache
-      await this.commit(slot, { ...slot.record, oldSnapshotId: slot.record.snapshotId, snapshotId: slot.record.pendingSnapshotId,
+      await this.commit(slot, { ...slot.record, oldSnapshotId: slot.record.snapshotId, snapshotId,
         pendingSnapshotId: undefined, snapshotDescription: undefined, cache: slot.record.candidateCache,
         candidateCache: undefined, phase: 'deleting' })
       await this.api.deleteInstance(instance.id, signal)
@@ -392,11 +395,29 @@ export class VultrWorkspaceController {
       }
       return { state: 'closed', reconciled: true }
     } catch (error) {
+      // A replacement process can continue polling this same saved snapshot after shutdown.
+      if (this.lifetime.signal.aborted && slot.record.pendingSnapshotId !== undefined
+        && slot.record.candidateCache !== undefined) throw error
       const failure = slot.record.phase === 'deleting' ? 'delete' : 'save'
       let cause: unknown = error
       try { await this.failed(slot, failure) }
       catch (metadata) { cause = new AggregateError([error, metadata], 'Cloud save and failure persistence failed') }
       throw new RunnerResponseError('cloud_save_failed', 503, cause !== error, { cause })
+    }
+  }
+
+  private async waitForSnapshot(id: VultrSnapshotId, signal: AbortSignal): Promise<void> {
+    while (true) {
+      signal.throwIfAborted()
+      try {
+        const snapshot = await this.api.snapshot(id, signal)
+        if (snapshot?.status === 'complete') return
+        if (snapshot?.status === 'error' || snapshot?.status === 'failed') throw new Error('Workspace snapshot failed')
+      } catch (error) {
+        if (!(error instanceof VultrApiError) || (error.status !== 0 && error.status !== 429 && error.status < 500)) throw error
+      }
+      // A newly acknowledged snapshot may not be visible yet. Poll the same ID within the operation deadline.
+      await delay(this.settings.pollIntervalMs, signal)
     }
   }
 

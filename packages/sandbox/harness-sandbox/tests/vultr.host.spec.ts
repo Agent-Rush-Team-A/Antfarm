@@ -68,6 +68,7 @@ function cloud() {
   let createReplyLost = false
   let snapshotReplyLost = false
   let complete = true
+  const snapshotReadFailures: number[] = []
   const requests: { method: string; path: string; body?: Record<string, unknown> }[] = []
   const transport: typeof fetch = async (input, options) => {
     const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url).pathname.replace('/v2', '')
@@ -118,9 +119,11 @@ function cloud() {
     const snapshot = snapshots.get(id)
     if (snapshot === undefined) return new Response(null, { status: 404 })
     if (method === 'DELETE') { snapshots.delete(id); return new Response(null, { status: 204 }) }
+    const failure = snapshotReadFailures.shift()
+    if (failure !== undefined) return new Response(null, { status: failure })
     return Response.json({ snapshot })
   }
-  return { instances, snapshots, requests, transport, createdSnapshot, createdInstance,
+  return { instances, snapshots, requests, transport, createdSnapshot, createdInstance, snapshotReadFailures,
     setCreateLost: (value = true) => { createReplyLost = value }, setSnapshotLost: () => { snapshotReplyLost = true },
     pendingSnapshots: () => { complete = false },
     completeSnapshots: () => { for (const snapshot of snapshots.values()) snapshot.status = 'complete' } }
@@ -206,14 +209,18 @@ linuxTest('pending snapshot preserves the stopped source VM; complete snapshot a
   const f = await setup()
   const opened = await f.controller.open(f.a, f.projectA)
   f.external.pendingSnapshots()
+  f.external.snapshotReadFailures.push(503, 429, 404)
   const closing = f.controller.close(f.a)
+  const result = Promise.allSettled([closing])
   await f.external.createdSnapshot.promise
+  await vi.waitFor(() => expect(f.external.snapshotReadFailures).toHaveLength(0))
   expect(f.external.instances.size).toBe(1)
   expect([...f.external.instances.values()][0]?.power_status).toBe('stopped')
   expect(f.controller.progress(f.a)).toMatchObject({ phase: 'saving_snapshot' })
   expect(() => f.controller.files(f.a, opened.containerId)).toThrow()
   f.external.completeSnapshots()
-  expect(await closing).toEqual({ state: 'closed', reconciled: true })
+  expect(await result).toEqual([{ status: 'fulfilled', value: { state: 'closed', reconciled: true } }])
+  expect(f.external.requests.filter(request => request.method === 'POST' && request.path === '/snapshots')).toHaveLength(1)
   expect(f.external.instances.size).toBe(0)
   const record = (await f.store.load())[0]
   expect(record).toMatchObject({ state: 'closed', phase: 'closed' })
@@ -230,6 +237,25 @@ linuxTest('pending snapshot preserves the stopped source VM; complete snapshot a
     expectedContainerId: opened.containerId, command: 'true', workdir: '.', timeoutMs: 1000 })))
     .rejects.toMatchObject({ code: 'sandbox_workspace_conflict' })
   expect(f.runtime.cancel).not.toHaveBeenCalled()
+})
+
+linuxTest('restart during a known pending snapshot continues closure without a second snapshot request', async () => {
+  const f = await setup()
+  await f.controller.open(f.a, f.projectA)
+  f.external.pendingSnapshots()
+  const closing = Promise.allSettled([f.controller.close(f.a)])
+  await vi.waitFor(async () => expect((await f.store.load())[0]?.pendingSnapshotId).toBeDefined())
+  const snapshotId = [...f.external.snapshots.keys()][0]
+  await f.controller.dispose()
+  expect(await closing).toMatchObject([{ status: 'rejected' }])
+  const restarted = await setup(f)
+  await expect(restarted.controller.status(f.a)).resolves.toEqual({ state: 'closing' })
+  expect(f.external.instances.size).toBe(1)
+  f.external.completeSnapshots()
+  await vi.waitFor(async () => expect(await restarted.controller.status(f.a)).toEqual({ state: 'closed', reconciled: true }))
+  expect((await restarted.store.load())[0]).toMatchObject({ snapshotId })
+  expect(f.external.requests.filter(request => request.method === 'POST' && request.path === '/snapshots')).toHaveLength(1)
+  expect(f.external.instances.size).toBe(0)
 })
 
 linuxTest('lost snapshot acknowledgement retains source and recovers the original operation by description without a second snapshot', async () => {

@@ -2,9 +2,7 @@
   - heading "Workspace configuration" [level=2]
   - button "Close"
   - paragraph: Workspace A
-  - status: Ready
-  - paragraph: The first session has been created. The mode is permanently locked.
-  - code: <first-session>
+  - status: The first session has been created. The mode is permanently locked.
   - group "Workspace mode":
     - text: Workspace mode
     - radio "Single session · VM" [checked] [disabled]

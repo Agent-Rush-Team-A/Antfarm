@@ -24,7 +24,7 @@ export DSH_GUEST_INFERENCE_KEY_FILE=/srv/antfarm-demo/secrets/guest-inference.ke
 pnpm dsh web --patch apps/cli/config/antfarm-web.patch.yml --patch apps/cli/config/examples/harness-docker-modes.patch.yml --patch apps/cli/config/examples/antfarm-guest-workbench.patch.yml --dump-config
 ```
 
-[工作台叠加层](../../../apps/cli/config/examples/antfarm-guest-workbench.patch.yml)启用游客访问、Antfarm 配色，以及为工作区首页和右侧文件面板提供设置的单个已验证 Web bootstrap。模块名使用字面值 `./antfarm-workbench-boot.mjs`，以叠加层所在目录为基准解析，位置不受 profile 存储目录影响。界面设置为 `workbench: true`、`initiallyExpanded: true` 和 `defaultPage: workspace-files`。已有面板布局优先保留；新的桌面 Session 会打开文件面板，窄屏则保持折叠。
+[工作台叠加层](../../../apps/cli/config/examples/antfarm-guest-workbench.patch.yml)启用游客访问、Antfarm 配色，以及为工作区首页和右侧文件面板提供设置的单个已验证 Web bootstrap。模块名使用字面值 `./antfarm-workbench-boot.mjs`，以叠加层所在目录为基准解析，位置不受 profile 存储目录影响。界面设置为 `workbench: true`、`initiallyExpanded: true` 和 `defaultPage: workspace-files`。已有面板布局优先保留；新的桌面 Session 会打开文件面板，窄屏则保持折叠。Antfarm Web 叠加层关闭 Harness 的插件自定义菜单，包括左侧栏的**更多**入口。
 
 Runner 和私有部署设置准备好后，启动同一个 profile：
 
@@ -37,6 +37,8 @@ pnpm dsh web --patch apps/cli/config/antfarm-web.patch.yml --patch apps/cli/conf
 ## 体验任务
 
 打开预览，选择 **Try it as a guest**（中文界面为 **游客体验**）。应用会创建独立的游客身份，并签发 HttpOnly 登录 Cookie。每个游客只拥有自己的工作区和对话；浏览器不会要求游客输入密码或模型密钥。
+
+展开的侧栏将账号名、**退出登录**和语言设置放在同一张卡片中。已登录的团队成员可以从卡片上方打开**我的凭证**。
 
 选择销售示例，准备 `sales.csv` 和任务草稿，然后发送任务。Agent 会生成 Markdown 报告和 CSV 汇总。文件面板显示上传文件和生成成果。任务完成后下载成果，再继续对话，在新的执行环境中使用保留文件。选择项目简报示例可生成计划，也可以创建工作区并上传自己的文件。
 
