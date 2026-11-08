@@ -23,7 +23,7 @@ function props(value = row): ModeFormProps {
   return {
     row: value,
     selection: { workspaceId: id, startsSession: true, availableModes: ['single-vm', 'multi-vm', 'single-docker', 'multi-docker'] },
-    pending: false,
+    pending: false, preferredMode: 'single-vm',
     t: makeTranslate(en, commonEn), useWorkspaceAccess: vi.fn().mockReturnValue(true), dismissMode: vi.fn(),
     refreshMode: vi.fn(), saveMode: vi.fn().mockResolvedValue(true), beginModeSession: vi.fn(),
   }
@@ -37,6 +37,17 @@ it('offers four modes before the first Session and saves the captured revision',
   expect(screen.getByRole('button', { name: en['mode.begin'] }).hasAttribute('disabled')).toBe(true)
   fireEvent.click(screen.getByRole('button', { name: en['mode.save'] }))
   await waitFor(() => { expect(p.saveMode).toHaveBeenCalledWith(id, 'single-docker', 3) })
+  expect(p.beginModeSession).not.toHaveBeenCalled()
+})
+
+it.each([
+  ['single-docker', 'Single session · Docker (default)'],
+  ['single-vm', 'Single session · VM (default)'],
+] as const)('preselects the frontend preference %s for a fresh workspace', (preferredMode, label) => {
+  const p = props({ ...row, modeConfig: { ...row.modeConfig, revision: 0 } })
+  render(<ModeForm {...p} preferredMode={preferredMode} />)
+  expect(screen.getByRole<HTMLInputElement>('radio', { name: label }).checked).toBe(true)
+  expect(p.saveMode).not.toHaveBeenCalled()
   expect(p.beginModeSession).not.toHaveBeenCalled()
 })
 
