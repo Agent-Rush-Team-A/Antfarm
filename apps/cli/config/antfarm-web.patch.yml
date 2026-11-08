@@ -5,6 +5,10 @@
     trustedHosts: !!js ctx.webStartup.trustedHosts
 
 - insert:
+    - id: antfarm-workbench
+      name: ./examples/antfarm-workbench-boot.mjs
+      config:
+        workbench: false
     - id: multiuser
       name: '@deepseek-ai/dsh-api-multiuser'
       config:

@@ -21,10 +21,8 @@
 - id: ui-theme
   config:
     palette: antfarm
-- insert:
-    - id: antfarm-workbench
-      name: ./antfarm-workbench-boot.mjs
-      config:
-        workbench: true
-        initiallyExpanded: true
-        defaultPage: workspace-files
+- id: antfarm-workbench
+  config:
+    workbench: true
+    initiallyExpanded: true
+    defaultPage: workspace-files

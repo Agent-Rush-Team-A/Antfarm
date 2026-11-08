@@ -150,6 +150,8 @@ interface IWorkspaceModes {
    * @returns its durable mode snapshot.
    */
   get(workspaceId: WorkspaceId): WorkspaceModeConfig
+  /** @returns Modes the active runtime can prepare, or an empty list without a runtime. */
+  supportedModes(): readonly WorkspaceMode[]
   /**
    * Register exactly one runtime adapter; its async disposer stops admission and drains owned work.
    * @param runtime - Provider supporting the default and all retained modes.
@@ -539,9 +541,9 @@ Host service backing the generated `ctx.remote.workspace` namespace.
 /**
  * Read committed Workspace mode metadata after ownership checks.
  * @param request - Workspace to read.
- * @returns committed mode metadata after access checks.
+ * @returns Committed mode metadata and available modes after access checks.
  */
-@Remote('getMode') async getMode(request: WorkspaceGetModeRequest): Promise<WorkspaceModeValue>
+@Remote('getMode') async getMode(request: WorkspaceGetModeRequest): Promise<WorkspaceModeOptionsValue>
 
 /**
  * Set an unlocked Workspace mode while preserving its original caller and registration.

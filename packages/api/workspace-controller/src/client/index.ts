@@ -19,7 +19,7 @@ export { WorkspaceArchiveError, WorkspaceController, WorkspaceCreateError, Works
 export type { IWorkspaces, WorkspaceSource } from './service.ts'
 export type {
   SessionActivity, SessionActivityItem, SessionActivityKind, SessionActivityKindMap, WorkspaceId,
-  WorkspaceView,
+  WorkspaceModeOptionsValue, WorkspaceView,
 } from '../types.ts'
 
 type WorkspaceBaselineFrame = Extract<WorkspaceFollowFrame, { type: 'baseline' }>

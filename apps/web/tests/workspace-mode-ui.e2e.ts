@@ -9,6 +9,7 @@ import { expect, it, onTestFinished } from 'vitest'
 import type { WorkspaceCreateValue, WorkspaceModeValue } from '@deepseek-ai/dsh-api-workspace-controller'
 import type { WorkspaceModeRuntime } from '@deepseek-ai/dsh-workspace/types'
 import { compareOrRefreshGolden, launchWebScaffold, webSnapshotMode } from './scaffold.ts'
+import { requireBuilt } from './support.ts'
 
 it('configures four modes, preserves permanent locks, and keeps Workspace admission independent', async () => {
   const root = await mkdtemp(join(tmpdir(), 'workspace-mode-ui-'))
@@ -39,8 +40,11 @@ it('configures four modes, preserves permanent locks, and keeps Workspace admiss
     const a = scaffold.ctx.workspaceRegistry.list()[0]
     if (a === undefined) throw new Error('Workspace creation did not register a row')
     const defaultMode = dialog.getByRole('radio', { name: 'Single session · VM (default)', exact: true })
-    expect(await defaultMode.isChecked()).toBe(true)
-    expect(await dialog.getByRole('button', { name: 'Start session', exact: true }).isDisabled()).toBe(true)
+    const committedMode = dialog.getByRole('radio', { name: 'Multiple sessions · VM', exact: true })
+    await dialog.getByRole('alert').getByText('The execution environment is unavailable. Contact the administrator.', { exact: true }).waitFor()
+    expect(await committedMode.isChecked()).toBe(true)
+    expect(await dialog.getByRole('radio').count()).toBe(1)
+    expect(await page.title()).toBe('Antfarm')
     expect(a.modeConfig.mode).toBe('multi-vm')
     expect(scaffold.ctx.sessions.list()).toHaveLength(0)
     await page.keyboard.press('Escape')
@@ -55,15 +59,25 @@ it('configures four modes, preserves permanent locks, and keeps Workspace admiss
       await row.getByRole('button', { name: 'Workspace configuration', exact: true }).click()
       await dialog.waitFor()
     }
-    await configure(a.title)
-    expect(await defaultMode.isChecked()).toBe(true)
-    await dialog.getByRole('button', { name: 'Save mode', exact: true }).click()
-    await page.getByText('The execution environment is unavailable. Contact the administrator.', { exact: true }).waitFor()
-    expect(a.modeConfig.mode).toBe('multi-vm')
+    const { WorkspaceModeError } = requireBuilt('@deepseek-ai/dsh-workspace') as typeof import('@deepseek-ai/dsh-workspace')
+    let capacityExhausted = true
     const runtime: WorkspaceModeRuntime = { supportedModes: ['single-vm', 'multi-vm', 'single-docker', 'multi-docker'],
-      prepare: async (_change, signal) => { signal.throwIfAborted() },
+      prepare: async (change, signal) => {
+        signal.throwIfAborted()
+        if (capacityExhausted && change.to === 'single-vm') {
+          throw new WorkspaceModeError('workspace/mode-single-vm-capacity', { workspaceId: change.workspaceId })
+        }
+      },
       settle: async (_change, _decision, signal) => { signal.throwIfAborted() } }
     scaffold.ctx.effect(() => scaffold.ctx.workspaceRegistry.modes.registerRuntime(runtime))
+    await configure(a.title)
+    await defaultMode.waitFor()
+    expect(await defaultMode.isChecked()).toBe(true)
+    await dialog.getByRole('button', { name: 'Save mode', exact: true }).click()
+    await dialog.getByRole('alert').getByText('No single-session VM slots are available.', { exact: false }).waitFor()
+    await expect.poll(() => committedMode.isChecked()).toBe(true)
+    expect(a.modeConfig).toMatchObject({ mode: 'multi-vm', operationState: 'ready' })
+    capacityExhausted = false
     const tooltip = page.getByRole('tooltip')
     for (const [mode, label, detail] of [
       ['single-docker', 'Single session · Docker', 'lightweight Docker container'],
@@ -171,5 +185,48 @@ it('configures four modes, preserves permanent locks, and keeps Workspace admiss
     await page.keyboard.press('Escape')
     await dialog.waitFor({ state: 'hidden' })
     expect(errors).toEqual([])
+  } finally { await browser.close() }
+})
+
+it.runIf(process.platform === 'linux')('lets an Antfarm visitor choose any sandbox mode before the first session', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'antfarm-guest-modes-'))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
+  const overlay = join(root, 'guest.yml')
+  await writeFile(overlay, JSON.stringify([
+    { id: 'multiuser', config: { workspaceRoot: join(root, 'workspaces'), guestAccess: true } },
+    { id: 'antfarm-workbench', config: { workbench: true } },
+  ]))
+  const scaffold = await launchWebScaffold({ firstUse: true, accountAuthentication: true, compareReplaySession: false,
+    extraOverlayPath: [fileURLToPath(new URL('../../cli/config/antfarm-web.patch.yml', import.meta.url)), overlay] })
+  onTestFinished(() => scaffold.close())
+  scaffold.ctx.effect(() => scaffold.ctx.workspaceRegistry.modes.registerRuntime({
+    supportedModes: ['single-vm', 'multi-vm', 'single-docker', 'multi-docker'],
+    prepare: async () => {},
+    settle: async () => {},
+  }))
+  const browser = await chromium.launch({ args: ['--no-sandbox'] })
+  try {
+    const page = await browser.newPage({ locale: 'en-US' })
+    await page.goto(new URL(scaffold.authenticatedUrl).origin)
+    await page.getByRole('button', { name: 'Try it as a guest', exact: true }).click()
+    await page.getByRole('heading', { name: 'What should your agent work on?' }).waitFor()
+    expect(await page.title()).toBe('Antfarm')
+    await page.getByRole('button', { name: 'New workspace', exact: true }).first().click()
+    const setup = page.getByRole('dialog', { name: 'Your workspace, your way' })
+    await setup.getByRole('textbox', { name: 'Workspace name' }).fill('Visitor VM test')
+    await setup.getByRole('button', { name: 'Create workspace', exact: true }).click()
+    const mode = page.getByRole('dialog', { name: 'Workspace configuration', exact: true })
+    await expect.poll(() => mode.getByRole('radio').count()).toBe(4)
+    const recommended = mode.getByRole('radio', { name: 'Single session · VM (default)', exact: true })
+    expect(await recommended.isChecked()).toBe(true)
+    expect(scaffold.ctx.sessions.list()).toHaveLength(0)
+    await mode.getByRole('button', { name: 'Save mode', exact: true }).click()
+    const start = mode.getByRole('button', { name: 'Start session', exact: true })
+    await expect.poll(() => start.isEnabled()).toBe(true)
+    await start.click()
+    await mode.waitFor({ state: 'hidden' })
+    await expect.poll(() => scaffold.ctx.workspaceRegistry.list()[0]?.modeConfig).toMatchObject({
+      mode: 'single-vm', modeLocked: true,
+    })
   } finally { await browser.close() }
 })

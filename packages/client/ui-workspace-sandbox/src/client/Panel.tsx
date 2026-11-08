@@ -3,12 +3,12 @@ import { useState } from 'react'
 import { Button, IconShieldOutlineRegular, Modal, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { WorkspaceId, WorkspaceModeConfig } from '@deepseek-ai/dsh-workspace/types'
+import type { WorkspaceId, WorkspaceMode, WorkspaceModeConfig } from '@deepseek-ai/dsh-workspace/types'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { sandboxAddress } from './address.ts'
-import type { SandboxModel } from './model.ts'
+import { canRetryVmConnection, type SandboxModel } from './model.ts'
 import type {} from './locales.ts'
 import { sandboxModeAllows } from './access.ts'
 import { failureKey } from './failure-key.ts'
@@ -40,19 +40,48 @@ export type PanelProps = Pick<OverlayProps, 'useResource' | 'useWorkspaceAccess'
  * @returns Current workspace entry when status access is allowed.
  */
 export function SandboxLauncher(props: LauncherProps) {
-  const workspaceId = props.useWorkspaces(snapshot =>
+  const workspace = props.useWorkspaces(snapshot =>
     snapshot.items.find(workspace => workspace.modeConfig.firstSessionId === props.sessionId
-      || workspace.sessionIds.includes(props.sessionId))?.workspaceId)
-  return workspaceId === undefined ? null : <WorkspaceEntry key={workspaceId} {...props} workspaceId={workspaceId} />
+      || workspace.sessionIds.includes(props.sessionId)))
+  return workspace === undefined ? null
+    : <WorkspaceEntry key={workspace.workspaceId} {...props} workspaceId={workspace.workspaceId} mode={workspace.modeConfig.mode} />
 }
 
-function WorkspaceEntry({ workspaceId, ...props }: LauncherProps & { workspaceId: WorkspaceId }) {
+type EntryProps = LauncherProps & { workspaceId: WorkspaceId; mode: WorkspaceMode }
+
+function WorkspaceEntry({ workspaceId, mode, ...props }: EntryProps) {
   if (!props.useWorkspaceAccess(workspaceId, 'workspaceSandbox/status')) return null
-  return <Tooltip label={props.t('title')} side="top" portal>
-    <Button variant="toolbar" size="sm" aria-label={props.t('title')} onClick={() => { props.request(workspaceId) }}>
-      <IconShieldOutlineRegular size={18} aria-hidden />
-    </Button>
-  </Tooltip>
+  return <>
+    <Tooltip label={props.t('title')} side="top" portal>
+      <Button variant="toolbar" size="sm" aria-label={props.t('title')} onClick={() => { props.request(workspaceId) }}>
+        <IconShieldOutlineRegular size={18} aria-hidden />
+      </Button>
+    </Tooltip>
+    {mode.endsWith('-vm') && <VmStatus {...props} workspaceId={workspaceId} mode={mode} />}
+  </>
+}
+
+type VmStatusProps = Pick<EntryProps, 'workspaceId' | 'mode' | 't' | 'useResource' | 'useInput' | 'useWorkspaceAccess' | 'change'>
+
+/** @param props - Composer input and live workspace status. @returns Preparation feedback or a retry for the original VM. */
+export function VmStatus({ workspaceId, mode, t, ...props }: VmStatusProps) {
+  const resource = props.useResource<'workspacesandbox'>(sandboxAddress(workspaceId))
+  const sending = props.useInput(input => input.phase === 'sending')
+  const openAllowed = props.useWorkspaceAccess(workspaceId, 'workspaceSandbox/open')
+  const view = resource.value
+  const live = resource.status === 'live' && view?.connected === true && view.statusFailure === undefined
+  const retry = live && mode === 'multi-vm' && canRetryVmConnection(view)
+  const starting = live && (view.pending === 'open' || (view.pending !== 'close' && view.state === 'starting'))
+  const waiting = sending && (view?.state === undefined || view.state === 'closed')
+  const status = retry ? 'vmConnectionFailed'
+    : starting && mode === 'multi-vm' && view.progress?.phase === 'connecting' ? 'connectingVm'
+      : starting || waiting ? 'preparingVm'
+        : live && view.state === 'running' && view.pending !== 'close' ? 'vmReady' : undefined
+  if (status === undefined) return null
+  return <span className={css.composerStatus}>
+    <span role={retry ? 'alert' : 'status'}>{t(status)}</span>
+    {retry && openAllowed && <Button variant="outline" size="sm" onClick={() => { props.change(workspaceId, 'open') }}>{t('retryConnection')}</Button>}
+  </span>
 }
 
 /**
@@ -79,14 +108,16 @@ function PanelBody(props: PanelProps) {
   const openAllowed = props.useWorkspaceAccess(workspaceId, 'workspaceSandbox/open')
   const closeAllowed = props.useWorkspaceAccess(workspaceId, 'workspaceSandbox/close')
   const [confirmClose, setConfirmClose] = useState(false)
-  const busy = view?.pending !== undefined || state === 'starting'
+  const retryConnection = props.modeConfig.mode === 'multi-vm' && canRetryVmConnection(view)
+  const busy = view?.pending !== undefined || (state === 'starting' && !retryConnection)
   const problem = view?.failure ?? view?.statusFailure
   const unknown = problem?.outcomeUnknown === true
   const unavailable = view?.connected !== true || resource.status !== 'live' || view.statusFailure !== undefined
   const single = props.modeConfig.mode === 'single-vm' || props.modeConfig.mode === 'single-docker'
   const modeBusy = props.modeConfig.operationState !== 'ready'
   const disabled = busy || unavailable || unknown || !sandboxModeAllows(props.modeConfig, 'open')
-  const stateLabel = state === undefined ? t(problem === undefined && resource.status !== 'failed' ? 'loading' : 'unconfirmed') : t(state)
+  const stateLabel = retryConnection ? t('vmConnectionFailed')
+    : state === undefined ? t(problem === undefined && resource.status !== 'failed' ? 'loading' : 'unconfirmed') : t(state)
   return <Modal open onClose={props.dismiss} closeLabel={t('dismiss')} title={t('title')} className={css.dialog}>
     <div className={css.panel}>
       <p className={css.workspace}>{props.displayTitle}</p>
@@ -108,8 +139,8 @@ function PanelBody(props: PanelProps) {
           <Button variant="outline" onClick={() => { setConfirmClose(false) }}>{t('cancel')}</Button>
         </div>
       </div> : <div className={css.actions}>
-        {!single && state === 'closed' && <Button disabled={disabled || !openAllowed} onClick={() => { props.change(workspaceId, 'open') }}>
-          {t('open')}
+        {!single && (state === 'closed' || retryConnection) && <Button disabled={disabled || !openAllowed} onClick={() => { props.change(workspaceId, 'open') }}>
+          {t(retryConnection ? 'retryConnection' : 'open')}
         </Button>}
         {!single && state !== undefined && state !== 'closed' && <Button variant="outline" disabled={disabled || !closeAllowed}
           onClick={() => { setConfirmClose(true) }}>{t(state === 'cleanup_required' ? 'cleanup' : state === 'closing' ? 'retryClose' : 'close')}</Button>}

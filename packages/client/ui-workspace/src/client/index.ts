@@ -161,7 +161,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       }),
     }, WorkspaceUploadButton))
   })
-  const modeControls = registerModeUi(ctx, workspaces, config.workbench ? ['single-docker', 'multi-docker'] : undefined)
+  const modeControls = registerModeUi(ctx, workspaces)
   const uiWorkspace = new UiWorkspaceService(
     ctx, ctx.remote.directoryPicker, workspaces, sessions, viewInstance.actions, notify,
     (workspaceId, begin) => { modeControls.request(workspaceId, begin) },

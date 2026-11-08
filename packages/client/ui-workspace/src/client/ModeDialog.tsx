@@ -13,18 +13,20 @@ import css from './ModeDialog.module.css'
 export interface ModeSelection {
   readonly workspaceId: WorkspaceId
   readonly startsSession: boolean
+  readonly availableModes?: readonly WorkspaceMode[]
   readonly queryFailure?: WorkspaceKey
+  readonly saveFailure?: WorkspaceKey
 }
 
 /** Configuration actions and private interaction sources bound by the renderer. */
 export interface ModeDialogInjected {
-  visibleModes?: readonly WorkspaceMode[]
   hooks: {
     modeSelection: SnapshotStore<ModeSelection | null>
     modePending: SnapshotStore<readonly WorkspaceId[]>
   }
   dismissMode(): void
   refreshMode(workspaceId: WorkspaceId): void
+  /** Resolve true when the draft can be discarded in favor of the committed mode. */
   saveMode(workspaceId: WorkspaceId, mode: WorkspaceMode, revision: number): Promise<boolean>
   beginModeSession(): void
 }
@@ -43,7 +45,7 @@ const modes: readonly WorkspaceMode[] = ['single-vm', 'multi-vm', 'single-docker
 const helpSections = ['sessions', 'runs', 'benefit', 'fit'] as const
 /** Pure form props shared with focused presentation tests. */
 export type ModeFormProps = Pick<Props, 't' | 'useWorkspaceAccess' | 'dismissMode' | 'refreshMode' | 'saveMode' | 'beginModeSession'>
-  & { row: WorkspaceView; selection: ModeSelection; pending: boolean; visibleModes?: readonly WorkspaceMode[] }
+  & { row: WorkspaceView; selection: ModeSelection; pending: boolean }
 
 /** @param props - Live row and local interaction callbacks. @returns Revision-checked mode choices and permanent locking. */
 export function ModeForm(props: ModeFormProps) {
@@ -53,12 +55,16 @@ export function ModeForm(props: ModeFormProps) {
   const editAllowed = props.useWorkspaceAccess(row.workspaceId, 'workspace/setMode')
   const createAllowed = props.useWorkspaceAccess(row.workspaceId, 'session/create')
   const [draft, setDraft] = useState<{ mode: WorkspaceMode; revision: number } | null>(null)
-  const visibleModes = props.visibleModes ?? modes
-  const defaultSingleVm = config.revision === 0 && !config.modeLocked && editAllowed && visibleModes.includes('single-vm')
+  const availableModes = selection.availableModes ?? []
+  const visibleModes = modes.filter(mode => availableModes.includes(mode) || mode === config.mode)
+  const defaultSingleVm = config.revision === 0 && !config.modeLocked && editAllowed
+    && selection.saveFailure === undefined && availableModes.includes('single-vm')
   const selected = draft?.mode ?? (defaultSingleVm ? 'single-vm' : config.mode)
   const stale = draft !== null && draft.revision !== config.revision
-  const busy = pending || config.operationState !== 'ready'
+  const busy = pending || config.operationState !== 'ready' || (selection.availableModes === undefined && selection.queryFailure === undefined)
   const disabled = busy || config.modeLocked || !editAllowed || selection.queryFailure !== undefined
+  const problem = selection.saveFailure ?? selection.queryFailure ?? (stale && !pending ? 'mode.conflict'
+    : !config.modeLocked && selection.availableModes?.length === 0 ? 'mode.runtime' : undefined)
   if (!readAllowed) return null
   return <Modal open title={t('mode.title')} closeLabel={t('close')} onClose={props.dismissMode} className={clsx(css.dialog)}>
     <div className={css.body}>
@@ -72,7 +78,7 @@ export function ModeForm(props: ModeFormProps) {
           const label = t(`mode.${mode}`)
           return <div key={mode} className={css.option}>
             <label className={css.choice}>
-              <input type="radio" name={`workspace-mode-${row.workspaceId}`} value={mode} checked={selected === mode} disabled={disabled}
+              <input type="radio" name={`workspace-mode-${row.workspaceId}`} value={mode} checked={selected === mode} disabled={disabled || !availableModes.includes(mode)}
                 onChange={() => { setDraft({ mode, revision: config.revision }) }} />
               <span>{defaultSingleVm && mode === 'single-vm' ? t('mode.defaultOption', { mode: label }) : label}</span>
             </label>
@@ -88,9 +94,9 @@ export function ModeForm(props: ModeFormProps) {
           </div>
         })}
       </fieldset>
-      {(stale || selection.queryFailure !== undefined) && <p role="alert">{t(stale ? 'mode.conflict' : selection.queryFailure ?? 'mode.failed')}</p>}
+      {problem !== undefined && <p role="alert">{t(problem)}</p>}
       <div className={css.actions}>
-        {!config.modeLocked && <Button disabled={disabled || stale || selected === config.mode}
+        {!config.modeLocked && <Button disabled={disabled || stale || selected === config.mode || !availableModes.includes(selected)}
           onClick={() => {
             void props.saveMode(row.workspaceId, selected, draft?.revision ?? config.revision)
               .then((saved) => { if (saved) setDraft(null) })

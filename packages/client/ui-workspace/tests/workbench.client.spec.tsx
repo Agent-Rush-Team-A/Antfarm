@@ -123,7 +123,7 @@ function text(file: File): Promise<string> {
 
 it.each(['en', 'zh'] as const)('prepares a sample and starts its draft in %s', async (language) => {
   const b = await bench(language)
-  await b.dashboard().prepare('spreadsheet', '', 'single-docker')
+  await b.dashboard().prepare('spreadsheet', '')
   const copy = language === 'en' ? en : zh
   expect(b.create).toHaveBeenCalledWith({ title: copy.spreadsheet })
   expect(b.setMode).toHaveBeenCalledWith(workspaceId, 'single-docker', 2)
@@ -135,10 +135,19 @@ it.each(['en', 'zh'] as const)('prepares a sample and starts its draft in %s', a
   expect(b.startSession).toHaveBeenCalledWith(workspaceId, { prompt: copy.spreadsheetPrompt, whenDraftExists: 'replace' })
 })
 
+it('opens mode configuration for a new workspace before creating its first session', async () => {
+  const b = await bench()
+  await b.dashboard().prepare('own', 'Customer research')
+  expect(b.create).toHaveBeenCalledWith({ title: 'Customer research' })
+  expect(b.setMode).not.toHaveBeenCalled()
+  expect(b.connectWorkspace).not.toHaveBeenCalled()
+  expect(b.startSession).toHaveBeenCalledWith(workspaceId, { prompt: en.ownPrompt, whenDraftExists: 'replace' })
+})
+
 it('keeps navigation closed when preparing the sample upload fails', async () => {
   const b = await bench()
   b.uploadFile.mockResolvedValueOnce({ ok: false, error: { reason: 'too-large', stored: false } })
-  await expect(b.dashboard().prepare('notes', '', 'multi-docker')).rejects.toThrow('Example file upload failed')
+  await expect(b.dashboard().prepare('notes', '')).rejects.toThrow('Example file upload failed')
   expect(b.connectWorkspace).not.toHaveBeenCalled()
   expect(b.startSession).not.toHaveBeenCalled()
 })
@@ -192,7 +201,7 @@ it('uses the new locale for the live dashboard and the next prepared prompt', as
   expect(screen.getByRole('heading', { name: en.headline })).toBeTruthy()
   act(() => { b.locale.setLocale('zh') })
   expect(screen.getByRole('heading', { name: zh.headline })).toBeTruthy()
-  await b.dashboard().prepare('notes', '', 'multi-docker')
+  await b.dashboard().prepare('notes', '')
   expect(b.startSession.mock.lastCall?.[1]?.prompt).toBe(zh.notesPrompt)
 })
 

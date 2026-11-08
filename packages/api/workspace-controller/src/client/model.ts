@@ -5,7 +5,7 @@ import type {} from '@deepseek-ai/dsh-api-workspace-controller/remote'
 import { isRemoteFailure } from '@deepseek-ai/dsh-api-gateway/client'
 import type { RemoteFailure, RemoteResult, TypertClientRemote } from '@deepseek-ai/dsh-typert-protocol'
 import type {
-  WorkspaceModeConfig, WorkspaceMode, WorkspaceModeValue,
+  WorkspaceModeConfig, WorkspaceMode, WorkspaceModeValue, WorkspaceModeOptionsValue,
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
   WorkspaceBaseline,
@@ -100,9 +100,9 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
    * @param workspaceId - Target Workspace.
    * @returns the latest accepted mode snapshot or structured Remote failure.
    */
-  async getMode(workspaceId: WorkspaceId): Promise<RemoteResult<WorkspaceModeValue>> {
+  async getMode(workspaceId: WorkspaceId): Promise<RemoteResult<WorkspaceModeOptionsValue>> {
     const result = await this.remote.getMode({ workspaceId })
-    return result.ok ? { ok: true, value: { config: this.mergeMode(result.value.config) } } : result
+    return result.ok ? { ok: true, value: { ...result.value, config: this.mergeMode(result.value.config) } } : result
   }
 
   /**

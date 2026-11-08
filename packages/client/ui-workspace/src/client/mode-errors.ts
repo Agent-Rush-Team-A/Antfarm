@@ -16,6 +16,7 @@ export function modeFailureKey(error: unknown, fallback: WorkspaceKey = 'mode.fa
     case 'workspace/mode-locked': return 'mode.locked'
     case 'workspace/mode-revision-conflict': return 'mode.conflict'
     case 'workspace/mode-unsupported': return 'mode.unsupported'
+    case 'workspace/mode-single-vm-capacity': return 'mode.singleVmCapacity'
     case 'workspace/mode-runtime-unavailable': return 'mode.runtime'
     case 'workspace/mode-recovery-required': return 'mode.recovery-required'
     case 'workspace/session-limit': case 'session/reuse-unavailable': return 'mode.singleLimit'

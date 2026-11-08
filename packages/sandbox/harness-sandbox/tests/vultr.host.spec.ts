@@ -158,7 +158,7 @@ function sshRuntime() {
   return { runtime, worlds }
 }
 
-async function setup(existing?: { root: string; external: ReturnType<typeof cloud> }) {
+async function setup(existing?: { root: string; external: ReturnType<typeof cloud> }, failFirstReconnect = false) {
   const root = existing?.root ?? await mkdtemp(join(tmpdir(), 'antfarm-vultr-'))
   if (existing === undefined) roots.push(root)
   const projectA = join(root, 'a')
@@ -178,6 +178,7 @@ async function setup(existing?: { root: string; external: ReturnType<typeof clou
     connect: vi.fn<VultrProvisioning['connect']>(async () => ({ host: 'fixture', workspace: '/remote', helper: '/helper',
       helperHash: 'a'.repeat(64), launch: { kind: 'executable' } })),
   }
+  if (failFirstReconnect) vi.mocked(provisioning.connect).mockRejectedValueOnce(new Error('SSH temporarily unavailable'))
   const report = vi.fn()
   const controller = new VultrWorkspaceController(settings, api, store, runtime, provisioning, report)
   controllers.push(controller)
@@ -263,11 +264,32 @@ linuxTest('Harness restart reconnects its recorded VM without allocation or dele
   const original = await f.controller.open(f.a, f.projectA)
   await f.controller.dispose()
   expect(f.external.instances.size).toBe(1)
+  const originalInstanceIds = [...f.external.instances.keys()]
   const restarted = await setup(f)
-  const connected = await restarted.controller.open(f.a, f.projectA)
-  expect(connected.containerId).not.toBe(original.containerId)
+  await vi.waitFor(async () => {
+    expect(await restarted.controller.status(f.a)).toMatchObject({ state: 'running', containerId: expect.any(String) })
+  })
+  expect(await restarted.controller.status(f.a)).not.toMatchObject({ containerId: original.containerId })
+  expect([...f.external.instances.keys()]).toEqual(originalInstanceIds)
   expect(f.external.requests.filter(request => request.method === 'POST' && request.path === '/instances')).toHaveLength(1)
+  expect(f.external.requests.filter(request => request.method === 'DELETE')).toHaveLength(0)
   expect(() => restarted.controller.files(f.a, original.containerId)).toThrow()
+})
+
+linuxTest('offers a safe explicit retry of an unreachable original VM without a file-read retry or new allocation', async () => {
+  const f = await setup()
+  await f.controller.open(f.a, f.projectA)
+  await f.controller.dispose()
+  const originalInstanceIds = [...f.external.instances.keys()]
+  const restarted = await setup(f, true)
+  await vi.waitFor(() => { expect(restarted.controller.progress(f.a)).toEqual({ phase: 'connecting', failure: 'connect' }) })
+  const scope = { workspaceId: f.a, project: f.projectA, signal: new AbortController().signal, admit: vi.fn() }
+  await expect(restarted.controller.list(scope, '', 100)).rejects.toMatchObject({ code: 'cloud_open_failed' })
+  expect(restarted.provisioning.connect).toHaveBeenCalledOnce()
+  await expect(restarted.controller.open(f.a, f.projectA)).resolves.toMatchObject({ state: 'running' })
+  expect(restarted.controller.progress(f.a)).toEqual({ phase: 'running' })
+  expect([...f.external.instances.keys()]).toEqual(originalInstanceIds)
+  expect(f.external.requests.filter(request => request.method === 'POST' && request.path === '/instances')).toHaveLength(1)
 })
 
 linuxTest('unopened file access returns an empty view without persisting a cloud record', async () => {

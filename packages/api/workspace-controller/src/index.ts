@@ -11,7 +11,7 @@ import { DirectoryPickerController } from './directory-picker.ts'
 import { WorkspaceFeed, workspaceView } from './feed.ts'
 import { defaultWorkspaceDirectory, validateDocumentsDirectory } from './default-directory.ts'
 import type {
-  WorkspaceGetModeRequest, WorkspaceSetModeRequest, WorkspaceModeValue,
+  WorkspaceGetModeRequest, WorkspaceSetModeRequest, WorkspaceModeValue, WorkspaceModeOptionsValue,
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
   WorkspaceBaseline,
@@ -87,12 +87,12 @@ export class WorkspaceController extends TypertRemoteService {
   /**
    * Read committed Workspace mode metadata after ownership checks.
    * @param request - Workspace to read.
-   * @returns committed mode metadata after access checks.
+   * @returns Committed mode metadata and available modes after access checks.
    */
   @Remote('getMode')
-  async getMode(request: WorkspaceGetModeRequest): Promise<WorkspaceModeValue> {
+  async getMode(request: WorkspaceGetModeRequest): Promise<WorkspaceModeOptionsValue> {
     this.modeAuthority(request.workspaceId, 'getMode')()
-    return this.commands.getMode(request)
+    return { ...this.commands.getMode(request), availableModes: this.ctx.workspaceRegistry.modes.supportedModes() }
   }
 
   /**

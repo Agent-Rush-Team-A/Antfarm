@@ -50,7 +50,7 @@ export interface WorkspaceSetModeRequest {
   readonly expectedRevision: number
 }
 
-/** Success payload of both mode Remote methods. */
+/** Committed configuration returned by mode commands. */
 export interface WorkspaceModeValue {
   readonly config: WorkspaceModeConfig
 }
@@ -128,6 +128,8 @@ export interface IWorkspaceModes {
    * @returns its durable mode snapshot.
    */
   get(workspaceId: WorkspaceId): WorkspaceModeConfig
+  /** @returns Modes the active runtime can prepare, or an empty list without a runtime. */
+  supportedModes(): readonly WorkspaceMode[]
   /**
    * Register exactly one runtime adapter; its async disposer stops admission and drains owned work.
    * @param runtime - Provider supporting the default and all retained modes.
@@ -187,6 +189,7 @@ export interface WorkspaceModeErrorDetailsMap {
     readonly workspaceId: WorkspaceId
     readonly mode: WorkspaceMode
   }
+  'workspace/mode-single-vm-capacity': { readonly workspaceId: WorkspaceId }
   'workspace/mode-runtime-unavailable': { readonly workspaceId: WorkspaceId }
   'workspace/mode-switch-failed': {
     readonly workspaceId: WorkspaceId

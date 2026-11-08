@@ -1,7 +1,7 @@
 /** Test-owned workspaces face: the renderer standard-kit observable plus recorded actions. */
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {
-  IWorkspaces, WorkspaceId, WorkspaceSnapshot, WorkspaceView,
+  IWorkspaces, WorkspaceId, WorkspaceModeOptionsValue, WorkspaceSnapshot, WorkspaceView,
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { WorkspaceMode, WorkspaceModeConfig } from '@deepseek-ai/dsh-workspace/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -67,12 +67,13 @@ export class TestWorkspaces implements IWorkspaces {
    * @param workspaceId - Target Workspace.
    * @returns stubbed or fixture mode metadata.
    */
-  async getMode(workspaceId: WorkspaceId): Promise<WorkspaceModeConfig> {
+  async getMode(workspaceId: WorkspaceId): Promise<WorkspaceModeConfig & Pick<WorkspaceModeOptionsValue, 'availableModes'>> {
     this.calls.push({ method: 'getMode', args: [workspaceId] })
     const stub = this.stubs.get('getMode')
-    if (stub !== undefined) return await (stub(workspaceId) as Promise<WorkspaceModeConfig>)
-    return this.list.getSnapshot().items.find(workspace => workspace.workspaceId === workspaceId)?.modeConfig
+    if (stub !== undefined) return await (stub(workspaceId) as ReturnType<IWorkspaces['getMode']>)
+    const config = this.list.getSnapshot().items.find(workspace => workspace.workspaceId === workspaceId)?.modeConfig
       ?? { workspaceId, mode: 'multi-vm', revision: 0, operationState: 'ready', modeLocked: false, lockReason: null, firstSessionId: null }
+    return { ...config, availableModes: ['single-vm', 'multi-vm', 'single-docker', 'multi-docker'] }
   }
 
   /**

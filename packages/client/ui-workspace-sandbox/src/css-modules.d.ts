@@ -8,6 +8,7 @@ declare module '*.module.css' {
     status: string
     note: string
     actions: string
+    composerStatus: string
     heading: string
     dot: string
   }

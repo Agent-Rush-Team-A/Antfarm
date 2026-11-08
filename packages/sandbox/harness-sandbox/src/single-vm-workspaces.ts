@@ -3,6 +3,7 @@ import { lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { WorkspaceFileScope } from '@deepseek-ai/dsh-fs/workspace-access'
+import { WorkspaceModeError } from '@deepseek-ai/dsh-workspace'
 import type { Workspace, WorkspaceId, WorkspaceModeChange, WorkspaceModeChangeId } from '@deepseek-ai/dsh-workspace/types'
 import type { WorkspaceModeCopyLimits } from './mode-copy.ts'
 import { WorkspaceModeDirectoryFiles, type WorkspaceModeDirectory } from './mode-directory-files.ts'
@@ -230,7 +231,7 @@ export class SingleVmWorkspaces {
     if (!allocate || changeId === undefined) throw new Error('Single VM workspace has no bound task identity')
     const occupied = new Set(db.prepare('SELECT task FROM identities').all().map(row => row.task))
     const task = this.taskIds.find(candidate => !occupied.has(candidate))
-    if (task === undefined) throw new Error('No reserved single VM task identity is available')
+    if (task === undefined) throw new WorkspaceModeError('workspace/mode-single-vm-capacity', { workspaceId: id })
     db.prepare('INSERT INTO identities (workspace, project, task) VALUES (?, ?, ?)').run(id, project, task)
     db.prepare('INSERT INTO identity_reservations (workspace, change_id) VALUES (?, ?)').run(id, changeId)
     db.exec('COMMIT')

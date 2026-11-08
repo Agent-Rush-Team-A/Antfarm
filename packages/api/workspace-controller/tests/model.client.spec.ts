@@ -71,7 +71,8 @@ function deferred<T>(): Deferred<T> {
 }
 
 class FakeWorkspaceRemote implements WorkspaceRemote {
-  readonly getMode = vi.fn<WorkspaceRemote['getMode']>(async ({ workspaceId }) => remoteOk({ config: workspace(String(workspaceId)).modeConfig }))
+  readonly getMode = vi.fn<WorkspaceRemote['getMode']>(async ({ workspaceId }) => remoteOk({ config: workspace(String(workspaceId)).modeConfig,
+    availableModes: ['multi-vm', 'single-docker'] }))
   readonly setMode = vi.fn<WorkspaceRemote['setMode']>(async ({ workspaceId, mode, expectedRevision }) => remoteOk({
     config: { ...workspace(String(workspaceId)).modeConfig, mode, revision: expectedRevision + 3 },
   }))
