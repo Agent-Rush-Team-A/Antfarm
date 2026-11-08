@@ -40,6 +40,7 @@ export function ModeOverlay(props: Props) {
 }
 
 const modes: readonly WorkspaceMode[] = ['single-vm', 'multi-vm', 'single-docker', 'multi-docker']
+const helpSections = ['sessions', 'runs', 'benefit', 'fit'] as const
 /** Pure form props shared with focused presentation tests. */
 export type ModeFormProps = Pick<Props, 't' | 'useWorkspaceAccess' | 'dismissMode' | 'refreshMode' | 'saveMode' | 'beginModeSession'>
   & { row: WorkspaceView; selection: ModeSelection; pending: boolean; visibleModes?: readonly WorkspaceMode[] }
@@ -73,7 +74,11 @@ export function ModeForm(props: ModeFormProps) {
                 onChange={() => { setDraft({ mode, revision: config.revision }) }} />
               <span>{label}</span>
             </label>
-            <Tooltip label={t(`mode.help.${mode}`)} delayMs={300} maxWidth={360} portal openOnClick>
+            <Tooltip label={() => <span className={css.helpDetails} role="list">
+              {helpSections.map(section => <span key={section} role="listitem">
+                <strong>{t(`mode.help.${section}`)}</strong>{' '}{t(`mode.help.${mode}.${section}`)}
+              </span>)}
+            </span>} delayMs={300} maxWidth={360} portal openOnClick>
               <Button size="sm" className={css.help} aria-label={t('mode.help.label', { mode: label })}>
                 <IconQuestionOutlineRegular aria-hidden="true" />
               </Button>

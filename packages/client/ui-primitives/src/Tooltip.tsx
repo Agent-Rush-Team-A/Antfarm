@@ -31,7 +31,8 @@ interface AnchorProps {
   onBlur?: FocusEventHandler | undefined
 }
 
-type TooltipLabel = string | (() => string)
+type TooltipContent = string | ReactElement
+type TooltipLabel = TooltipContent | (() => TooltipContent)
 
 function clipped(anchor: HTMLElement): boolean {
   return [anchor, ...anchor.querySelectorAll<HTMLElement>('*')]
@@ -40,7 +41,8 @@ function clipped(anchor: HTMLElement): boolean {
 
 /**
  * Attach a hover/focus tooltip to an anchor element.
- * @param props.label - bubble text, or a resolver evaluated only while visible; an empty string shows only shortcut keys.
+ * @param props.label - bubble text or noninteractive inline markup, optionally resolved only while visible.
+ * An empty string shows only shortcut keys.
  * @param props.shortcutKeys - effective key labels rendered as platform-formatted keycaps after optional text.
  * @param props.side - preferred placement (default 'right'); fitting tries the opposite then perpendicular sides.
  * @param props.align - horizontal anchor-edge alignment for 'bottom'/'top' bubbles: 'end' pins
@@ -217,7 +219,8 @@ export function Tooltip({ label, shortcutKeys, side = 'right', align = 'center',
       data-has-shortcut={shortcutKeys?.length ? true : undefined}
       style={{ left: pos.left, top: pos.top, visibility: 'hidden', ...maxWidth === undefined ? {} : { maxWidth: `min(${maxWidth}px, calc(100vw - 24px))` } }}
       role="tooltip"
-      aria-label={shortcutKeys?.length ? [resolvedLabel, shortcutKeys.join(' ')].filter(Boolean).join(' ') : undefined}
+      aria-label={shortcutKeys?.length && typeof resolvedLabel === 'string'
+        ? [resolvedLabel, shortcutKeys.join(' ')].filter(Boolean).join(' ') : undefined}
     >
       {resolvedLabel && <span className={css.label}>{resolvedLabel}</span>}
       {shortcutKeys !== undefined && shortcutKeys.length > 0 && <ShortcutKeys keys={shortcutKeys} variant="tooltip" />}
