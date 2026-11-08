@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 610" width="1120" height="610" role="img" aria-labelledby="title description" xml:lang="en">
+  <title id="title">How Antfarm runs a task</title>
+  <desc id="description">The browser sends a task to Harness. Harness calls Vultr Serverless Inference and sends authorized tools to a Docker container or a Vultr VM. The execution environment can be reclaimed while files remain downloadable.</desc>
+  <style>
+    svg {
+      --paper: #ffffff; --card: #fdfaf4; --border: #dfe1e5; --ink: #0f1115; --muted: #565d69;
+      --soil: #f4ead9; --soil-edge: #9b7a4b; --ant: #3a2914;
+      --accent: #8a4f08; --accent-line: #a35f0b; --tint: #f8eedd; --amber-edge: #b28754;
+    }
+    @media (prefers-color-scheme: dark) {
+      svg {
+        --paper: #151517; --card: #17161a; --border: #38393d; --ink: #f6f7f8; --muted: #b8bdc7;
+        --soil: #28221a; --soil-edge: #a18359; --ant: #f2d2a0;
+        --accent: #f0b45e; --accent-line: #f0b45e; --tint: #2c2417; --amber-edge: #a37b43;
+      }
+    }
+    text { font-family: "Noto Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif; fill: var(--ink); }
+    .title { font-size: 37px; font-weight: 750; letter-spacing: -0.5px; }
+    .subtitle { font-size: 18px; fill: var(--muted); }
+    .stage { font-size: 21px; font-weight: 700; }
+    .body { font-size: 15px; fill: var(--muted); }
+    .strong { font-size: 16px; font-weight: 700; }
+    .tag { font-size: 13px; font-weight: 650; fill: var(--accent); }
+    .panel { fill: var(--card); stroke: var(--border); stroke-width: 1.4; }
+    .zone { fill: url(#soil); stroke: var(--soil-edge); stroke-width: 1.6; stroke-dasharray: 6 5; }
+    .inference { fill: var(--tint); stroke: var(--amber-edge); stroke-width: 1.5; }
+    .accent { fill: var(--accent); }
+    .line { fill: none; stroke: var(--ink); stroke-width: 2.1; stroke-linecap: round; stroke-linejoin: round; }
+    .model-line { stroke: var(--accent-line); stroke-dasharray: 4 4; }
+    .index { font-family: ui-monospace, monospace; font-size: 14px; font-weight: 700; fill: var(--accent); }
+    .reject { fill: var(--tint); stroke: var(--accent-line); stroke-width: 1.4; }
+    .reject-line { stroke: var(--accent-line); }
+  </style>
+  <defs>
+    <pattern id="soil" width="11" height="11" patternUnits="userSpaceOnUse">
+      <rect width="11" height="11" fill="var(--soil)"/>
+      <circle cx="5.5" cy="5.5" r=".75" fill="var(--ant)" opacity=".17"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 10 5 0 10z" fill="var(--ink)"/>
+    </marker>
+    <marker id="model-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 10 5 0 10z" fill="var(--accent-line)"/>
+    </marker>
+    <marker id="stop-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 10 5 0 10z" fill="var(--accent-line)"/>
+    </marker>
+  </defs>
+
+  <rect x="1" y="1" width="1118" height="608" rx="22" fill="var(--paper)" stroke="var(--border)"/>
+  <text class="title" x="32" y="53">How Antfarm runs a task</text>
+  <text class="subtitle" x="34" y="80">From a browser request to a downloadable result</text>
+
+  <rect class="inference" x="260" y="107" width="234" height="55" rx="11"/>
+  <text class="strong accent" x="377" y="141" text-anchor="middle">Vultr Serverless Inference</text>
+  <path class="line model-line" d="M377 169V204" marker-start="url(#model-arrow)" marker-end="url(#model-arrow)"/>
+  <text class="body accent" x="393" y="192">Model requests and replies</text>
+
+  <rect class="panel" x="32" y="246" width="191" height="160" rx="13"/>
+  <rect class="zone" x="249" y="212" width="256" height="222" rx="14"/>
+  <rect class="panel" x="261" y="246" width="232" height="160" rx="13"/>
+  <rect class="zone" x="531" y="212" width="283" height="222" rx="14"/>
+  <rect class="panel" x="544" y="281" width="257" height="56" rx="8"/>
+  <rect class="panel" x="544" y="348" width="257" height="56" rx="8"/>
+  <rect class="panel" x="840" y="246" width="248" height="160" rx="13"/>
+
+  <path class="line" d="M224 319H246" marker-end="url(#arrow)"/>
+  <path class="line" d="M506 319H528" marker-end="url(#arrow)"/>
+  <path class="line" d="M815 319H837" marker-end="url(#arrow)"/>
+  <path class="line" d="M628 435V480H377V437" marker-end="url(#arrow)"/>
+  <path class="line reject-line" d="M704 435V508" marker-end="url(#stop-arrow)"/>
+
+  <text class="index" x="48" y="270">01</text>
+  <text class="stage" x="48" y="300">Submit a task</text>
+  <text class="body" x="48" y="327">Upload a CSV</text>
+  <text class="body" x="48" y="349">Send a prompt</text>
+  <text class="body" x="48" y="380">View results in Files</text>
+
+  <text class="tag" x="262" y="234">Control · Vultr Cloud Compute</text>
+  <text class="index" x="276" y="270">02</text>
+  <text class="stage" x="276" y="300">Authorize &amp; route</text>
+  <text class="body" x="276" y="327">Check workspace ownership</text>
+  <text class="body" x="276" y="349">Run the Harness agent loop</text>
+  <text class="body" x="276" y="380">Keep inference keys on host</text>
+
+  <text class="tag" x="545" y="234">Isolated execution · one backend</text>
+  <text class="index" x="545" y="265">03</text>
+  <text class="stage" x="574" y="265">Run tools</text>
+  <text class="strong" x="558" y="303">Docker container</text>
+  <text class="body" x="558" y="324">Private Runner socket</text>
+  <text class="strong" x="558" y="370">Vultr execution VM</text>
+  <text class="body" x="558" y="391">Vultr API + pinned SSH helper</text>
+
+  <text class="index" x="855" y="270">04</text>
+  <text class="stage" x="855" y="300">Keep the output</text>
+  <text class="body" x="855" y="325">Docker · workspace directory</text>
+  <text class="body" x="855" y="345">Single VM · Vultr File System</text>
+  <text class="body" x="855" y="365">Multi VM · snapshot + copy</text>
+  <text class="strong accent" x="855" y="390">Download after reclaim</text>
+
+  <text class="body accent" x="502" y="469" text-anchor="middle">Tool output and exit status</text>
+
+  <rect class="reject" x="531" y="513" width="557" height="75" rx="12"/>
+  <path d="M550 535h21m-10.5-10.5v21" fill="none" stroke="var(--accent-line)" stroke-width="2" transform="rotate(45 560.5 535)"/>
+  <text class="strong accent" x="582" y="540">Sandbox enforcement</text>
+  <text class="body" x="582" y="562">Docker rejects writes to its read-only root.</text>
+  <text class="body" x="582" y="580">Bash timeouts trigger process cleanup.</text>
+</svg>

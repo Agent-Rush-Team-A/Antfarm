@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 648" width="1120" height="648" role="img" aria-labelledby="title description" xml:lang="en">
+  <title id="title">Antfarm system architecture</title>
+  <desc id="description">Deployment boundaries for the Docker and Vultr VM backends</desc>
+  <style>
+    svg {
+      --paper: #ffffff; --card: #fdfaf4; --border: #dfe1e5; --ink: #0f1115; --muted: #565d69;
+      --soil: #f4ead9; --soil-edge: #9b7a4b; --ant: #3a2914;
+      --accent: #8a4f08; --accent-line: #a35f0b; --tint: #f8eedd; --amber-edge: #b28754;
+    }
+    @media (prefers-color-scheme: dark) {
+      svg {
+        --paper: #151517; --card: #17161a; --border: #38393d; --ink: #f6f7f8; --muted: #b8bdc7;
+        --soil: #28221a; --soil-edge: #a18359; --ant: #f2d2a0;
+        --accent: #f0b45e; --accent-line: #f0b45e; --tint: #2c2417; --amber-edge: #a37b43;
+      }
+    }
+    text { font-family: "Noto Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif; fill: var(--ink); }
+    .title { font-size: 37px; font-weight: 750; letter-spacing: -0.5px; }
+    .subtitle { font-size: 18px; fill: var(--muted); }
+    .stage { font-size: 21px; font-weight: 700; }
+    .body { font-size: 15px; fill: var(--muted); }
+    .strong { font-size: 16px; font-weight: 700; }
+    .tag { font-size: 13px; font-weight: 650; fill: var(--accent); }
+    .panel { fill: var(--card); stroke: var(--border); stroke-width: 1.4; }
+    .zone { fill: url(#soil); stroke: var(--soil-edge); stroke-width: 1.6; stroke-dasharray: 6 5; }
+    .inference { fill: var(--tint); stroke: var(--amber-edge); stroke-width: 1.5; }
+    .accent { fill: var(--accent); }
+    .line { fill: none; stroke: var(--ink); stroke-width: 2.1; stroke-linecap: round; stroke-linejoin: round; }
+    .model-line { stroke: var(--accent-line); stroke-dasharray: 4 4; }
+  </style>
+  <defs>
+    <pattern id="soil" width="11" height="11" patternUnits="userSpaceOnUse">
+      <rect width="11" height="11" fill="var(--soil)"/>
+      <circle cx="5.5" cy="5.5" r=".75" fill="var(--ant)" opacity=".17"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 10 5 0 10z" fill="var(--ink)"/>
+    </marker>
+    <marker id="model-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 10 5 0 10z" fill="var(--accent-line)"/>
+    </marker>
+  </defs>
+
+  <rect x="1" y="1" width="1118" height="646" rx="22" fill="var(--paper)" stroke="var(--border)"/>
+  <text class="title" x="32" y="52">Antfarm system architecture</text>
+  <text class="subtitle" x="34" y="80">Deployment boundaries for the Docker and Vultr VM backends</text>
+
+  <rect class="zone" x="245" y="110" width="570" height="320" rx="15"/>
+  <rect class="panel" x="31" y="150" width="179" height="87" rx="12"/>
+  <rect class="panel" x="270" y="151" width="264" height="98" rx="12"/>
+  <rect class="panel" x="557" y="151" width="234" height="98" rx="12"/>
+  <rect class="inference" x="852" y="146" width="236" height="90" rx="12"/>
+  <rect class="panel" x="270" y="309" width="218" height="90" rx="12"/>
+  <rect class="panel" x="550" y="309" width="241" height="90" rx="12"/>
+  <rect class="zone" x="852" y="304" width="236" height="105" rx="12"/>
+  <rect class="zone" x="245" y="496" width="843" height="130" rx="14"/>
+  <rect class="panel" x="270" y="540" width="235" height="65" rx="10"/>
+  <rect class="panel" x="530" y="540" width="250" height="65" rx="10"/>
+  <rect class="panel" x="805" y="540" width="258" height="65" rx="10"/>
+
+  <path class="line" d="M212 192H267" marker-end="url(#arrow)"/>
+  <path class="line model-line" d="M402 149V119H970V144" marker-start="url(#model-arrow)" marker-end="url(#model-arrow)"/>
+  <path class="line" d="M370 250V305" marker-end="url(#arrow)"/>
+  <path class="line" d="M489 354H547" marker-end="url(#arrow)"/>
+  <path class="line" d="M535 232H543V275H970V301" marker-end="url(#arrow)"/>
+  <path class="line" d="M671 401V449H387.5V538" marker-end="url(#arrow)"/>
+  <path class="line" d="M970 411V469H655V537" marker-end="url(#arrow)"/>
+  <path class="line" d="M970 469H934V537" marker-end="url(#arrow)"/>
+
+  <text class="stage" x="46" y="184">Browser</text>
+  <text class="body" x="46" y="211">Web UI · files</text>
+
+  <text class="tag" x="269" y="99">Vultr Cloud Compute · control VM</text>
+  <text class="stage" x="285" y="182">Web / Harness</text>
+  <text class="body" x="285" y="208">Login · policy · agent loop</text>
+  <text class="body" x="285" y="228">Workspace file API</text>
+  <text class="strong" x="571" y="180">Private host storage</text>
+  <text class="body" x="571" y="205">Session state and credentials</text>
+  <text class="body" x="571" y="226">Inference &amp; VM API keys</text>
+  <text class="strong accent" x="865" y="180">Vultr Serverless Inference</text>
+  <text class="body accent" x="865" y="206">Model requests and replies</text>
+
+  <text class="body accent" x="382" y="280">Private Unix socket</text>
+  <text class="tag" x="519" y="340" style="font-size:11px" text-anchor="middle">Docker API</text>
+  <text class="body accent" x="600" y="266">Vultr API + pinned SSH</text>
+
+  <text class="stage" x="284" y="344">Docker Runner</text>
+  <text class="body" x="284" y="370">Owns Docker Engine socket</text>
+  <text class="stage" x="565" y="341">Sandbox container</text>
+  <text class="body" x="565" y="364">Bash · workspace mount</text>
+  <text class="body" x="565" y="383">Non-root · no network</text>
+  <text class="tag" x="865" y="326">Optional Vultr backend</text>
+  <text class="stage" x="865" y="355">Separate Vultr VM</text>
+  <text class="body" x="865" y="380">Non-root SSH helper</text>
+
+  <text class="tag" x="420" y="520">Storage outside task runtime</text>
+  <text class="strong" x="283" y="567">Workspace directory</text>
+  <text class="body" x="283" y="590">Docker bind mount</text>
+  <text class="strong" x="544" y="567">Vultr File System</text>
+  <text class="body" x="544" y="590">Single-session VM mount</text>
+  <text class="strong" x="819" y="567">Snapshot + private file copy</text>
+  <text class="body" x="819" y="590">Restore VM / download files</text>
+</svg>

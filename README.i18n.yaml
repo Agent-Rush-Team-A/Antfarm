@@ -2,33 +2,30 @@
 # section, a hash of its English and Chinese blocks outside code blocks and generated regions.
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write README.md
-/deepseek-harness:
-  en: f68c4f080ce55ff2
-  zh: 88a76d7f7f0b260e
-/deepseek-harness/developer-preview:
-  en: 4ef4d8a71ac143f0
-  zh: 1bfc3149ba8e5543
-/deepseek-harness/run:
-  en: 4e0248e4c6474fc6
-  zh: eb2fb8d78c7d6bc0
-/deepseek-harness/run/run-from-npm:
-  en: e22005cd42e6cbad
-  zh: 0f536f4208df1d60
-/deepseek-harness/run/run-from-source:
-  en: 4c6a925280ff61ec
-  zh: 1beca5ea28ee28ca
-/deepseek-harness/community-and-support:
-  en: 20acf6451fdc869b
-  zh: d06246dd019ecef7
-/deepseek-harness/contributing:
-  en: cabc2d3e9f8898bd
-  zh: 83b6d238bae29ce3
-/deepseek-harness/development:
-  en: 803ca2b11b497bed
-  zh: 8b4071eb0e7783ef
-/deepseek-harness/citation:
-  en: 6704e9e5a8d49a91
-  zh: 85c9cdd8d56f8e9d
-/deepseek-harness/license:
-  en: 926995344fc1c72b
-  zh: c92fab5abf85932f
+/:
+  en: f783038c7258d592
+  zh: f783038c7258d592
+/antfarm:
+  en: ed8e4d42509a2a61
+  zh: 20e687d7739ab688
+/antfarm/try-antfarm:
+  en: 19f041d2ec27fcce
+  zh: b525f9d5376b7c25
+/antfarm/what-antfarm-delivers:
+  en: 9e664bcc90df95c4
+  zh: 66820748ddc3f347
+/antfarm/evidence-and-verification:
+  en: d2583a7e7b0d1ee7
+  zh: 7dc31e96dfae06e3
+/antfarm/how-it-works:
+  en: 6e5ecb5def50c573
+  zh: 3f018ac04ae8214b
+/antfarm/vultr-integration:
+  en: 2f6123b29a0f16bc
+  zh: 43c08d5818a963a3
+/antfarm/self-host-and-reproduce:
+  en: 3410713449e4fd40
+  zh: 068a8922d7941e7f
+/antfarm/built-on-deepseek-harness:
+  en: 843295a94f2c3f16
+  zh: 14f3991b42818d42
