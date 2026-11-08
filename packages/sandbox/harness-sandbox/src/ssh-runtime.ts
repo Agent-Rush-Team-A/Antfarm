@@ -11,7 +11,7 @@ import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
 
 /** Providers captured from the same private execution world. */
 export interface WorkspaceSshServices {
-  readonly ssh: Pick<SshConnection, 'request' | 'signal'>
+  readonly ssh: Pick<SshConnection, 'request' | 'signal' | 'checkHealth'>
   readonly fs: FileSystem
   readonly subprocess: Pick<SubprocessRuntime, 'spawn'>
   readonly root: string

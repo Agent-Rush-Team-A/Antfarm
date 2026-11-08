@@ -25,6 +25,8 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
+Host 文件预览与 HTTP 下载共用 `openDownload()`。消费方传入已认证的 Peer 和经校验的正整数字节上限，消费或取消返回的 body，并等待其描述符关闭。两条读取路径均使用配置的本地或提供方存储，并在读取过程中复查工作区归属。
+
 通过 Web 配置启用[文件指南及可选补丁](../../../docs/user/workspace-artifacts.zh.md)。插件依赖 Connection、Remote Access、Typert、Workspace Controller 和 Workspace Registry；默认配置不启用。
 
 | 配置 | 默认值 | 含义 |

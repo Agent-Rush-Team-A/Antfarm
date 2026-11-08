@@ -536,6 +536,7 @@ export class VultrWorkspaceController {
       const cache = slot.record.cache
       return { files: cache === undefined ? undefined : this.store.copyPath(scope.workspaceId, cache), signal, admit }
     }
+    admit()
     const running = await this.observeOpening(this.open(scope.workspaceId, scope.project), signal)
     admit()
     const bound = await this.runtime.files(scope.workspaceId, running.containerId, signal)

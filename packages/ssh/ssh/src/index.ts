@@ -108,6 +108,7 @@ export class SshConnection extends Service {
   private childClosed: Promise<void> | undefined
   private directory: string | undefined
   private heartbeat: NodeJS.Timeout | undefined
+  private healthCheck: Promise<null> | undefined
   private closed = false
   private readonly lifetime = new AbortController()
   private readonly operations = new Set<Promise<unknown>>()
@@ -144,6 +145,19 @@ export class SshConnection extends Service {
       /* v8 ignore next -- Config parsing admits only these two launch kinds. */
       default: return assertNever(launch)
     }
+  }
+
+  /**
+   * Share a bounded heartbeat with concurrent health observers and the lease timer.
+   * @returns Completion after the helper confirms that the connection is healthy.
+   */
+  async checkHealth(): Promise<void> {
+    this.assertOpen()
+    await this.ready
+    this.assertOpen()
+    this.healthCheck ??= (this.rpc as SshRpcPeer).request('heartbeat', {}, z.null(), AbortSignal.timeout(this.config.leaseMs / 2))
+      .finally(() => { this.healthCheck = undefined })
+    await this.healthCheck
   }
 
   /**
@@ -354,11 +368,9 @@ export class SshConnection extends Service {
     if (hello.kind !== launch.kind) throw new Error('SSH helper runtime differs from the configured launch kind')
     if (hello.bootstrapHash !== bootstrapHash) throw new Error('SSH PTC bootstrap digest differs from the configured artifact')
     this.remote = hello
-    let heartbeatPending: Promise<unknown> | undefined
     this.heartbeat = setInterval(() => {
-      heartbeatPending ??= rpc.request('heartbeat', {}, z.null(), AbortSignal.timeout(this.config.leaseMs / 2))
+      void this.checkHealth()
         .catch((error: unknown) => { this.fail(error as Error) })
-        .finally(() => { heartbeatPending = undefined })
     }, Math.floor(this.config.leaseMs / 3))
     this.heartbeat.unref()
     return hello

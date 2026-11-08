@@ -179,6 +179,27 @@ test('stopping a scan during its first GET cannot admit a late close', async () 
   } finally { gate.release(); await pending }
 })
 
+test('stopping a scan during GET preserves an independent Runner failure', async () => {
+  const f = await fixture(1000, false, 1000, 10_000)
+  const advance = clock()
+  await f.ctx.workspaceSandbox.openForUser(f.alice.user.userId, f.alice.id)
+  const original = target(f)
+  advance(idleTimeoutMs)
+  const lifetime = new AbortController()
+  const gate = holdGet(f)
+  const pending = Promise.allSettled([close(f, original, lifetime.signal)])
+  try {
+    const response = await gate.entered
+    lifetime.abort()
+    response.writeHead(503)
+    gate.release({ error: 'docker_unavailable' })
+    expect(await pending).toMatchObject([{ status: 'rejected', reason: { code: 'sandbox/failed',
+      details: { reason: 'docker_unavailable' } } }])
+    expect(target(f)).toEqual(original)
+    expect(f.calls.map(call => call.method)).toEqual(['PUT', 'GET'])
+  } finally { gate.release(); await pending }
+})
+
 test.each(['closed', 'starting', 'cleanup_required', 'replacement'] as const)('a fresh %s observation skips before revocation', async (state) => {
   const f = await bashFixture()
   const advance = clock()

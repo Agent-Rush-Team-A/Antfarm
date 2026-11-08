@@ -475,7 +475,7 @@ Rechecks native ownership and directory records on every operation; owns no cont
 @Remote({ resources: { workspace: (request: SandboxRequest) => request.workspaceId } }) async close(request: SandboxRequest): Promise<SandboxValue>
 
 /**
- * Open a sandbox for an authenticated backend initiator.
+ * Open a sandbox for an authenticated backend initiator; count opening before resource admission yields.
  * @param userId - Authenticated user from the initiating operation.
  * @param workspaceId - Native workspace id.
  * @returns Full running identity for trusted execution integration.
@@ -517,7 +517,8 @@ activityForUser(userId: UserId, workspaceId: WorkspaceId): SandboxIdleActivity
  * @param target - Original running identity, close version, activity revision and non-null idle start.
  * @param idleTimeoutMs - Positive idle threshold from validated deployment configuration.
  * @param signal - Scan lifetime, synchronously aborted on unload; does not cancel an already admitted close.
- * @returns Skipped without revocation or DELETE, or confirmed closure; management and Runner failures reject.
+ * @returns Skipped without revocation or DELETE when idle eligibility expires or the scan aborts before close admission,
+ * or confirmed closure; management, Runner and resource cleanup failures reject.
  */
 async closeIfIdleForUser( userId: UserId, workspaceId: WorkspaceId, target: SandboxIdleCloseTarget, idleTimeoutMs: number, signal: AbortSignal, ): Promise<SandboxIdleCloseResult>
 

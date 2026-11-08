@@ -4,15 +4,18 @@
  * `workspaceFiles`.
  *
  * File reads follow the composed filesystem's read access, including paths
- * outside the workspace. The selected Session header supplies the base for
- * relative paths, with the sandbox policy root as its no-cwd fallback, not a
- * read-containment restriction. Directory listings and change observations
- * remain workspace-scoped. File-kind checks and configured read caps apply to
+ * outside the workspace for owner calls. User calls remain inside their
+ * registered workspace. The selected Session header supplies the base for
+ * owner-relative paths, with the sandbox policy root as its no-cwd fallback.
+ * Directory listings and directory watches remain workspace-scoped.
+ * File-kind checks and configured read caps apply to
  * every preview; this service exposes no mutations.
  *
- * A page is cut from `streamText`, which decodes and rejects non-UTF-8 as it
+ * An owner page is cut from `streamText`, which decodes and rejects non-UTF-8 as it
  * goes, so the file is read only up to the first character past the page and
  * never held whole in memory; the NUL scan runs on the page itself.
+ * User previews read a capped complete file through the authorized artifact
+ * service before selecting a page; their versions hash the returned bytes.
  *
  * This is NOT modelled on `session.openWorkspacePath`. That endpoint hands a
  * path to the local opener and leaves the effect on the machine; this one sends
@@ -20,15 +23,20 @@
  */
 
 import { posix, win32 } from 'node:path'
+import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-fs'
+import type {} from '@deepseek-ai/dsh-api-remote-access'
+import type {} from '@deepseek-ai/dsh-api-workspace-artifacts'
+import { artifactFailure } from '@deepseek-ai/dsh-fs-local/workspace-artifacts'
 import type { FsDirEntry, FsInfo, FsPathInfo, FsTarget } from '@deepseek-ai/dsh-fs'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
+import type {} from '@deepseek-ai/dsh-workspace'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { Remote, RemoteError, TypertRemoteService, type TypertLookup } from '@deepseek-ai/dsh-typert-protocol'
+import { Remote, RemoteError, remoteErrorOf, TypertRemoteService, type TypertLookup } from '@deepseek-ai/dsh-typert-protocol'
 import { WorkspaceChangeFeed } from './changes.ts'
 import type {
   WorkspaceByteRange,
@@ -73,10 +81,10 @@ export interface Config {
    *
    * A page above this fails; it is not shortened, because a silently cut page
    * reads as the whole page. A byte window asking for more is refused the same
-   * way. The file itself has no size cap: a caller pages through it.
+   * way. Owner pages have no complete-file cap; user previews also apply maxFileBytes.
    */
   readonly maxBytes: number
-  /** Inclusive byte cap on a complete-file read; larger files are refused, never truncated. */
+  /** Inclusive byte cap on complete-file reads and all user file previews; larger files are refused. */
   readonly maxFileBytes: number
   /** Default and largest page size in lines; a request asking for more is refused. */
   readonly maxLines: number
@@ -225,7 +233,7 @@ export class WorkspaceFiles extends TypertRemoteService {
   /**
    * Read one page of lines from a UTF-8 file readable by the filesystem backend.
    * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
-   * @param path - absolute path or path relative to the workspace root; files outside it are allowed.
+   * @param path - absolute or workspace-relative path; user calls remain inside their registered workspace.
    * @param range - the line window; omitted fields take the page defaults.
    * @param signal - caller cancellation.
    * @returns the page, the file's version at the stat before it, and whether it reaches the last line.
@@ -238,6 +246,15 @@ export class WorkspaceFiles extends TypertRemoteService {
     signal: AbortSignal,
   ): Promise<WorkspaceFileText> {
     const { offset, limit } = this.resolvePage(range)
+    const user = await this.userFile(workspaceFileScope, path, signal)
+    if (user !== undefined) {
+      let text: string
+      try { text = new TextDecoder('utf-8', { fatal: true }).decode(user.data) }
+      catch (cause) { throw new RemoteError('workspace-file/not-text', 'File is not UTF-8 text.', { path }, { cause }) }
+      const page = await cutPage((async function* () { yield await Promise.resolve(text) })(), offset, limit, this.config.maxBytes, path)
+      if (page.text.includes(NUL)) throw new RemoteError('workspace-file/not-text', 'File contains NUL bytes.', { path })
+      return { ...user.stat, ...page, offset }
+    }
     const { target, info } = await this.locateFile(workspaceFileScope, path, signal)
     const page = await this.cutPage(target, offset, limit, signal, path)
     if (page.text.includes(NUL)) {
@@ -263,6 +280,12 @@ export class WorkspaceFiles extends TypertRemoteService {
   ): Promise<WorkspaceFileBytes> {
     const window = options.range === undefined ? undefined : this.resolveWindow(options.range, path)
     const resolved = options.baseFile === undefined ? path : await this.relativePath(workspaceFileScope, options.baseFile, path, signal)
+    const user = await this.userFile(workspaceFileScope, resolved, signal)
+    if (user !== undefined) {
+      if (window === undefined) return { ...user.stat, offset: 0, data: user.data, eof: true }
+      const { offset, length } = window
+      return { ...user.stat, offset, data: user.data.slice(offset, offset + length), eof: offset + length >= user.data.length }
+    }
     const { target, info } = await this.locateFile(workspaceFileScope, resolved, signal)
     if (window !== undefined) {
       const { offset, length } = window
@@ -289,6 +312,8 @@ export class WorkspaceFiles extends TypertRemoteService {
    */
   @Remote
   async stat(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceFileStat> {
+    const user = await this.userFile(workspaceFileScope, path, signal)
+    if (user !== undefined) return user.stat
     const { target, info } = await this.locateFile(workspaceFileScope, path, signal)
     return this.statOf(target, info)
   }
@@ -302,7 +327,9 @@ export class WorkspaceFiles extends TypertRemoteService {
    */
   @Remote
   async list(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceDirectoryListing> {
-    const { root, workspaceRoot, entry } = await this.inspect(workspaceFileScope, path, signal)
+    const selected = this.fileScope(workspaceFileScope, path)
+    if (selected.confined) return this.userListing(workspaceFileScope, path, signal)
+    const { root, workspaceRoot, path: requested, entry } = await this.inspect(workspaceFileScope, path, signal)
     // A final link — a Windows junction or a symlink — is listed through the
     // directory it resolves to, matching the child type `listDir` reports for
     // that entry; `read` keeps its own no-follow gate on the final component.
@@ -313,7 +340,7 @@ export class WorkspaceFiles extends TypertRemoteService {
         { path, kind: entry.type },
       )
     }
-    const target = await this.confine(root, workspaceRoot, path, signal)
+    const target = await this.confine(root, workspaceRoot, requested, signal)
     if (entry.type === 'symlink') {
       const info = await this.ctx.fs.stat(target, signal)
       if (info?.type !== 'directory') {
@@ -330,16 +357,109 @@ export class WorkspaceFiles extends TypertRemoteService {
 
   /**
    * Watch one file or a directory's direct entries in the Session's filesystem.
-   * Files use the backend's read authority; directories remain workspace-scoped.
+   * Owner file watches use backend read authority; user watches and directories remain workspace-scoped.
    * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
-   * @param path - target path; the Host determines its type and confines directories to the workspace.
+   * @param path - target path; the Host determines its type and confines user targets and directories.
    * @param signal - generation cancellation.
    * @returns `ready` once the target watch is active, then current metadata for queued and live invalidations.
    * @throws RemoteError when watching is unavailable or a directory is outside the workspace.
    */
   @Remote({ mode: 'stream' })
   changes(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame> {
-    return this.feed.follow(workspaceFileScope.workspaceRoot, path, signal)
+    const scope = this.fileScope(workspaceFileScope, path)
+    return this.feed.follow(scope.workspaceRoot, scope.path, signal, scope.confined,
+      scope.confined ? () => this.userMetadata(workspaceFileScope, path, signal) : undefined)
+  }
+
+  private fileScope(scope: WorkspaceFileScope, path: string): { workspaceRoot: string; path: string; confined: boolean } {
+    const invocation = this.ctx.invocation
+    if (invocation?.peer.principal.kind !== 'user') return { workspaceRoot: scope.workspaceRoot, path, confined: false }
+    const workspace = this.ctx.get('workspaceRegistry')?.findSession(scope.sessionId)
+    if (workspace === undefined) {
+      throw new RemoteError('remote-access/denied', 'Workspace files are unavailable.', {
+        action: `workspaceFiles/${invocation.request.method}`, reason: 'not-found',
+      })
+    }
+    const paths = workspace.path.startsWith('/') ? posix : win32
+    const requested = path === '/workspace' || path.startsWith('/workspace/')
+      ? paths.join(workspace.path, path.slice('/workspace'.length)) : path
+    const absolute = paths.resolve(workspace.path, requested)
+    const relative = paths.relative(workspace.path, absolute)
+    if (relative === '..' || relative.startsWith(`..${paths.sep}`) || paths.isAbsolute(relative)) {
+      throw new RemoteError('workspace-file/outside-workspace', 'Path is outside the workspace.', { path })
+    }
+    return { workspaceRoot: workspace.path, path: absolute, confined: true }
+  }
+
+  private async userFile(scope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<{
+    data: Uint8Array<ArrayBuffer>
+    stat: WorkspaceFileStat
+  } | undefined> {
+    const invocation = this.ctx.invocation
+    if (invocation?.peer.principal.kind !== 'user') return undefined
+    const selected = this.fileScope(scope, path)
+    const paths = selected.workspaceRoot.startsWith('/') ? posix : win32
+    const relative = paths.relative(selected.workspaceRoot, paths.resolve(selected.workspaceRoot, selected.path))
+    const workspace = this.ctx.get('workspaceRegistry')?.findSession(scope.sessionId)
+    const artifacts = this.ctx.get('workspaceArtifacts')
+    if (workspace === undefined || artifacts === undefined) {
+      throw new RemoteError('remote-access/denied', 'Workspace files are unavailable.', {
+        action: `workspaceFiles/${invocation.request.method}`, reason: 'not-found',
+      })
+    }
+    try {
+      const stream = await artifacts.openDownload(workspace.id, relative.replaceAll('\\', '/'), signal, invocation.peer, this.config.maxFileBytes)
+      let data: Uint8Array<ArrayBuffer>
+      try { data = new Uint8Array(await new Response(stream.body).arrayBuffer()) }
+      finally { await stream.settled }
+      return { data, stat: { absolutePath: paths.resolve(selected.workspaceRoot, relative),
+        version: createHash('sha256').update(data).digest('hex'), bytes: data.byteLength } }
+    } catch (cause) {
+      const failure = artifactFailure(cause, signal)
+      if (failure.reason === 'too-large') throw new RemoteError('workspace-file/too-large', 'File is too large.', { path, limit: this.config.maxFileBytes }, { cause })
+      if (failure.reason === 'invalid-path') throw new RemoteError('workspace-file/outside-workspace', 'File path is outside the workspace.', { path }, { cause })
+      if (failure.reason === 'not-found' || failure.reason === 'not-regular') throw new RemoteError('workspace-file/not-found', 'File is unavailable.', { path }, { cause })
+      if (failure.reason === 'denied') throw new RemoteError('remote-access/denied', 'Workspace files are unavailable.', {
+        action: `workspaceFiles/${invocation.request.method}`, reason: 'not-found',
+      }, { cause })
+      if (failure.reason === 'cancelled') throw new RemoteError('gateway/cancelled', 'Workspace file read was cancelled.', {}, { cause })
+      throw new RemoteError('gateway/internal', 'Workspace files are unavailable.', {}, { cause })
+    }
+  }
+
+  private async userListing(scope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceDirectoryListing> {
+    const selected = this.fileScope(scope, path)
+    const paths = selected.workspaceRoot.startsWith('/') ? posix : win32
+    const relative = paths.relative(selected.workspaceRoot, paths.resolve(selected.workspaceRoot, selected.path))
+    const workspace = this.ctx.get('workspaceRegistry')?.findSession(scope.sessionId)
+    const artifacts = this.ctx.get('workspaceArtifacts')
+    if (workspace === undefined || artifacts === undefined) {
+      throw new RemoteError('remote-access/denied', 'Workspace files are unavailable.', { action: 'workspaceFiles/list', reason: 'not-found' })
+    }
+    const listing = await artifacts.list({ workspaceId: workspace.id }, relative.replaceAll('\\', '/'), signal)
+    return { path: relative.replaceAll('\\', '/'), entries: listing.entries.slice(0, this.config.maxEntries).map(entry => ({
+      name: entry.name, type: entry.kind, ...entry.bytes === undefined ? {} : { size: entry.bytes },
+    })), truncated: listing.truncated || listing.entries.length > this.config.maxEntries }
+  }
+
+  private async userMetadata(scope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<{
+    type: 'file' | 'directory'
+    version: string
+  } | undefined> {
+    try {
+      const file = await this.userFile(scope, path, signal)
+      if (file !== undefined) return { type: 'file', version: file.stat.version }
+    } catch (cause) {
+      if (remoteErrorOf(cause)?.code !== 'workspace-file/not-found') throw cause
+    }
+    try {
+      const listing = await this.userListing(scope, path, signal)
+      return { type: 'directory', version: createHash('sha256').update(JSON.stringify(listing)).digest('hex') }
+    } catch (cause) {
+      const failure = remoteErrorOf(cause)
+      if (failure?.code !== 'workspace-artifact/failed' || failure.details.reason !== 'not-found') throw cause
+      return undefined
+    }
   }
 
   private async relativePath(scope: WorkspaceFileScope, baseFile: string, path: string, signal: AbortSignal): Promise<string> {
@@ -347,8 +467,9 @@ export class WorkspaceFiles extends TypertRemoteService {
     if (relative.length === 0 || relative.startsWith('/') || /^[a-z][a-z\d+.-]*:/iu.test(relative) || relative.includes(NUL)) {
       throw new RemoteError('gateway/bad-request', 'path must be relative when baseFile is provided', {})
     }
-    const { target } = await this.locateFile(scope, baseFile, signal)
-    const absolute = this.ctx.fs.processPath(target)
+    const user = await this.userFile(scope, baseFile, signal)
+    const absolute = user !== undefined ? user.stat.absolutePath
+      : this.ctx.fs.processPath((await this.locateFile(scope, baseFile, signal)).target)
     const paths = absolute.startsWith('/') ? posix : win32
     return paths.resolve(paths.dirname(absolute), relative)
   }
@@ -379,24 +500,21 @@ export class WorkspaceFiles extends TypertRemoteService {
     }
     return { offset, length }
   }
-  /**
-   * Inspect the requested path itself before resolution follows its final
-   * component. Directory containment is checked separately by `list`.
-   */
+  /** Inspect the final entry without following its symlink, after any user containment check. */
   private async inspect(
     workspaceFileScope: WorkspaceFileScope,
     path: string,
     signal: AbortSignal,
-  ): Promise<{ root: FsTarget; workspaceRoot: string; entry: FsPathInfo }> {
+  ): Promise<{ root: FsTarget; workspaceRoot: string; path: string; confined: boolean; entry: FsPathInfo }> {
     if (path.length === 0) throw new RemoteError('gateway/bad-request', 'path is required', {})
-    const { workspaceRoot } = workspaceFileScope
+    const { workspaceRoot, path: requested, confined } = this.fileScope(workspaceFileScope, path)
     const root = await this.ctx.fs.resolve(workspaceRoot, { signal })
-    // Gate on the path itself before anything follows it.
-    const entry = await this.ctx.fs.lstat(path, { cwd: workspaceRoot }, signal)
+    if (confined) await this.confine(root, workspaceRoot, requested, signal)
+    const entry = await this.ctx.fs.lstat(requested, { cwd: workspaceRoot }, signal)
     if (entry === undefined) {
       throw new RemoteError('workspace-file/not-found', `no entry at "${path}"`, { path })
     }
-    return { root, workspaceRoot, entry }
+    return { root, workspaceRoot, path: requested, confined, entry }
   }
 
   /** Resolve an inspected path and refuse it unless the workspace contains it. */
@@ -418,11 +536,12 @@ export class WorkspaceFiles extends TypertRemoteService {
     path: string,
     signal: AbortSignal,
   ): Promise<{ target: FsTarget; info: FsInfo }> {
-    const { workspaceRoot, entry } = await this.inspect(workspaceFileScope, path, signal)
+    const { root, workspaceRoot, path: requested, confined, entry } = await this.inspect(workspaceFileScope, path, signal)
     if (entry.type !== 'file') {
       throw new RemoteError('workspace-file/not-regular-file', `"${path}" is a ${entry.type}`, { path, kind: entry.type })
     }
-    const target = await this.ctx.fs.resolve(path, { cwd: workspaceRoot, signal })
+    const target = confined ? await this.confine(root, workspaceRoot, requested, signal)
+      : await this.ctx.fs.resolve(requested, { cwd: workspaceRoot, signal })
     const info = await this.ctx.fs.stat(target, signal)
     if (info === undefined) {
       throw new RemoteError('workspace-file/not-found', `no entry at "${path}"`, { path })

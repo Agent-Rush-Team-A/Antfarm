@@ -194,11 +194,16 @@ describe.skipIf(process.platform === 'win32')('SSH stream establishment disposal
       await state.ordinaryEntered
       await vi.advanceTimersByTimeAsync(10_000)
       expect(state.heartbeatCalls()).toBe(1)
+      const checks = Promise.allSettled([
+        state.service.checkHealth(),
+        state.service.checkHealth(),
+      ])
       await vi.advanceTimersByTimeAsync(10_000)
       expect(state.heartbeatCalls()).toBe(1)
       expect(ordinarySettled).toBe(false)
       state.releaseHeartbeat()
       await vi.advanceTimersByTimeAsync(0)
+      expect(await checks).toEqual([{ status: 'fulfilled', value: undefined }, { status: 'fulfilled', value: undefined }])
       await vi.advanceTimersByTimeAsync(10_000)
       expect(state.heartbeatCalls()).toBe(2)
       state.releaseOrdinary()

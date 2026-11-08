@@ -119,6 +119,74 @@ test.each(modes)('%s routes the real native Bash consumer and preserves its life
   }
 })
 
+test.each(['multi-docker', 'multi-vm'] as const)('%s manual opening stays counted while mode admission waits', async (mode) => {
+  const f = await fixture(mode)
+  const waiting = Promise.withResolvers<undefined>()
+  const entered = Promise.withResolvers<undefined>()
+  f.coordinator.acquireUse.mockImplementationOnce(async (id, options) => {
+    entered.resolve(undefined); await waiting.promise; return f.lease(id, options)
+  })
+  const opened = f.ctx.workspaceSandbox.openForUser(f.alice.user.userId, f.alice.id)
+  try {
+    expect(f.ctx.workspaceSandbox.activityForUser(f.alice.user.userId, f.alice.id))
+      .toMatchObject({ busy: true, openings: 1, idleSince: null })
+    await entered.promise
+    expect(f.ctx.workspaceSandbox.activityForUser(f.alice.user.userId, f.alice.id))
+      .toMatchObject({ busy: true, openings: 1, idleSince: null })
+    expect(f.backend.open).not.toHaveBeenCalled()
+  } finally { waiting.resolve(undefined); await opened }
+  expect(f.ctx.workspaceSandbox.activityForUser(f.alice.user.userId, f.alice.id))
+    .toMatchObject({ busy: false, openings: 0, sandbox: { state: 'running' } })
+  expect(f.backend.open).toHaveBeenCalledOnce()
+  expect(f.counts.get(f.alice.id)).toBe(0)
+})
+
+test('failed manual mode admission releases its opening count without starting a sandbox', async () => {
+  const f = await fixture('multi-docker')
+  const failure = new Error('Mode admission unavailable')
+  f.coordinator.acquireUse.mockRejectedValueOnce(failure)
+  const opened = f.ctx.workspaceSandbox.openForUser(f.alice.user.userId, f.alice.id)
+  expect(f.ctx.workspaceSandbox.activityForUser(f.alice.user.userId, f.alice.id))
+    .toMatchObject({ busy: true, openings: 1 })
+  await expect(opened).rejects.toBe(failure)
+  expect(f.ctx.workspaceSandbox.activityForUser(f.alice.user.userId, f.alice.id))
+    .toMatchObject({ busy: false, openings: 0, idleSince: null })
+  expect(f.backend.open).not.toHaveBeenCalled()
+})
+
+test.each(['cancelled', 'failed'] as const)('stopped idle scan preserves %s mode admission outcome', async (outcome) => {
+  const f = await fixture('multi-docker')
+  let now = 100
+  vi.spyOn(performance, 'now').mockImplementation(() => now)
+  await f.ctx.workspaceSandbox.openForUser(f.alice.user.userId, f.alice.id)
+  const activity = f.ctx.workspaceSandbox.activityForUser(f.alice.user.userId, f.alice.id)
+  if (activity.sandbox.state !== 'running' || activity.idleSince === null) throw new Error('Expected idle running sandbox')
+  const target = { revision: activity.revision, idleSince: activity.idleSince,
+    version: activity.version, containerId: activity.sandbox.containerId }
+  now += 1000
+  const waiting = Promise.withResolvers<undefined>()
+  const entered = Promise.withResolvers<undefined>()
+  const lifetime = new AbortController()
+  const failure = new Error('Mode admission failed independently of cancellation')
+  f.coordinator.acquireUse.mockImplementationOnce(async (_id, options) => {
+    entered.resolve(undefined); await waiting.promise
+    if (outcome === 'failed') throw failure
+    options.signal.throwIfAborted()
+    throw new Error('Expected aborted mode admission')
+  })
+  const closed = f.ctx.workspaceSandbox.closeIfIdleForUser(f.alice.user.userId, f.alice.id, target, 1000, lifetime.signal)
+  const checked = outcome === 'cancelled'
+    ? expect(closed).resolves.toEqual({ state: 'skipped' }) : expect(closed).rejects.toBe(failure)
+  try {
+    await entered.promise
+    lifetime.abort(new Error('Idle scanner stopped'))
+  } finally { waiting.resolve(undefined); await checked }
+  expect(f.ctx.workspaceSandbox.activityForUser(f.alice.user.userId, f.alice.id)).toEqual(activity)
+  expect(f.backend.status).not.toHaveBeenCalled()
+  expect(f.backend.close).not.toHaveBeenCalled()
+  expect(f.counts.get(f.alice.id)).toBe(0)
+})
+
 test('input received before recycling retains the current generation while coordinator admission waits', async () => {
   const f = await fixture()
   await f.prompt('first')

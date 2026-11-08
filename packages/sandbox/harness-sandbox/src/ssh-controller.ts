@@ -187,7 +187,7 @@ export class WorkspaceSshRuntime {
     if (generation === undefined) return { state: 'closed' }
     if (generation.state !== 'running') return { state: generation.state }
     const services = await generation.ready
-    try { await services.ssh.request('heartbeat', {}, z.null()) }
+    try { await services.ssh.checkHealth() }
     catch (_error) {
       if (this.stateOf(generation) === 'running') this.quarantine(generation)
     }

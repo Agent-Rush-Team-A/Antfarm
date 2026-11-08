@@ -34,9 +34,13 @@ export class WorkspaceChangeFeed {
    * @param workspaceRoot - the session's workspace root path.
    * @param path - target path, resolved relative to the workspace root; Host metadata determines its type.
    * @param signal - generation cancellation.
+   * @param confined - whether files as well as directories must remain inside the workspace.
+   * @param metadata - authorized metadata reader; omitted uses the composed filesystem.
    * @returns `ready` after watching starts, then current metadata for target invalidations.
    */
-  async *follow(workspaceRoot: string, path: string, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame> {
+  async *follow(workspaceRoot: string, path: string, signal: AbortSignal, confined = false,
+    metadata?: () => Promise<{ type: 'file' | 'directory'; version: string } | undefined>,
+  ): AsyncIterable<WorkspaceFileWatchFrame> {
     signal.throwIfAborted()
     // Instrumented observations remain queued while the target resolves.
     const follower = new ChangeFollower(() => {
@@ -64,12 +68,12 @@ export class WorkspaceChangeFeed {
       })
       if (target === undefined || aborted()) return
       const stat = async () => {
-        const info = await this.ctx.fs.stat(target, signal).catch((error: unknown) => {
+        const info = await (metadata === undefined ? this.ctx.fs.stat(target, signal) : metadata()).catch((error: unknown) => {
           if (aborted()) return undefined
           throw error
         })
-        if (info?.type === 'directory' && !this.ctx.fs.contains(root, target)) {
-          throw new RemoteError('workspace-file/outside-workspace', 'Directory is outside the workspace', { path })
+        if ((confined || info?.type === 'directory') && !this.ctx.fs.contains(root, target)) {
+          throw new RemoteError('workspace-file/outside-workspace', 'Target is outside the workspace', { path })
         }
         return info
       }

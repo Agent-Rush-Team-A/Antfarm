@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { chown, readFile, symlink, unlink, writeFile } from 'node:fs/promises'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { MultiuserUser } from '@deepseek-ai/dsh-api-multiuser'
@@ -77,6 +78,25 @@ async function run(ctx: Context, signal: AbortSignal, report: string) {
       body: JSON.stringify({ type: 'client-request', rpcId: randomUUID(), method, payload: { args } }), signal })
     return (await response.json() as { result: Reply<T> }).result
   }
+  const opened = ctx.workspaceSandbox.openForUser(b.user.userId, b.workspace.id)
+  const opening = ctx.workspaceSandbox.activityForUser(b.user.userId, b.workspace.id)
+  check(opening.busy && opening.openings === 1 && opening.idleSince === null,
+    'Manual open immediately counts preparation through the real mode coordinator')
+  await opened
+  const idle = ctx.workspaceSandbox.activityForUser(b.user.userId, b.workspace.id)
+  if (idle.sandbox.state !== 'running' || idle.idleSince === null) throw new Error('Expected running idle Docker workspace')
+  await delay(2)
+  const scan = new AbortController()
+  const cancelled = ctx.workspaceSandbox.closeIfIdleForUser(b.user.userId, b.workspace.id,
+    { containerId: idle.sandbox.containerId, version: idle.version, revision: idle.revision, idleSince: idle.idleSince },
+    1, scan.signal)
+  scan.abort()
+  const skipped = await cancelled
+  const afterScan = ctx.workspaceSandbox.activityForUser(b.user.userId, b.workspace.id)
+  check(skipped.state === 'skipped' && !afterScan.closing && afterScan.revision === idle.revision
+    && (await ctx.sandboxRunner.status(b.workspace.id)).state === 'running',
+  'Cancelling idle admission returns skipped and preserves the real Docker generation')
+  await ctx.workspaceSandbox.closeForUser(b.user.userId, b.workspace.id)
   const upload = await fetch(base + '/api/workspace/uploadFileBinary?' + new URLSearchParams({ workspaceId: a.workspace.id, name: 'input.csv' }).toString(),
     { method: 'POST', headers: { cookie, origin: base, 'content-type': 'application/octet-stream' }, body: 'amount\n10\n15\n7\n', signal })
   check(upload.ok, 'Authenticated upload persists before any execution')

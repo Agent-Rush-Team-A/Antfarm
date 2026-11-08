@@ -16,6 +16,7 @@
     "apps/web/tests/workspace-sandbox.e2e.ts",
     "apps/web/tests/workspace-modes.e2e.ts",
     "apps/web/tests/multiuser.e2e.ts",
+    "apps/web/tests/guest-file-preview.e2e.ts",
     "apps/web/tests/sidebar-drawer.e2e.ts",
     "apps/web/tests/creation-recommendations.e2e.ts",
     "apps/web/tests/plugin-recommendations.e2e.ts",

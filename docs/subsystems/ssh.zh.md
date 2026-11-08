@@ -89,6 +89,11 @@ declare class SshConnection extends Service {
   /** Verified remote PTC launch configuration; script deployments require a verified bootstrap. */
   get ptcLaunch(): { kind: 'embedded'; executable: string } | { kind: 'node-script'; executable: string; bootstrapPath: string };
   /**
+     * Share a bounded heartbeat with concurrent health observers and the lease timer.
+     * @returns Completion after the helper confirms that the connection is healthy.
+     */
+  async checkHealth(): Promise<void>;
+  /**
      * Send a helper operation; cancellation never replays an ambiguous mutation.
      * @param method - the private helper operation.
      * @param params - JSON request fields validated by the helper.
@@ -131,6 +136,12 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 One non-reconnecting SSH session; loss invalidates all active operations.
 
 ```ts cordis-catalog
+/**
+ * Share a bounded heartbeat with concurrent health observers and the lease timer.
+ * @returns Completion after the helper confirms that the connection is healthy.
+ */
+async checkHealth(): Promise<void>
+
 /**
  * Send a helper operation; cancellation never replays an ambiguous mutation.
  * @param method - the private helper operation.

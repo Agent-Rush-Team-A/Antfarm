@@ -50,6 +50,8 @@ Install an [SSH helper executable archive](../ssh-helper-runtime/README.md), or 
 | `maxPending` | `128` | Ordinary outstanding requests; heartbeat and bounded cleanup requests have reserved capacity |
 | `leaseMs` | `30000` | Helper heartbeat lease, from 3000 to 600000 ms |
 
+Use `ctx.ssh.checkHealth()` for an immediate health observation. Concurrent observers share the lease timer's pending heartbeat and its deadline, so they do not compete for the protocol's single heartbeat slot.
+
 Pass the verified `ctx.ssh.ptcLaunch` as the `launch` configuration of [`NodePtcRuntime`](../../ptc-runtime/ptc-runtime-node/README.md). Executable deployments include their worker. Script deployments require both bootstrap fields for PTC; filesystem and Bash use may omit them. The getter refuses an unconfigured script bootstrap. The client rejects mismatched protocol versions, runtime kinds and helper digests before readiness.
 
 ### Workspace binary files

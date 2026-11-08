@@ -185,7 +185,7 @@ export default class WorkspaceSandbox extends TypertRemoteService {
   }
 
   /**
-   * Open a sandbox for an authenticated backend initiator.
+   * Open a sandbox for an authenticated backend initiator; count opening before resource admission yields.
    * @param userId - Authenticated user from the initiating operation.
    * @param workspaceId - Native workspace id.
    * @returns Full running identity for trusted execution integration.
@@ -195,9 +195,12 @@ export default class WorkspaceSandbox extends TypertRemoteService {
     this.available()
     if (this.state.closing(workspaceId)) throw new RemoteError('sandbox/failed', reasons.sandbox_closing,
       { reason: 'sandbox_closing', outcomeUnknown: false })
-    const resources = await this.reserveForUser(userId, workspaceId, new AbortController().signal)
-    try { this.manual(resources); return await resources.ready() }
-    finally { await resources.release() }
+    return this.state.open(workspaceId, async (epoch) => {
+      this.state.check(workspaceId, epoch)
+      const resources = await this.reserve(userId, workspaceId, epoch.signal)
+      try { this.manual(resources); return await resources.ready() }
+      finally { await resources.release() }
+    })
   }
 
   /**
@@ -210,13 +213,19 @@ export default class WorkspaceSandbox extends TypertRemoteService {
    */
   async reserveForUser(userId: UserId, workspaceId: WorkspaceId,
     signal: AbortSignal, check?: () => void): Promise<SandboxExecutionAdmission> {
+    const resources = await this.reserve(userId, workspaceId, signal, check)
+    return { ...resources, ready: () => this.state.open(workspaceId, () => resources.ready()) }
+  }
+
+  private async reserve(userId: UserId, workspaceId: WorkspaceId,
+    signal: AbortSignal, check?: () => void): Promise<SandboxExecutionAdmission> {
     const epoch = this.state.capture(workspaceId)
     const scope = this.scopeForUser(userId, workspaceId, 'open', AbortSignal.any([signal, epoch.signal]),
       () => { this.state.check(workspaceId, epoch); check?.() })
     const resources = await this.runner(() => Promise.resolve(this.client.admit(scope)))
     try { resources.scope.admit() }
     catch (error) { await resources.release(); throw error }
-    return { ...resources, ready: () => this.state.open(workspaceId, epoch => this.runner(async () => {
+    return { ...resources, ready: () => this.runner(async () => {
       resources.scope.admit()
       this.state.check(workspaceId, epoch)
       const path = await this.directory(workspaceId)
@@ -224,7 +233,7 @@ export default class WorkspaceSandbox extends TypertRemoteService {
       this.state.check(workspaceId, epoch)
       if (path !== scope.project) throw new RemoteError('gateway/cancelled', 'Workspace registration changed', {})
       return resources.ready()
-    })) }
+    }) }
   }
 
   /**
@@ -268,7 +277,8 @@ export default class WorkspaceSandbox extends TypertRemoteService {
    * @param target - Original running identity, close version, activity revision and non-null idle start.
    * @param idleTimeoutMs - Positive idle threshold from validated deployment configuration.
    * @param signal - Scan lifetime, synchronously aborted on unload; does not cancel an already admitted close.
-   * @returns Skipped without revocation or DELETE, or confirmed closure; management and Runner failures reject.
+   * @returns Skipped without revocation or DELETE when idle eligibility expires or the scan aborts before close admission,
+   * or confirmed closure; management, Runner and resource cleanup failures reject.
    */
   async closeIfIdleForUser(
     userId: UserId, workspaceId: WorkspaceId, target: SandboxIdleCloseTarget,
@@ -277,14 +287,26 @@ export default class WorkspaceSandbox extends TypertRemoteService {
     this.available()
     this.authorize(userId, workspaceId, 'close')
     if (!this.matchesIdle(workspaceId, target, idleTimeoutMs, signal)) return { state: 'skipped' }
-    return this.withAdmission(userId, workspaceId, 'close', async (resources) => {
-      if (resources.taskManaged) return { state: 'skipped' as const }
+    const stopped = () => signal.aborted
+    let resources: SandboxExecutionAdmission
+    try {
+      const scope = this.scopeForUser(userId, workspaceId, 'close', signal)
+      resources = await this.runner(() => Promise.resolve(this.client.admit(scope)))
+    } catch (error) {
+      if (signal.aborted && error === signal.reason) return { state: 'skipped' }
+      throw error
+    }
+    try {
+      if (stopped() || resources.taskManaged) return { state: 'skipped' }
+      resources.scope.admit()
+      if (!this.matchesIdle(workspaceId, target, idleTimeoutMs, signal)) return { state: 'skipped' }
       const observed = await this.state.query(workspaceId, () => this.runner(() => resources.backend.status(workspaceId)), signal)
+      if (stopped()) return { state: 'skipped' }
       resources.scope.admit()
       if (observed.state !== 'running' || observed.containerId !== target.containerId
-        || !this.matchesIdle(workspaceId, target, idleTimeoutMs, signal)) return { state: 'skipped' as const }
-      return this.closeSelected(userId, workspaceId, resources.backend, target)
-    }, signal)
+        || !this.matchesIdle(workspaceId, target, idleTimeoutMs, signal)) return { state: 'skipped' }
+      return await this.closeSelected(userId, workspaceId, resources.backend, target)
+    } finally { await resources.release() }
   }
 
   /**
