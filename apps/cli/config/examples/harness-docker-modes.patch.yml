@@ -1,6 +1,6 @@
 # Workspace modes over the default Antfarm Web composition.
 # Runner and Harness share workspaceRoot; mode journals use a private stateRoot.
-# Add the optional vultr object to enable single-session VFS and multi-session snapshots.
+# Add the optional vultr object for task and persistent VFS VMs sharing one volume.
 - id: ui-workspace-sandbox
   disabled: false
 - insert:

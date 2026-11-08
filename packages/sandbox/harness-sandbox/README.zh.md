@@ -74,7 +74,7 @@ SSH 关闭只释放 helper 及其受管理进程，不关闭或删除 VM。[Vult
 <a id="workspace-vultr"></a>
 ### Vultr 工作区 VM
 
-可选 [Vultr overlay](../../../apps/cli/config/examples/harness-vultr.patch.yml) 通过 `DSH_VULTR_CONFIG_JSON` 中的部署 JSON 选用 `@deepseek-ai/dsh-harness-sandbox/vultr`，使用方式见[部署指南](../../../docs/user/guide/workspace-vultr.zh.md)。Runner 协调保留在 Harness，每个活跃 Workspace 获得一台独立 VM。私有管理凭据、地区、套餐、镜像和 helper 产物由部署配置选择。首次开启只导入一次登记文件；快照恢复保留执行环境。SSH 和 helper 完整性检查通过后才接纳任务；远程失败不选择宿主执行。
+可选 [Vultr overlay](../../../apps/cli/config/examples/harness-vultr.patch.yml) 通过 `DSH_VULTR_CONFIG_JSON` 中的部署 JSON 选用旧快照提供方 `@deepseek-ai/dsh-harness-sandbox/vultr`，使用方式见[部署指南](../../../docs/user/guide/workspace-vultr.zh.md)。此独立入口为现有部署和数据导出保留快照行为；工作区 VM 模式改用 VFS。Runner 协调保留在 Harness，每个活跃 Workspace 获得一台独立 VM。私有管理凭据、地区、套餐、镜像和 helper 产物由部署配置选择。首次开启只导入一次登记文件；快照恢复保留执行环境。SSH 和 helper 完整性检查通过后才接纳任务；远程失败不选择宿主执行。
 
 云资源所有者在私有 `stateRoot` 下保存带版本的元数据，并持有独占内核锁。并发调用共用准备操作。启动时核对已记录的标签、VM 标识和快照描述，然后重连经核实且记录为运行中或启动中的原实例。SSH 运行时绑定前若连接失败，可以显式重试同一实例。未获确认的创建不重放，归属不明或缺失的资源会阻止依赖工作。提供方卸载拒绝新工作，等待已接纳请求和 SSH 清理结束后再释放锁，并保留云磁盘供后续核对。启动失败也会在清理后释放所有权。浏览器安全的 `SandboxValue.progress` 提供阶段和脱敏失败分类，不含 VM 标识或路径。
 
@@ -109,11 +109,11 @@ SSH 关闭只释放 helper 及其受管理进程，不关闭或删除 VM。[Vult
 | `maxOutputBytes` | `65536` | 保留的命令输出字节上限。 |
 | `graceMs` | `5000` | 受管进程终止宽限期。 |
 
-共享 VFS 目录提供方在注册切换资源时接受显式 VM 模式；共用其存储的提供方保留相同工作区目录和 UID/GID 绑定。单会话 VM 的目录提供方用登记项目的目录名定位独立 [VFS 工作区根](../../../team-docs/VULTR-VFS.md#执行-vm-的挂载和权限)下的文件。提供方核对当前整卷挂载和 Mount Tag。首次切入该模式时，Harness 在私有状态中预留 UID/GID，并以该组权限暂存完整文件副本。目录发布后，UID/GID 与该工作区永久绑定。回滚先清理暂存文件，再释放新预留的 UID/GID。网页直接从已验证目录上传、列表和下载，无需启动执行 VM。
+两种工作区 VM 模式按登记项目的目录名定位同一个 [VFS 工作区根](../../../team-docs/VULTR-VFS.md#执行-vm-的挂载和权限)下的文件，共用一个 UID/GID 池。提供方核对当前整卷挂载和 Mount Tag。首次切入 VM 模式时，在私有状态中预留身份，并以该组权限暂存完整文件副本。目录发布后，身份与工作区永久绑定；两种 VM 模式间切换保留该身份。回滚先清理暂存文件，再释放新预留的身份。网页直接从已验证的 VFS 目录上传、列表和下载，无需启动执行 VM。身份容量同时计入保留的工作区目录和活跃 VM；部署预留 128 个身份时，全部仍被绑定后便无法接纳新的绑定。
 
-内部 `createMultiVmVultrBackend` 工厂共用 VFS 目录映射，跨回合保留工作区 VM，并在重启后重连经验证的运行中分配。显式关闭会同步并卸载客体机的挂载，确认 VFS 连接解除和 VM 删除，不创建磁盘快照。单会话分配提供方在发送创建请求前保存原代次、标签和卷标识。它核对实例归属和 Shared Memory Backing，再确认指定 VFS 的连接与 Mount Tag。固定主机密钥的 SSH 通道准备客体机整卷挂载和 `/workspace` 绑定，并以分配的任务用户运行探针。该代次的 helper 校验通过后才接纳命令和文本文件操作。中断的分配保留在私有状态中，占用容量直至回收结果得到确认。
+两种 VM 分配提供方在发送创建请求前保存原代次、标签和卷标识，核对实例归属和 Shared Memory Backing，再确认指定 VFS 的连接与 Mount Tag。固定主机密钥的 SSH 通道准备客体机整卷挂载和 `/workspace` 绑定，并以分配的任务用户运行探针。该代次的 helper 校验通过后才接纳命令和文本文件操作。中断的分配保留在私有状态中，占用容量直至回收结果得到确认。
 
-最后一个任务名额收尾后，提供方禁止原 helper 再次启动，确认任务进程退出，同步并卸载客体机的挂载，再核对 VFS 连接解除和实例消失。Harness 启动及后续接纳会按原标签和资源 ID 核对保留的记录。回收确认后，下一项任务可分配新 VM。
+单会话 VM 在最后一个任务名额收尾后释放实例。多会话 VM 跨回合保留实例，由手动关闭、空闲关闭、工作区归档或删除发起释放。释放时禁止原 helper 再次启动，确认任务进程退出，同步并卸载客体机的挂载，再核对 VFS 连接解除和实例消失。两种模式均不创建整机快照。文件留在 VFS 中；工作区挂载之外安装的工具和配置会在 VM 重建时丢失。Harness 启动及后续接纳会按原标签和资源 ID 核对保留的记录，确认后才允许新分配。
 
 <a id="workspace-text-tools"></a>
 ### Workspace 文本工具
@@ -215,7 +215,7 @@ Agent 步骤信号在异步工具策略前标识原 turn，工具在发送时重
 
 可选 `./modes` 入口接收可信的工作区模式协调器、显式的执行/文件提供方映射以及切换运行时。先在隔离的 service realm 中加载各后端，再以 `backend: provided` 加载管理入口。模式入口还提供 `workspaceFileAccess`；HTTP 上传与产物入口使用 `storage: provided`。[Loader 测试](tests/mode-loader.host.spec.ts)使用真实登记协调器和 Docker 验证显式目标组合。该入口不提供默认模式或后端。
 
-[Docker 模式叠加层](../../../apps/cli/config/examples/harness-docker-modes.patch.yml) 加载 `./docker-modes`，提供两种 Docker 目标和持久化目录切换。将 `DSH_DOCKER_MODES_CONFIG_JSON` 设为 Runner 通信配置，加上 `workspaceRoot`、私有绝对目录 `stateRoot`、`maxFiles` 和 `maxBytes`；`DSH_MULTIUSER_WORKSPACE_ROOT` 使用同一根目录。复制限制作用于完整切换。叠加层将新工作区默认模式设为 `multi-docker`；首个会话前可通过工作区模式 API 选择 `single-docker`。运行时加载时拒绝已有 VM 模式。分配器、Runner 和容器身份必须共享目录访问权限。
+[Docker 模式叠加层](../../../apps/cli/config/examples/harness-docker-modes.patch.yml) 加载 `./docker-modes`，提供两种 Docker 目标和持久化目录切换。将 `DSH_DOCKER_MODES_CONFIG_JSON` 设为 Runner 通信配置，加上 `workspaceRoot`、私有绝对目录 `stateRoot`、`maxFiles` 和 `maxBytes`；`DSH_MULTIUSER_WORKSPACE_ROOT` 使用同一根目录。复制限制作用于完整切换。叠加层将新工作区默认模式设为 `multi-docker`；首个会话前可选择其他模式。可选 `vultr` 配置启用两种 VFS VM 目标；未配置时，加载拒绝已有 VM 模式。两种 VM 目标必须使用相同 `volumeId` 和 `region`，指定独立的私有 `stateRoot` 目录及可信 `vfsScriptsRoot` 资源。默认保持为 Docker 模式。可选 `vultr.legacyMultiStateRoot` 允许导入已完成的旧文件副本，不修改原记录和快照；详见[部署指南](../../../docs/user/guide/workspace-vultr.zh.md#offer-vm-and-docker-modes-together)。分配器、Runner 和容器身份必须共享目录访问权限。
 
 Docker 提供方使用 `./docker`，配置为 Runner 通信参数加 `workspaceRoot`，不会再创建嵌套容器。它为经过验证的绑定目录提供原生文本访问，显示路径为 `/workspace`。Harness 分配器、Runner 和容器的 uid/gid 必须预先匹配。持久化二进制文件通过经过验证的目录提供方访问，不依赖容器存活。
 
@@ -234,7 +234,7 @@ Docker 提供方使用 `./docker`，配置为 Runner 通信参数加 `workspaceR
 
 [模式后端](src/mode-backend.ts) 将共享模式许可保留到消息和资源收尾。[目录资源](src/mode-directory-resources.ts) 保存完整且有总量限制的文件副本与私有恢复日志，在目标目录旁准备文件，再通过已同步的重命名发布。回滚分别尝试清理目标和恢复源状态。Linux 目录副本保留 setgid 与 sticky 权限位；发布时保留目标根目录的访问权限。符号链接及特殊条目会使目录保存失败；不完整的副本不会替换工作区。日志和备份保留到协调器以 ready 状态及更高 revision 授权清理。
 
-Vultr 模式资源适配器在准备目标前，用现有快照路径保存源状态。发布及源回收会替换关闭后的文件视图，确认过期快照已删除，再准备从已发布文件为新 VM 导入内容。删除失败时保留原始快照编号和候选文件副本，供重启后恢复。普通多会话 VM 的关闭与重开继续使用已保存快照。
+VFS 模式切换在生成受总量限制的目录检查点前，先让源 VM 停止写入。目标发布和回滚保留已验证的归属及共享工作区身份。从旧快照提供方迁移时，必须先验证 VFS 导入并持久发布，才能回收任何原快照；中断的导入保留原记录和数据。运维步骤见 [VM VFS 升级指南](../../../docs/upgrade-guide/v0.2.2-alpha.3/vm-vfs-storage/guide.zh.md)。
 
 </details>
 
@@ -270,9 +270,9 @@ Vultr 模式资源适配器在准备目标前，用现有快照路径保存源�
 <a id="known-limitations-and-deferred-work"></a>
 
 - **部署** — Runner 需要 Linux Unix socket 和单独配置的非 root 文件系统身份。Windows 命名管道仅用于通信测试。
-- **模式组合** — 部署必须提供协调器及显式后端映射；已分发的 profile 不会自动启用 `./modes`。单会话 VM 还需要经过共享文件系统验证的执行提供方。创建或删除结果不明时，提供方核实原资源前会阻止分配新 VM。
+- **模式组合** — 部署必须提供协调器及显式后端映射；已分发的 profile 不会自动启用 `./modes`。VM 模式需要经过共享文件系统验证的执行提供方。创建或删除结果不明时，提供方核实原资源前会阻止分配新 VM。
 - **能力** — Runner overlay 只暴露 Bash。SSH 文本文件需要单独的 `./files` 入口和绑定代次的后端访问。搜索、PowerShell、后台、终端、浏览器和间接工具仍须先完成隔离。Runner overlay 启用网页管理控件。
-- **云端保留** — 删除工作区登记不会移除已保留的云快照或私有副本；部署运维负责已删除工作区的保留策略。关闭后的下载副本仅保留普通文件和目录，符号链接及特殊条目仅保留在完整磁盘快照中。
+- **旧云端保留** — 删除工作区登记不会移除独立快照提供方保留的快照或私有副本；部署运维负责已删除工作区的保留策略。其关闭后的下载副本仅保留普通文件和目录，符号链接及特殊条目仅保留在完整磁盘快照中。
 - **云端验收** — `DSH_VULTR_TEST_CONFIG` 为[可选真实云端 Loader 测试](tests/vultr-loader.e2e.ts)指定私有部署 JSON，通过 `pnpm exec vitest run --config vitest.e2e.config.ts packages/sandbox/harness-sandbox/tests/vultr-loader.e2e.ts` 运行；`DSH_VULTR_TEST_EVIDENCE` 可选指定报告路径。测试创建两台计费 VM 和磁盘快照，以脚本模型验证真实 SSH 和已认证 HTTP，并移除带有唯一测试标签的资源；它不验证真实模型提供方或浏览器控件。
 - **空闲范围** — 回收面向单个应用实例管理所选后端，不合并多个 Harness 进程的活动；本地 Runner 接入不发现启动后直接通过 Runner 创建的容器。停用账号或缺失归属需要维护；后台循环不绕过原生授权。
 - **修改结果不明** — PUT/DELETE 响应丢失后需要部署维护确认旧 Runner 请求已收束。现有协议不能自动解除本进程阻止标记；仅重启 Harness 不能证明远端已收束。

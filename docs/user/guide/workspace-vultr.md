@@ -1,5 +1,5 @@
 ---
-description: "Deploy independent Vultr Workspace VMs with snapshot preservation and remote file access."
+description: "Deploy VFS-backed Workspace VM modes and operate the legacy snapshot provider."
 kind: "user-guide"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](workspace-vultr.zh.md)
 
 ## Prepare the deployment
 
-The Harness runs model transport, account authorization, execution coordination and Session storage. Each active Workspace receives one independent Vultr VM. Sessions in the same Workspace share that VM. The VM runs a non-root `workspace-exec` account and a standalone SSH helper, without Docker or a full Harness installation.
+The Harness runs model transport, account authorization, execution coordination and Session storage. The [Workspace mode deployment](#offer-vm-and-docker-modes-together) uses shared VFS storage without whole-VM snapshots. The standalone `/vultr` setup below retains snapshot behavior for existing deployments and legacy data export. Each active Workspace receives one independent Vultr VM. Sessions in the same Workspace share that VM. The VM runs a non-root `workspace-exec` account and a standalone SSH helper, without Docker or a full Harness installation.
 
 Prepare a Vultr management key in a private file owned by the Harness user, a private SSH client key, and a private durable state directory. Keep both credential files and the state directory outside every registered project. The management key stays on Harness. Do not use a Cloud Inference-only key for instance management. The state directory must have mode 0700; credential files must not grant group or other access. One Harness owns that directory through a kernel lock, which releases on exit or crash.
 
@@ -68,13 +68,16 @@ The default capacity is two instances. Polling, request and operation deadlines,
 
 The Vultr overlay enables Web sandbox controls and the shared idle plugin with a 30-minute idle threshold and 10-second sweep interval. Retained cloud preparation, file transfers and cleanup prevent idle closure. Upload restoration re-enters idle tracking and requires a fresh running observation before the timer starts. The conditional close calls this backend’s preservation path; no second timer is added. The panel displays common sandbox states and cloud failure guidance; detailed phases remain available through the management API. Use isolated credentials and disposable workspaces for cloud acceptance; the opt-in Loader test removes only its tagged resources and preserves unrelated account resources.
 
+<a id="offer-vm-and-docker-modes-together"></a>
+
 ## Offer VM and Docker modes together
 
 Use the [Workspace mode overlay](../../../apps/cli/config/examples/harness-docker-modes.patch.yml) to offer both Docker modes and both VM modes. Start with the [Docker mode settings](workspace-sandboxes.md) and add a `vultr` object to `DSH_DOCKER_MODES_CONFIG_JSON`.
 
-- `vultr.multi` uses the snapshot provider settings above. Keep the guest root at `/workspace`.
-- `vultr.single` uses the same allocation and helper settings with its own private `stateRoot` and `deploymentId`. Add `volumeId` for the existing Vultr VFS volume and `vfsScriptsRoot` for the deployment-owned directory containing `check-mount.sh` and `run-workspace-helper.sh`.
-- `vultr.vfs` uses the Harness-side `mountPoint`, its `mountTag` as a string, the direct child `workspaceRoot` on that mount, a private `stateRoot` for task identity bindings, and the reserved numeric `taskIds`. Run Web as a non-root user with those IDs in its supplementary groups. Follow the [VFS deployment instructions](../../../team-docs/VULTR-VFS.md#执行-vm-的挂载和权限).
+- `vultr.multi` and `vultr.single` each use the allocation and helper settings above, with separate private `stateRoot` directories and `deploymentId` values. Both require the same `volumeId` and `region`, plus `vfsScriptsRoot` for the deployment-owned directory containing `check-mount.sh` and `run-workspace-helper.sh`. Keep the guest root at `/workspace`; do not reuse the legacy snapshot state directory as a VFS allocation directory.
+- `vultr.vfs` uses the Harness-side `mountPoint`, its `mountTag` as a string, the direct child `workspaceRoot` on that mount, a private `stateRoot` for shared task identity bindings, and the reserved numeric `taskIds`. Both VM modes use this pool and retain the same UID/GID when switching between them.
+- Run Web as a non-root user with all reserved IDs in its supplementary groups. Identities remain assigned while workspace files are retained, even if their VM is closed or their Workspace is archived. A deployment with 128 reserved IDs has at most 128 such bindings; VM capacity and available host memory impose separate limits. Follow the [VFS deployment instructions](../../../team-docs/VULTR-VFS.md#执行-vm-的挂载和权限).
+- Optional `vultr.legacyMultiStateRoot` identifies the old snapshot provider's private state for importing a confirmed closed multi-session VM's complete file cache. It does not close live legacy VMs or delete snapshots. A Workspace with no legacy VM record initializes its VFS directory from registered files. Keep the original state and snapshots for operator inspection after verified import.
 
 ```sh
 export DSH_MULTIUSER_WORKSPACE_ROOT=/srv/antfarm/workspaces
@@ -82,4 +85,8 @@ export DSH_DOCKER_MODES_CONFIG_JSON="$(cat /srv/antfarm/workspace-modes.json)"
 pnpm run start:web --patch apps/cli/config/examples/harness-docker-modes.patch.yml --no-open
 ```
 
-The overlay starts new Workspaces in multi-session Docker mode. If you override `workspace.defaultMode`, choose a mode other than `single-vm`. In Antfarm, select **Single session · Sandbox Pro (VM)** before creating the first Session. DeepSeek Harness labels this choice **Single session · VM**. The switch prepares the VFS directory and moves any files already uploaded to the Workspace. In single-session VM mode, Web upload, listing and download use the verified VFS directory while the execution VM is closed. The first valid task opens the VM, and the last task releases it. A later message in the same Session starts a fresh VM with the files in that VFS directory. Listing and download remain available on a verified VFS directory during `cleanup_required`.
+The overlay starts new Workspaces in multi-session Docker mode. Keep a Docker mode as `workspace.defaultMode` and select the VM mode before creating the first Session. Antfarm calls the VM environment **Sandbox Pro (VM)**; DeepSeek Harness labels it **VM**. The switch prepares the VFS directory and moves any files already uploaded to the Workspace. In both VM modes, Web upload, listing and download use the verified VFS directory while the execution VM is closed. Listing and download remain available on a verified VFS directory during `cleanup_required`.
+
+In single-session VM mode, the first valid task opens the VM and the last task releases it. A later message in the same Session starts a fresh VM with the files in VFS. Multi-session VM mode retains the VM across turns and Sessions in the Workspace. Manual closure, idle closure, Workspace archival, or deletion fences the helper, waits for task processes and writes to settle, synchronizes and unmounts the guest, then confirms VFS detachment and VM deletion. No new whole-VM snapshot is created. Files stay in VFS; installed tools and configuration outside `/workspace` are lost on VM recreation. Use a deployment image or repeatable installation to provide those tools.
+
+Before moving snapshot-backed Workspaces to these modes, follow the [VM VFS upgrade guide](../../upgrade-guide/v0.2.2-alpha.3/vm-vfs-storage/guide.md). Retain the original records and snapshots until the workspace files have been verified and durably imported into VFS.

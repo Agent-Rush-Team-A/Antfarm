@@ -9,6 +9,7 @@ import type { WorkspaceModeCopyLimits } from './mode-copy.ts'
 import { WorkspaceModeDirectoryFiles, type WorkspaceModeDirectory } from './mode-directory-files.ts'
 import { WorkspaceModeDirectoryResources } from './mode-directory-resources.ts'
 import type { WorkspaceModeTarget } from './mode-routing.ts'
+import type { WorkspaceModeResources } from './mode-runtime.ts'
 
 /** Trusted Linux deployment coordinates and reserved task user/group numbers. */
 export interface SingleVmWorkspaceConfig {
@@ -128,8 +129,26 @@ export class SingleVmWorkspaces {
    * @returns Resources for the selected VM mode. Switching VM modes retains the workspace identity.
    */
   resources(mode: 'single-vm' | 'multi-vm', backend: WorkspaceModeTarget['execution'], limits: WorkspaceModeCopyLimits): WorkspaceModeDirectoryResources {
+    return this.directoryResources(mode, backend, limits, 'modes')
+  }
+
+  /**
+   * Prepare a destination for offline legacy file import without requiring an existing VFS source.
+   * The caller holds exclusive source ownership and retains the stable import identity across retries.
+   * @param mode - Destination VM mode sharing this identity store.
+   * @param backend - Destination execution provider, kept closed until publication completes.
+   * @param limits - Complete-copy budgets.
+   * @returns Destination operations with independent durable import evidence; source operations are unavailable.
+   */
+  importResources(mode: 'single-vm' | 'multi-vm', backend: WorkspaceModeTarget['execution'], limits: WorkspaceModeCopyLimits):
+  Pick<WorkspaceModeResources, 'stage' | 'publish' | 'discard'> {
+    return this.directoryResources(mode, backend, limits, 'imports')
+  }
+
+  private directoryResources(mode: 'single-vm' | 'multi-vm', backend: WorkspaceModeTarget['execution'],
+    limits: WorkspaceModeCopyLimits, journal: 'modes' | 'imports'): WorkspaceModeDirectoryResources {
     return new WorkspaceModeDirectoryResources({
-      ...limits, backend, mode, stateRoot: join(this.config.stateRoot, 'modes'), shareWithGroup: true,
+      ...limits, backend, mode, stateRoot: join(this.config.stateRoot, journal), shareWithGroup: true,
       directory: (change, signal) => {
         const scope = { workspaceId: change.workspaceId, project: change.project, signal, admit() {} }
         const location = this.location(scope)
@@ -137,7 +156,7 @@ export class SingleVmWorkspaces {
           location.assertCurrent()
           if (directory(location.root) !== undefined) {
             this.ownedDirectory(location.root, this.identity(change.workspaceId, change.project, change.changeId))
-          } else if (change.from === mode) throw new Error('VFS source directory is missing')
+          } else if (journal === 'modes' && change.from === mode) throw new Error('VFS source directory is missing')
         }
         return Promise.resolve({ ...location, assertCurrent })
       },

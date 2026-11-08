@@ -19,25 +19,81 @@ vi.mock('node:fs', async (original) => {
 
 const taskGroup = process.getgroups?.().find(id => id > 0 && id !== process.getuid?.() && id !== process.getgid?.())
 
+function cloudSettings(home: string) {
+  const vm = {
+    apiKeyFile: join(home, 'api-key'), sshKeyFile: join(home, 'ssh-key'),
+    helperArchive: join(home, 'helper.tar.gz'), helperArchiveHash: 'a'.repeat(64), helperHash: 'b'.repeat(64),
+    deploymentId: 'test', region: 'nrt', plan: 'vc2-1c-1gb', osId: 2284,
+    volumeId: randomUUID(), vfsScriptsRoot: join(home, 'scripts'),
+  }
+  const mountPoint = join(home, 'vfs')
+  return {
+    multi: { ...vm, stateRoot: join(home, 'multi') },
+    single: { ...vm, stateRoot: join(home, 'single') },
+    vfs: { mountPoint, mountTag: '113849250', workspaceRoot: join(mountPoint, 'workspaces'),
+      stateRoot: join(home, 'identities'), taskIds: [11001] },
+  }
+}
+
 describe.runIf(process.platform === 'linux')('Docker mode directory publication', () => {
-  test('rejects a default single-session VM before starting cloud providers', async () => {
-    const f = await fixture(1000, false, 1000, 1000, 'single-vm')
+  test.each(['single-vm', 'multi-vm'] as const)('rejects default %s before starting cloud providers', async (mode) => {
+    const f = await fixture(1000, false, 1000, 1000, mode)
     await f.sandboxFiber.dispose()
-    const vm = {
-      apiKeyFile: join(f.home, 'api-key'), sshKeyFile: join(f.home, 'ssh-key'), stateRoot: join(f.home, 'cloud-state'),
-      helperArchive: join(f.home, 'helper.tar.gz'), helperArchiveHash: 'a'.repeat(64), helperHash: 'b'.repeat(64),
-      deploymentId: 'test', region: 'nrt', plan: 'vc2-1c-1gb', osId: 2284,
-    }
-    const mountPoint = join(f.home, 'vfs')
     await expect(DockerModes.apply(f.ctx, {
       socketPath: f.socketPath, workspaceRoot: f.workspaceRoot, stateRoot: join(f.home, 'mode-state'), maxFiles: 100, maxBytes: 4096,
-      vultr: {
-        multi: vm,
-        single: { ...vm, volumeId: randomUUID(), vfsScriptsRoot: join(f.home, 'scripts') },
-        vfs: { mountPoint, mountTag: '113849250', workspaceRoot: join(mountPoint, 'workspaces'),
-          stateRoot: join(f.home, 'identities'), taskIds: [11001] },
-      },
-    })).rejects.toThrow('Vultr VFS requires workspace.defaultMode other than single-vm')
+      vultr: cloudSettings(f.home),
+    })).rejects.toThrow('Vultr VFS requires a Docker workspace.defaultMode')
+    expect(f.calls).toEqual([])
+  })
+
+  test.each(['volumeId', 'vfsScriptsRoot'] as const)('requires multi VM %s in parsed configuration', async (field) => {
+    const f = await fixture(1000, false, 1000, 1000, 'multi-docker')
+    await f.sandboxFiber.dispose()
+    const input = {
+      socketPath: f.socketPath, workspaceRoot: f.workspaceRoot, stateRoot: join(f.home, 'mode-state'), maxFiles: 100, maxBytes: 4096,
+      vultr: cloudSettings(f.home),
+    }
+    Reflect.deleteProperty(input.vultr.multi, field)
+    const parsed: unknown = JSON.parse(JSON.stringify(input))
+    expect(() => DockerModes.Config(parsed)).toThrow()
+    expect(f.calls).toEqual([])
+  })
+
+  test.each(['single', 'multi'] as const)('rejects a configured %s VM root other than /workspace', async (kind) => {
+    const f = await fixture(1000, false, 1000, 1000, 'multi-docker')
+    await f.sandboxFiber.dispose()
+    const cloud = cloudSettings(f.home)
+    const input = {
+      socketPath: f.socketPath, workspaceRoot: f.workspaceRoot, stateRoot: join(f.home, 'mode-state'), maxFiles: 100, maxBytes: 4096,
+      vultr: { ...cloud, [kind]: { ...cloud[kind], remoteRoot: '/unexpected' } },
+    }
+    const parsed: unknown = JSON.parse(JSON.stringify(input))
+    expect(() => DockerModes.Config(parsed)).toThrow()
+    expect(f.calls).toEqual([])
+  })
+
+  test.each(['volumeId', 'region'] as const)('rejects differing VM %s before touching Runner or cloud', async (field) => {
+    const f = await fixture(1000, false, 1000, 1000, 'multi-docker')
+    await f.sandboxFiber.dispose()
+    const cloud = cloudSettings(f.home)
+    cloud.multi[field] = field === 'volumeId' ? randomUUID() : 'ewr'
+    await expect(DockerModes.apply(f.ctx, {
+      socketPath: f.socketPath, workspaceRoot: f.workspaceRoot, stateRoot: join(f.home, 'mode-state'), maxFiles: 100, maxBytes: 4096,
+      vultr: cloud,
+    })).rejects.toThrow('must share the same VFS volume and region')
+    expect(f.calls).toEqual([])
+  })
+
+  test.each(['allocation', 'identity', 'legacy'] as const)('rejects a shared %s state root before starting providers', async (kind) => {
+    const f = await fixture(1000, false, 1000, 1000, 'multi-docker')
+    await f.sandboxFiber.dispose()
+    const cloud = cloudSettings(f.home)
+    if (kind === 'allocation') cloud.multi.stateRoot = cloud.single.stateRoot
+    if (kind === 'identity') cloud.vfs.stateRoot = cloud.multi.stateRoot
+    await expect(DockerModes.apply(f.ctx, {
+      socketPath: f.socketPath, workspaceRoot: f.workspaceRoot, stateRoot: join(f.home, 'mode-state'), maxFiles: 100, maxBytes: 4096,
+      vultr: { ...cloud, ...(kind === 'legacy' ? { legacyMultiStateRoot: cloud.multi.stateRoot } : {}) },
+    })).rejects.toThrow('state roots must be distinct')
     expect(f.calls).toEqual([])
   })
 
@@ -116,6 +172,7 @@ describe.runIf(process.platform === 'linux')('Docker mode directory publication'
       apiKeyFile: join(f.home, 'api-key'), sshKeyFile: join(f.home, 'ssh-key'), helperArchive: join(f.home, 'helper.tar.gz'),
       helperArchiveHash: createHash('sha256').update('fixture archive').digest('hex'), helperHash: 'a'.repeat(64),
       apiEndpoint: 'https://fixture.invalid/v2', deploymentId: 'test', region: 'nrt', plan: 'vc2-1c-1gb', osId: 2284,
+      volumeId: randomUUID(), vfsScriptsRoot: scriptsRoot,
     }
     await writeFile(cloud.apiKeyFile, 'fixture', { mode: 0o600 })
     await writeFile(cloud.sshKeyFile, 'fixture', { mode: 0o600 })
@@ -133,7 +190,7 @@ describe.runIf(process.platform === 'linux')('Docker mode directory publication'
         socketPath: f.socketPath, workspaceRoot: f.workspaceRoot, stateRoot: join(f.home, 'mode-state'), maxFiles: 20, maxBytes: 1024,
         vultr: {
           multi: { ...cloud, stateRoot: join(f.home, 'multi') },
-          single: { ...cloud, stateRoot: join(f.home, 'single'), volumeId: randomUUID(), vfsScriptsRoot: scriptsRoot },
+          single: { ...cloud, stateRoot: join(f.home, 'single') },
           vfs: { mountPoint, mountTag: '113849250', workspaceRoot, stateRoot: join(f.home, 'identities'), taskIds: [taskGroup] },
         },
       })
@@ -152,7 +209,7 @@ describe.runIf(process.platform === 'linux')('Docker mode directory publication'
       const download = await f.ctx.workspaceFileAccess.download(scope, 'input.csv', 100)
       expect(await new Response(download.body).text()).toBe('shared content')
       await download.settled
-      expect(inventory).toHaveBeenCalledOnce()
+      expect(inventory).not.toHaveBeenCalled()
       expect(create).not.toHaveBeenCalled()
       await plugin.dispose()
     } finally { mountRead.mockReset() }

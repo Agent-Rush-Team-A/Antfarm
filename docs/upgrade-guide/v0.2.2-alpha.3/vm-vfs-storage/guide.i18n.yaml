@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.2-alpha.3/vm-vfs-storage/guide.md
+/:
+  en: f4aeb351feecb85e
+  zh: 043fc02f2adb2342
+/workspace-vm-storage-moves-to-vfs:
+  en: 8415d74f9185a8c9
+  zh: fa156b03005bfc4d
+/workspace-vm-storage-moves-to-vfs/change:
+  en: e0e893b865fc9444
+  zh: 0599344c67e05e6e
+/workspace-vm-storage-moves-to-vfs/migration:
+  en: 9f0748a22681ef06
+  zh: 834ad42e3c95cda7

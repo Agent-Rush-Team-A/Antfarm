@@ -1,5 +1,5 @@
 ---
-description: "部署独立 Vultr 工作区 VM，提供快照保存与远程文件访问。"
+description: "部署基于 VFS 的工作区 VM 模式，并运维旧快照提供方。"
 kind: "user-guide"
 ---
 
@@ -9,7 +9,7 @@ kind: "user-guide"
 
 ## 准备部署
 
-Harness 运行模型通道、账号鉴权、执行协调和 Session 存储。每个活跃 Workspace 获得一台独立 Vultr VM，同一 Workspace 的会话共享该 VM。VM 运行非 root 的 `workspace-exec` 账号与独立 SSH helper，不安装 Docker 或完整 Harness。
+Harness 运行模型通道、账号鉴权、执行协调和 Session 存储。[工作区模式部署](#offer-vm-and-docker-modes-together)使用共享 VFS 存储，不创建整机快照。下文独立 `/vultr` 配置为现有部署和旧数据导出保留快照行为。每个活跃 Workspace 获得一台独立 Vultr VM，同一 Workspace 的会话共享该 VM。VM 运行非 root 的 `workspace-exec` 账号与独立 SSH helper，不安装 Docker 或完整 Harness。
 
 将 Vultr 管理密钥存入 Harness 用户拥有的私有文件，并准备私有 SSH 客户端密钥及私有持久状态目录。两个凭据文件和状态目录都必须位于所有登记项目之外。管理密钥保留在 Harness，不要用只有 Cloud Inference 权限的密钥管理实例。状态目录权限须为 0700，凭据文件不得授予组或其他用户访问权。一个 Harness 通过内核锁独占该目录；退出或崩溃时锁会释放。
 
@@ -68,13 +68,16 @@ pnpm run start:web --patch apps/cli/config/examples/harness-vultr.patch.yml --no
 
 Vultr overlay 启用网页沙箱控件及共用空闲插件，空闲阈值为 30 分钟、扫描间隔为 10 秒。持续的云端准备、文件传输和清理阻止空闲关闭。上传恢复 VM 后重新进入空闲跟踪，取得新的运行状态观察后才开始计时。条件关闭调用本后端的保存流程，不另加计时器。面板显示通用沙箱状态和云端失败提示；详细阶段可通过管理 API 获取。云验收使用隔离凭据和可丢弃工作区；显式启用的 Loader 测试仅清理自己的带标签资源，保留账号中的其他资源。
 
+<a id="offer-vm-and-docker-modes-together"></a>
+
 ## 同时提供 VM 和 Docker 模式
 
 使用[工作区模式叠加层](../../../apps/cli/config/examples/harness-docker-modes.patch.yml)同时提供两种 Docker 模式和两种 VM 模式。先准备 [Docker 模式配置](workspace-sandboxes.zh.md)，再向 `DSH_DOCKER_MODES_CONFIG_JSON` 添加 `vultr` 对象。
 
-- `vultr.multi` 使用上文的快照提供方配置。客体机根目录保持为 `/workspace`。
-- `vultr.single` 使用相同的分配与 helper 配置，指定独立的私有 `stateRoot` 和 `deploymentId`。添加已有 VFS 卷的 `volumeId`，并将 `vfsScriptsRoot` 指向部署方持有的脚本目录，其中包含 `check-mount.sh` 和 `run-workspace-helper.sh`。
-- `vultr.vfs` 指定 Harness 上的 `mountPoint`、字符串格式的 `mountTag`、挂载点的直接子目录 `workspaceRoot`、保存任务身份的私有 `stateRoot`，以及预留的数字 `taskIds`。Web 使用非 root 账号运行，补充组须包含这些 ID。[VFS 部署说明](../../../team-docs/VULTR-VFS.md#执行-vm-的挂载和权限)
+- `vultr.multi` 和 `vultr.single` 各自使用上文的分配与 helper 配置，指定独立的私有 `stateRoot` 目录和 `deploymentId`。两者必须使用相同 `volumeId` 和 `region`，并将 `vfsScriptsRoot` 指向部署方持有的脚本目录，其中包含 `check-mount.sh` 和 `run-workspace-helper.sh`。客体机根目录保持为 `/workspace`；不得把旧快照状态目录直接用作 VFS 分配目录。
+- `vultr.vfs` 使用 Harness 侧的 `mountPoint`、字符串形式的 `mountTag`、挂载上直接子目录 `workspaceRoot`、存储共享任务身份绑定的私有 `stateRoot` 和预留的数字 `taskIds`。两种 VM 模式共用此池，并在相互切换时保留相同 UID/GID。
+- Web 以非 root 用户运行，并把全部预留 ID 配置为补充组。工作区文件仍被保留时，身份继续占用，即使 VM 已关闭或工作区已归档。部署预留 128 个 ID 时，最多容纳 128 个此类绑定；VM 容量和可用宿主内存分别构成额外限制。部署步骤见 [VFS 说明](../../../team-docs/VULTR-VFS.md#执行-vm-的挂载和权限)。
+- 可选 `vultr.legacyMultiStateRoot` 指向旧快照提供方的私有状态，只导入已确认关闭的多会话 VM 的完整文件副本，不关闭仍运行的旧 VM，也不删除快照。没有旧 VM 记录的工作区从登记文件初始化 VFS 目录。验证导入后仍保留原状态和快照，由运维检查。
 
 ```sh
 export DSH_MULTIUSER_WORKSPACE_ROOT=/srv/antfarm/workspaces
@@ -82,4 +85,8 @@ export DSH_DOCKER_MODES_CONFIG_JSON="$(cat /srv/antfarm/workspace-modes.json)"
 pnpm run start:web --patch apps/cli/config/examples/harness-docker-modes.patch.yml --no-open
 ```
 
-此叠加层让新工作区默认使用多会话 Docker 模式。若覆盖 `workspace.defaultMode`，请选用 `single-vm` 以外的模式。在 Antfarm 中，请在创建首个会话前选择 **单会话 · Sandbox Pro (VM)**。DeepSeek Harness 中，这个选项显示为 **单会话 · VM**。切换会准备 VFS 目录并迁入已上传的文件。执行 VM 关闭时，网页仍可从已校验的 VFS 目录上传、列表和下载。首个有效任务打开 VM，最后一个任务收尾后回收。同一会话再次收到消息时，会启动新 VM 并使用该 VFS 目录中的文件。出现 `cleanup_required` 时，已校验的 VFS 目录仍可列表和下载。
+叠加层让新工作区从多会话 Docker 模式开始。`workspace.defaultMode` 保持为 Docker 模式，在创建首个会话前选择 VM 模式。Antfarm 将 VM 环境称为 **Sandbox Pro (VM)**；DeepSeek Harness 对应名称是 **VM**。切换会准备 VFS 目录，并搬入工作区中已有的上传文件。两种 VM 模式下，执行 VM 关闭时，网页仍直接通过已验证的 VFS 目录上传、列表和下载。处于 `cleanup_required` 时，已验证的 VFS 目录仍可供列表和下载。
+
+单会话 VM 模式下，首条有效任务启动 VM，最后一项任务释放 VM。同一会话中的后续消息会启动新 VM，并继续使用 VFS 中的文件。多会话 VM 在工作区的多个回合和会话间保留实例。手动关闭、空闲关闭、工作区归档或删除会禁止 helper 再启动，等待任务进程和写入收束，同步并卸载客体机的挂载，然后确认 VFS 连接解除和 VM 删除。不创建新的整机快照。文件留在 VFS 中；`/workspace` 之外安装的工具和配置会在 VM 重建时丢失。通过部署镜像或可重复执行的安装提供这些工具。
+
+将基于快照的工作区迁入这些模式前，按 [VM VFS 升级指南](../../upgrade-guide/v0.2.2-alpha.3/vm-vfs-storage/guide.zh.md)操作。工作区文件经验证并持久导入 VFS 之前，保留原记录和快照。
