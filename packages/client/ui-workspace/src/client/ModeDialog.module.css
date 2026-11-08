@@ -10,7 +10,7 @@
 .choice input { accent-color: var(--dsw-alias-label-primary); }
 .choice:has(input:disabled) { cursor: default; }
 .option .help { flex: 0 0 28px; padding: 0; color: var(--dsw-alias-label-secondary); }
-.helpDetails { display: grid; gap: 6px; padding-block: 4px; padding-inline: 1em 3px; }
+.helpDetails { display: grid; gap: 6px; padding-block: 4px; padding-inline: calc(1em + 7px) 3px; }
 .helpDetails > span { display: list-item; }
 .helpDetails strong { margin-inline-end: 0.25em; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; }
