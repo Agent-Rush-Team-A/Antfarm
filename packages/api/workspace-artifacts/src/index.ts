@@ -6,7 +6,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import type {} from '@deepseek-ai/dsh-api-remote-access'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller'
 import type {} from '@deepseek-ai/dsh-client-connection'
-import type {} from '@deepseek-ai/dsh-workspace'
+import { WorkspaceModeError } from '@deepseek-ai/dsh-workspace'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import { Remote, RemoteError, TypertRemoteService, type PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import { ArtifactFailure, artifactComponents, artifactFailure, listArtifacts, openArtifact, streamArtifact } from './storage.ts'
@@ -72,6 +72,7 @@ export class WorkspaceArtifacts extends TypertRemoteService {
    * @param path - slash-separated relative directory; empty names the root.
    * @param signal - caller lifetime, combined with provider withdrawal.
    * @returns bounded file metadata and the configured download cap.
+   * @throws RemoteError with reason `denied` when workspace archival prevents file admission.
    */
   @Remote
   async list(request: WorkspaceArtifactScope, path: string, signal: AbortSignal): Promise<WorkspaceArtifactListing> {
@@ -98,7 +99,7 @@ export class WorkspaceArtifacts extends TypertRemoteService {
         if (this.ctx.workspaceRegistry.get(request.workspaceId) !== workspace) throw new ArtifactFailure('not-found')
         return { path, ...listing, maxDownloadBytes: this.config.maxDownloadBytes }
       } catch (cause) {
-        const failure = artifactFailure(cause, lifetime)
+        const failure = this.failure(cause, lifetime)
         if (failure.reason === 'io') this.ctx.logger.warn('workspace artifact listing failed', failure)
         throw new RemoteError('workspace-artifact/failed', 'Workspace files are unavailable',
           { reason: failure.reason }, { cause: failure })
@@ -126,6 +127,13 @@ export class WorkspaceArtifacts extends TypertRemoteService {
       }).kind === 'allow'
   }
 
+  private failure(cause: unknown, signal: AbortSignal): ArtifactFailure {
+    if (!signal.aborted && cause instanceof WorkspaceModeError && cause.code === 'workspace/archived') {
+      return new ArtifactFailure('denied', { cause })
+    }
+    return artifactFailure(cause, signal)
+  }
+
   /**
    * Open an authorized stream shared by HTTP downloads and file previews.
    * @param workspaceId - registered workspace identity.
@@ -134,7 +142,7 @@ export class WorkspaceArtifacts extends TypertRemoteService {
    * @param peer - authenticated caller captured by Connection or Gateway.
    * @param maxBytes - consumer cap, further limited by the deployment download cap.
    * @returns the initial file extent and a body retaining its descriptor through settlement.
-   * @throws ArtifactFailure for denied, invalid, missing, non-regular or oversized files.
+   * @throws ArtifactFailure for denied or archived admission, invalid, missing, non-regular or oversized files.
    */
   async openDownload(
     workspaceId: WorkspaceId, path: string, signal: AbortSignal, peer: PeerScope, maxBytes: number,
@@ -167,7 +175,7 @@ export class WorkspaceArtifacts extends TypertRemoteService {
       })()
       void this.track(stream.settled).catch((cause: unknown) => { this.ctx.logger.warn('workspace download descriptor cleanup failed', cause) })
       return stream
-    })())
+    })().catch((cause: unknown) => { throw this.failure(cause, signal) }))
   }
 
   private async download(request: Request, peer: PeerScope): Promise<Response> {
@@ -189,7 +197,7 @@ export class WorkspaceArtifacts extends TypertRemoteService {
         'cache-control': 'no-store', 'x-content-type-options': 'nosniff',
       } })
     } catch (cause) {
-      const failure = artifactFailure(cause, signal)
+      const failure = this.failure(cause, signal)
       if (failure.reason === 'io') this.ctx.logger.warn('workspace download failed', failure)
       const status = failure.reason === 'denied' ? 403 : failure.reason === 'not-found' ? 404
         : failure.reason === 'too-large' ? 413 : failure.reason === 'io' ? 500 : 400

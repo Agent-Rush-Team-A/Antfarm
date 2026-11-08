@@ -8,6 +8,7 @@ import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection/sr
 import type { BrowserAuth } from '@deepseek-ai/dsh-client-connection/src/browser-auth.ts'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type { RemoteInvocation } from '@deepseek-ai/dsh-typert-protocol'
+import type { WorkspaceFileAccess } from '@deepseek-ai/dsh-fs/workspace-access'
 import { afterEach, vi } from 'vitest'
 import WorkspaceArtifacts from '../src/index.ts'
 
@@ -22,7 +23,7 @@ afterEach(async () => {
 })
 export const id = 'workspace-id' as WorkspaceId
 
-export async function setup(maxDownloadBytes = 3) {
+export async function setup(maxDownloadBytes = 3, fileAccess?: (ctx: Context) => WorkspaceFileAccess) {
   const home = await mkdtemp(join(tmpdir(), 'artifacts-route-'))
   const root = join(home, 'workspace')
   await mkdir(root)
@@ -45,7 +46,11 @@ export async function setup(maxDownloadBytes = 3) {
   vi.spyOn(connection, 'fetch', 'get').mockReturnValue({
     register: (route) => { registrations.push(route); return transport.register(route) },
   })
-  const fiber = ctx.plugin(WorkspaceArtifacts, { maxDownloadBytes })
+  if (fileAccess !== undefined) {
+    const accessFiber = ctx.plugin((scope: Context) => { fileAccess(scope) })
+    await accessFiber.await()
+  }
+  const fiber = ctx.plugin(WorkspaceArtifacts, { maxDownloadBytes, storage: fileAccess === undefined ? 'local' : 'provided' })
   await fiber.await()
   const service = ctx.get('workspaceArtifacts') as WorkspaceArtifacts
   const handler = connection.createSharedFetchHandler('/api')

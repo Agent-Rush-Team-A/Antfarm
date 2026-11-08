@@ -60,6 +60,8 @@ The Client exposes `workspaceArtifactFiles.listFiles` and `downloadFile` only wh
 
 Listing refusals use `workspace-artifact/failed` with a typed `reason`; HTTP failures return `{ ok: false, error: { reason } }`. Categories are `invalid-path`, `denied`, `not-found`, `not-regular`, `too-large`, `cancelled` and `io`. Internal causes stay in Host logs; the UI provides localized recovery copy and never saves partial bytes.
 
+Archived-workspace admission returns `denied`, including HTTP 403 for downloads. Restore the workspace before accessing its files; the refusal preserves stored files and does not start a sandbox.
+
 </details>
 
 -----

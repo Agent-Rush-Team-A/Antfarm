@@ -60,6 +60,8 @@ Client 仅在插件启用时提供 `workspaceArtifactFiles.listFiles` 和 `downl
 
 列表拒绝使用 `workspace-artifact/failed`，并携带类型化的 `reason`；HTTP 失败返回 `{ ok: false, error: { reason } }`。类别为 `invalid-path`、`denied`、`not-found`、`not-regular`、`too-large`、`cancelled` 和 `io`。内部原因留在 Host 日志；界面提供本地化恢复提示，不保存不完整的字节。
 
+归档工作区的准入拒绝返回 `denied`，下载请求使用 HTTP 403。访问文件前先恢复工作区；拒绝访问会保留已存储文件，也不会启动沙箱。
+
 </details>
 
 -----
