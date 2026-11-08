@@ -130,7 +130,7 @@ function sshRuntime() {
   const worlds = new Map<WorkspaceId, { running: RunnerRunningSandbox; services: WorkspaceSshServices }>()
   const services: WorkspaceSshServices = {
     root: '/remote', close: async () => {}, fs: {} as WorkspaceRuntimeFiles['fs'], subprocess: { spawn: vi.fn() },
-    ssh: { signal: new AbortController().signal, request: async <T>(method: string, _fields: unknown,
+    ssh: { signal: new AbortController().signal, checkHealth: async () => {}, request: async <T>(method: string, _fields: unknown,
       schema: z.ZodType<T>) => schema.parse(method === 'workspace.list' ? { entries: [], truncated: false } : null) },
   }
   const runtime: Pick<WorkspaceSshRuntime,
@@ -421,6 +421,21 @@ linuxTest('a connected helper without binary file support never publishes a read
   expect(f.controller.progress(f.a)).toMatchObject({ phase: 'failed', failure: 'connect' })
   expect(f.external.instances.size).toBe(1)
   expect(await f.controller.status(f.a)).toMatchObject({ state: 'cleanup_required' })
+})
+
+linuxTest.each(['list', 'download', 'upload'] as const)('a quarantined cloud workspace refuses %s before admitting another open', async (operation) => {
+  const f = await setup()
+  await f.controller.open(f.a, f.projectA)
+  f.worlds.delete(f.a)
+  expect(await f.controller.status(f.a)).toEqual({ state: 'cleanup_required' })
+  const opening = vi.spyOn(f.controller, 'open')
+  const scope = { workspaceId: f.a, project: f.projectA, signal: new AbortController().signal, admit() {} }
+  const result = operation === 'list' ? f.controller.list(scope, '', 20)
+    : operation === 'download' ? f.controller.download(scope, 'report.md', 20)
+      : f.controller.upload(scope, 'report.md', (async function* () { yield Buffer.from('report') })(), 20)
+  await expect(result).rejects.toThrow('Workspace cloud operation failed')
+  expect(opening).not.toHaveBeenCalled()
+  expect(f.external.instances.size).toBe(1)
 })
 
 linuxTest('mode publication replaces the closed file view and seeds a fresh VM instead of an obsolete snapshot', async () => {

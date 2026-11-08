@@ -40,7 +40,7 @@ function world(root: string, pending = false) {
   const request = async <T>(_method: string, _params: unknown, schema: z.ZodType<T>): Promise<T> => schema.parse(null)
   const close = vi.fn(async () => { connection.abort() })
   // The external SSH provider is the only mocked capability; lifecycle behavior belongs to the backend.
-  const services: WorkspaceSshServices = { root, close, ssh: { signal: connection.signal, request },
+  const services: WorkspaceSshServices = { root, close, ssh: { signal: connection.signal, request, checkHealth: async () => {} },
     fs: {} as FileSystem, subprocess: { spawn } }
   return { services, spawn, close, request, connection, cleanup, observed: observed.promise, completed }
 }

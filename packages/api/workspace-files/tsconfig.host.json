@@ -12,6 +12,18 @@
   ],
   "references": [
     {
+      "path": "../workspace-artifacts/tsconfig.host.json"
+    },
+    {
+      "path": "../../fs/fs-local"
+    },
+    {
+      "path": "../remote-access/tsconfig.host.json"
+    },
+    {
+      "path": "../../workspace/workspace"
+    },
+    {
       "path": "../../../vendor/cordis"
     },
     {

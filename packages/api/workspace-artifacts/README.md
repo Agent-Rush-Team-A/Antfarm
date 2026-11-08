@@ -25,6 +25,8 @@ Lists and downloads regular files retained in an authorized registered workspace
 <a id="use-this-package"></a>
 ## Use this package
 
+Host file previews share `openDownload()` with HTTP downloads. Consumers pass an authenticated Peer and a validated positive byte cap, consume or cancel the returned body, and await its descriptor settlement. Both paths use the configured local or provided storage and recheck workspace ownership throughout the read.
+
 Load the [file guide and opt-in overlay](../../../docs/user/workspace-artifacts.md) through a Web profile. The provider requires Connection, Remote Access, Typert, Workspace Controller and Workspace Registry. Default profiles do not enable it.
 
 | Config | Default | Meaning |

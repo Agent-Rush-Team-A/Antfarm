@@ -85,6 +85,11 @@ const WORKSPACE_ACTIONS = [
 
 /** Actions allowed on a session accounted by an owned workspace. */
 const SESSION_ACTIONS = [
+  'workspaceFiles/read',
+  'workspaceFiles/readBytes',
+  'workspaceFiles/stat',
+  'workspaceFiles/list',
+  'workspaceFiles/changes',
   'workspace/follow',
   'session/create',
   'session/list',

@@ -3830,6 +3830,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
+        signature: 'async checkHealth(): Promise<void>',
+        description: 'Share a bounded heartbeat with concurrent health observers and the lease timer.',
+        parameters: [],
+        returns: 'Completion after the helper confirms that the connection is healthy.',
+      },
+      {
         signature: 'async request<T>(method: string, params: unknown, result: z.ZodType<T>, signal?: AbortSignal, wait: boolean = false): Promise<T>',
         description: 'Send a helper operation; cancellation never replays an ambiguous mutation.',
         parameters: [{ name: 'method', description: 'the private helper operation.' }, { name: 'params', description: 'JSON request fields validated by the helper.' }, { name: 'result', description: 'response validation before returning provider-visible data.' }, { name: 'signal', description: 'cancellation, which does not undo completed remote effects.' }, { name: 'wait', description: 'allow a process observation to outlast the administrative deadline.' }],
@@ -4762,6 +4768,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'request', description: 'registered workspace identity.' }, { name: 'path', description: 'slash-separated relative directory; empty names the root.' }, { name: 'signal', description: 'caller lifetime, combined with provider withdrawal.' }],
         returns: 'bounded file metadata and the configured download cap.',
       },
+      {
+        signature: 'async openDownload( workspaceId: WorkspaceId, path: string, signal: AbortSignal, peer: PeerScope, maxBytes: number, ): Promise<WorkspaceFileDownload>',
+        description: 'Open an authorized stream shared by HTTP downloads and file previews.',
+        parameters: [{ name: 'workspaceId', description: 'registered workspace identity.' }, { name: 'path', description: 'relative file path without traversal or symlinks.' }, { name: 'signal', description: 'consumer cancellation.' }, { name: 'peer', description: 'authenticated caller captured by Connection or Gateway.' }, { name: 'maxBytes', description: 'consumer cap, further limited by the deployment download cap.' }],
+        returns: 'the initial file extent and a body retaining its descriptor through settlement.',
+        throws: ['ArtifactFailure for denied, invalid, missing, non-regular or oversized files.'],
+      },
     ],
   },
   {
@@ -4902,7 +4915,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: '@Remote async read( workspaceFileScope: WorkspaceFileScope, path: string, range: WorkspaceFileRange, signal: AbortSignal, ): Promise<WorkspaceFileText>',
         description: 'Read one page of lines from a UTF-8 file readable by the filesystem backend.',
-        parameters: [{ name: 'workspaceFileScope', description: 'header-derived workspace root for the Session identity on the wire.' }, { name: 'path', description: 'absolute path or path relative to the workspace root; files outside it are allowed.' }, { name: 'range', description: 'the line window; omitted fields take the page defaults.' }, { name: 'signal', description: 'caller cancellation.' }],
+        parameters: [{ name: 'workspaceFileScope', description: 'header-derived workspace root for the Session identity on the wire.' }, { name: 'path', description: 'absolute or workspace-relative path; user calls remain inside their registered workspace.' }, { name: 'range', description: 'the line window; omitted fields take the page defaults.' }, { name: 'signal', description: 'caller cancellation.' }],
         returns: 'the page, the file\'s version at the stat before it, and whether it reaches the last line.',
       },
       {
@@ -4925,8 +4938,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote({ mode: \'stream\' }) changes(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame>',
-        description: 'Watch one file or a directory\'s direct entries in the Session\'s filesystem. Files use the backend\'s read authority; directories remain workspace-scoped.',
-        parameters: [{ name: 'workspaceFileScope', description: 'header-derived workspace root for the Session identity on the wire.' }, { name: 'path', description: 'target path; the Host determines its type and confines directories to the workspace.' }, { name: 'signal', description: 'generation cancellation.' }],
+        description: 'Watch one file or a directory\'s direct entries in the Session\'s filesystem. Owner file watches use backend read authority; user watches and directories remain workspace-scoped.',
+        parameters: [{ name: 'workspaceFileScope', description: 'header-derived workspace root for the Session identity on the wire.' }, { name: 'path', description: 'target path; the Host determines its type and confines user targets and directories.' }, { name: 'signal', description: 'generation cancellation.' }],
         returns: '`ready` once the target watch is active, then current metadata for queued and live invalidations.',
         throws: ['RemoteError when watching is unavailable or a directory is outside the workspace.'],
       },
@@ -5062,7 +5075,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async openForUser(userId: UserId, workspaceId: WorkspaceId): Promise<RunnerRunningSandbox>',
-        description: 'Open a sandbox for an authenticated backend initiator.',
+        description: 'Open a sandbox for an authenticated backend initiator; count opening before resource admission yields.',
         parameters: [{ name: 'userId', description: 'Authenticated user from the initiating operation.' }, { name: 'workspaceId', description: 'Native workspace id.' }],
         returns: 'Full running identity for trusted execution integration.',
       },
@@ -5088,7 +5101,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'async closeIfIdleForUser( userId: UserId, workspaceId: WorkspaceId, target: SandboxIdleCloseTarget, idleTimeoutMs: number, signal: AbortSignal, ): Promise<SandboxIdleCloseResult>',
         description: 'Query the original container and synchronously admit closure only while the observed interval is still idle.',
         parameters: [{ name: 'userId', description: 'Authenticated backend owner; native authorization failures are preserved.' }, { name: 'workspaceId', description: 'Native workspace id.' }, { name: 'target', description: 'Original running identity, close version, activity revision and non-null idle start.' }, { name: 'idleTimeoutMs', description: 'Positive idle threshold from validated deployment configuration.' }, { name: 'signal', description: 'Scan lifetime, synchronously aborted on unload; does not cancel an already admitted close.' }],
-        returns: 'Skipped without revocation or DELETE, or confirmed closure; management and Runner failures reject.',
+        returns: 'Skipped without revocation or DELETE when idle eligibility expires or the scan aborts before close admission, or confirmed closure; management, Runner and resource cleanup failures reject.',
       },
       {
         signature: 'async closeForUser(userId: UserId, workspaceId: WorkspaceId, target?: SandboxCloseTarget): Promise<RunnerClosedSandbox>',

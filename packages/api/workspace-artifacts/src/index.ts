@@ -1,7 +1,7 @@
 /** Authorized workspace listings and descriptor-pinned binary downloads. */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { WorkspaceFileAccess } from '@deepseek-ai/dsh-fs/workspace-access'
+import type { WorkspaceFileAccess, WorkspaceFileDownload } from '@deepseek-ai/dsh-fs/workspace-access'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type {} from '@deepseek-ai/dsh-api-remote-access'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller'
@@ -126,15 +126,24 @@ export class WorkspaceArtifacts extends TypertRemoteService {
       }).kind === 'allow'
   }
 
-  private async download(request: Request, peer: PeerScope): Promise<Response> {
-    const signal = AbortSignal.any([request.signal, peer.signal, this.lifetime.signal])
-    try {
+  /**
+   * Open an authorized stream shared by HTTP downloads and file previews.
+   * @param workspaceId - registered workspace identity.
+   * @param path - relative file path without traversal or symlinks.
+   * @param signal - consumer cancellation.
+   * @param peer - authenticated caller captured by Connection or Gateway.
+   * @param maxBytes - consumer cap, further limited by the deployment download cap.
+   * @returns the initial file extent and a body retaining its descriptor through settlement.
+   * @throws ArtifactFailure for denied, invalid, missing, non-regular or oversized files.
+   */
+  async openDownload(
+    workspaceId: WorkspaceId, path: string, signal: AbortSignal, peer: PeerScope, maxBytes: number,
+  ): Promise<WorkspaceFileDownload> {
+    signal = AbortSignal.any([signal, peer.signal, this.lifetime.signal])
+    const limit = Math.min(maxBytes, this.config.maxDownloadBytes)
+    return this.track((async () => {
       signal.throwIfAborted()
-      const workspaceId = this.workspaceId(request)
-      if (!this.authorized(workspaceId, peer, 'download') || workspaceId === undefined) throw new ArtifactFailure('denied')
-      const query = new URL(request.url).searchParams
-      const path = query.get('path')
-      if (path === null || query.getAll('path').length !== 1) throw new ArtifactFailure('invalid-path')
+      if (!this.authorized(workspaceId, peer, 'download')) throw new ArtifactFailure('denied')
       artifactComponents(path)
       const workspace = this.ctx.workspaceRegistry.get(workspaceId)
       if (workspace === undefined) throw new ArtifactFailure('not-found')
@@ -145,19 +154,33 @@ export class WorkspaceArtifacts extends TypertRemoteService {
       }
       const stream = await (async () => {
         if (this.storage !== undefined) return this.storage.download(
-          { workspaceId, project: workspace.path, signal, admit }, path, this.config.maxDownloadBytes,
+          { workspaceId, project: workspace.path, signal, admit }, path, limit,
         )
         const file = await openArtifact(workspace.path, path, false, signal)
         let bytes: number
         try {
           bytes = (await file.stat()).size
           admit()
-          if (bytes > this.config.maxDownloadBytes) throw new ArtifactFailure('too-large')
+          if (bytes > limit) throw new ArtifactFailure('too-large')
         } catch (cause) { await file.close(); throw cause }
         return { bytes, ...streamArtifact(file, bytes, signal, admit) }
       })()
-      const { bytes } = stream
       void this.track(stream.settled).catch((cause: unknown) => { this.ctx.logger.warn('workspace download descriptor cleanup failed', cause) })
+      return stream
+    })())
+  }
+
+  private async download(request: Request, peer: PeerScope): Promise<Response> {
+    const signal = AbortSignal.any([request.signal, peer.signal, this.lifetime.signal])
+    try {
+      signal.throwIfAborted()
+      const workspaceId = this.workspaceId(request)
+      if (!this.authorized(workspaceId, peer, 'download') || workspaceId === undefined) throw new ArtifactFailure('denied')
+      const query = new URL(request.url).searchParams
+      const path = query.get('path')
+      if (path === null || query.getAll('path').length !== 1) throw new ArtifactFailure('invalid-path')
+      const stream = await this.openDownload(workspaceId, path, signal, peer, this.config.maxDownloadBytes)
+      const { bytes } = stream
       const name = encodeURIComponent(path.slice(path.lastIndexOf('/') + 1))
         .replace(/[!'()*]/gu, character => '%' + character.charCodeAt(0).toString(16))
       return new Response(stream.body, { headers: {

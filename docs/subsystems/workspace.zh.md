@@ -511,7 +511,21 @@ Optional Linux file provider; teardown cancels and awaits open requests and bodi
  * @returns bounded file metadata and the configured download cap.
  */
 @Remote async list(request: WorkspaceArtifactScope, path: string, signal: AbortSignal): Promise<WorkspaceArtifactListing>
+
+/**
+ * Open an authorized stream shared by HTTP downloads and file previews.
+ * @param workspaceId - registered workspace identity.
+ * @param path - relative file path without traversal or symlinks.
+ * @param signal - consumer cancellation.
+ * @param peer - authenticated caller captured by Connection or Gateway.
+ * @param maxBytes - consumer cap, further limited by the deployment download cap.
+ * @returns the initial file extent and a body retaining its descriptor through settlement.
+ * @throws ArtifactFailure for denied, invalid, missing, non-regular or oversized files.
+ */
+async openDownload( workspaceId: WorkspaceId, path: string, signal: AbortSignal, peer: PeerScope, maxBytes: number, ): Promise<WorkspaceFileDownload>
 ```
+
+Types: [WorkspaceFileDownload](filesystem.zh.md)
 
 Source: [`packages/api/workspace-artifacts/src/index.ts`](../../packages/api/workspace-artifacts/src/index.ts)
 
@@ -636,7 +650,7 @@ Host Remote file reads and workspace directory observations over the composed fi
 /**
  * Read one page of lines from a UTF-8 file readable by the filesystem backend.
  * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
- * @param path - absolute path or path relative to the workspace root; files outside it are allowed.
+ * @param path - absolute or workspace-relative path; user calls remain inside their registered workspace.
  * @param range - the line window; omitted fields take the page defaults.
  * @param signal - caller cancellation.
  * @returns the page, the file's version at the stat before it, and whether it reaches the last line.
@@ -673,9 +687,9 @@ Host Remote file reads and workspace directory observations over the composed fi
 
 /**
  * Watch one file or a directory's direct entries in the Session's filesystem.
- * Files use the backend's read authority; directories remain workspace-scoped.
+ * Owner file watches use backend read authority; user watches and directories remain workspace-scoped.
  * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
- * @param path - target path; the Host determines its type and confines directories to the workspace.
+ * @param path - target path; the Host determines its type and confines user targets and directories.
  * @param signal - generation cancellation.
  * @returns `ready` once the target watch is active, then current metadata for queued and live invalidations.
  * @throws RemoteError when watching is unavailable or a directory is outside the workspace.

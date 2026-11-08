@@ -335,6 +335,14 @@ describe('multiuser authentication and ownership', () => {
 
     const alicePeer = userPeer(fixture.ctx, aliceUser.userId)
     const bobPeer = userPeer(fixture.ctx, bobUser.userId)
+    for (const action of ['workspaceFiles/read', 'workspaceFiles/readBytes', 'workspaceFiles/stat', 'workspaceFiles/list', 'workspaceFiles/changes'] as const) {
+      expect(fixture.ctx.remoteAccess.decide({ principal: alicePeer.principal, action,
+        resources: [{ kind: 'session', id: SessionId(aliceSession) }],
+      })).toMatchObject({ kind: 'allow' })
+      expect(fixture.ctx.remoteAccess.decide({ principal: bobPeer.principal, action,
+        resources: [{ kind: 'session', id: SessionId(aliceSession) }],
+      })).toMatchObject({ kind: 'deny' })
+    }
     for (const action of ['workspaceArtifacts/list', 'workspaceArtifacts/download'] as const) {
       expect(fixture.ctx.remoteAccess.decide({ principal: alicePeer.principal, action,
         resources: [{ kind: 'workspace', id: aliceEntity.id }],
@@ -592,6 +600,18 @@ describe('visitor access', () => {
       .toMatchObject({ ok: false, error: { code: 'remote-access/denied' } })
     expect(await rpc(fixture.base, first.cookie, 'workspace/getMode', { request: { workspaceId } }))
       .toMatchObject({ ok: true })
+    const entity = fixture.ctx.workspaceRegistry.get(WorkspaceId(workspaceId))
+    if (entity === undefined) throw new Error('Visitor workspace missing')
+    const sessionId = SessionId('visitor-session')
+    fixture.listed.push({ header: header(sessionId, entity.path), revision: SessionPersistenceRevision('visitor1') })
+    await entity.attachSession(sessionId)
+    for (const action of ['workspaceFiles/read', 'workspaceFiles/readBytes', 'workspaceFiles/stat', 'workspaceFiles/list', 'workspaceFiles/changes'] as const) {
+      const resources = [{ kind: 'session' as const, id: sessionId }]
+      expect(fixture.ctx.remoteAccess.decide({ principal: userPeer(fixture.ctx, first.user.userId).principal,
+        action, resources })).toMatchObject({ kind: 'allow' })
+      expect(fixture.ctx.remoteAccess.decide({ principal: userPeer(fixture.ctx, second.user.userId).principal,
+        action, resources })).toMatchObject({ kind: 'deny' })
+    }
   })
 
   it('keeps guest access disabled by default and enforces origin and account capacity', async () => {

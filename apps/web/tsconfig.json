@@ -32,6 +32,7 @@
     "tests/workspace-modes.e2e.ts",
     "tests/workspace-mode-ui.e2e.ts",
     "tests/multiuser.e2e.ts",
+    "tests/guest-file-preview.e2e.ts",
     "tests/sidebar-drawer.e2e.ts",
     "tests/creation-recommendations.e2e.ts",
     "tests/plugin-recommendations.e2e.ts",

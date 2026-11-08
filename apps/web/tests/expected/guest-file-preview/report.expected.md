@@ -1,0 +1,6 @@
+- text: <workspace>/report.md
+- button "Open with": Markdown
+- button "Read the file again"
+- button "Show file tree"
+- heading "Guest revenue" [level=1]
+- paragraph: "Total: 814"

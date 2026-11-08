@@ -58,11 +58,11 @@ Antfarm 工作台把账号控件放在侧栏底部，折叠侧栏时一同隐藏
 | --- | --- | --- |
 | global | `workspace/create`、`workspace/follow`、`session/list`、`session/search`、`session/control`、`session/modelCatalog`、`session/canOpenWorkspacePath` | 列表与 follow 方法经 `ctx.remoteAccess.allows()` 逐项过滤。 |
 | workspace | `session/create`、`workspace/follow`、`workspace/rename`、`workspace/delete`、`workspace/insertBefore`、`workspace/insertSessionBefore`、`workspaceUpload/limits`、`workspaceUpload/upload`, `workspaceArtifacts/list`, `workspaceArtifacts/download` | condition 在判定时重新检查归属行。 |
-| session | `workspace/follow`、`session/create`、`session/list`、`session/search`、`session/control`、`session/page`、`session/events`、`session/observeEvent`、`session/observeProjections`、`session/state`、`session/observeState`、`session/wait`、`session/follow`、`session/projections`、`session/prompt`、`session/updateQueue`、`session/cancel`、`session/rename`、`session/fork`、`session/selectModel`、`workspace/insertSessionBefore`、`workspace/archiveSession`、`workspace/unarchiveSession`、`workspace/pinSession`、`workspace/unpinSession`，以及五个 `event:api-session/*` 通知 | Session 成员关系来自权威工作区记录。 |
+| session | `workspaceFiles/read`、`workspaceFiles/readBytes`、`workspaceFiles/stat`、`workspaceFiles/list`、`workspaceFiles/changes`、`workspace/follow`、`session/create`、`session/list`、`session/search`、`session/control`、`session/page`、`session/events`、`session/observeEvent`、`session/observeProjections`、`session/state`、`session/observeState`、`session/wait`、`session/follow`、`session/projections`、`session/prompt`、`session/updateQueue`、`session/cancel`、`session/rename`、`session/fork`、`session/selectModel`、`workspace/insertSessionBefore`、`workspace/archiveSession`、`workspace/unarchiveSession`、`workspace/pinSession`、`workspace/unpinSession`，以及五个 `event:api-session/*` 通知 | Session 成员关系来自权威工作区记录。 |
 
 已认证账号也可调用个人 `userCredentials` API；[个人凭证插件](../user-credentials/README.zh.md)独立于工作区权限检查记录归属。`workspaceRoot` 向 Host 插件提供分配根目录，用于确保私有文件不在挂载目录内。
 
-其余入口均在派发前拒绝，包括 `workspace/initializeDefault`、仅带 cwd 的 `session/create`、模型默认值写入、附件读取、文件服务、终端、后台任务、设置、全局凭证以及未显式提供资源作用域授权的精确 Fetch 路由。[工作区上传](../workspace-upload/README.zh.md)在上限读取和原始上传路由中均检查工作区归属权限。[工作区文件](../workspace-artifacts/README.zh.md)会检查列表访问的工作区归属，并在二进制下载过程中持续复查。非 global 资源被拒绝时返回 `remote-access/denied` 与 `reason: "not-found"`，不泄露其他账号的资源身份。
+其余入口均在派发前拒绝，包括 `workspace/initializeDefault`、仅带 cwd 的 `session/create`、模型默认值写入、附件读取、未授权的文件服务、终端、后台任务、设置、全局凭证以及未显式提供资源作用域授权的精确 Fetch 路由。[工作区上传](../workspace-upload/README.zh.md)在上限读取和原始上传路由中均检查工作区归属权限。[工作区文件](../workspace-artifacts/README.zh.md)会检查列表访问的工作区归属，并在二进制下载过程中持续复查。非 global 资源被拒绝时返回 `remote-access/denied` 与 `reason: "not-found"`，不泄露其他账号的资源身份。
 
 <a id="configuration"></a>
 ## 配置
@@ -108,7 +108,7 @@ pnpm exec tsx scripts/multiuser-provision.ts --storage-root "$DSH_HOME/storages"
 <a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与暂缓事项
 
-- 普通用户仍不能访问旧版文件、附件、导出、终端、设置和精确 Fetch 路由。显式挂载的工作区上传服务实现自己的归属检查。
+- 除受工作区限制的文件预览外，普通用户仍不能访问旧版文件、附件、导出、终端、设置和精确 Fetch 路由。显式挂载的工作区上传服务实现自己的归属检查。
 - 普通用户不能修改全局设置或默认模型选择。
 - 账号认证不提供进程隔离。只有登记的隔离实现能获得工具执行例外；普通宿主工具仍被拒绝。
 - 自助注册、密码找回、OAuth/OIDC、共享和用户 API key 不在本任务范围。
