@@ -1,4 +1,4 @@
-/** Single-session Vultr preparation and generation-gated execution on the native VFS volume. */
+/** Task and persistent Vultr preparation with generation-gated execution on native VFS. */
 import { createHash, randomBytes } from 'node:crypto'
 import { readFile, realpath } from 'node:fs/promises'
 import { isIP } from 'node:net'
@@ -37,7 +37,7 @@ export const singleVmAllocation = z.strictObject({
 export type SingleVmAllocation = z.infer<typeof singleVmAllocation>
 
 type Settings = Pick<ResolvedConfig, 'deploymentId' | 'region' | 'plan' | 'osId' | 'maxInstances' | 'operationTimeoutMs' | 'pollIntervalMs'>
-  & { readonly volumeId: VultrVolumeId }
+  & { readonly volumeId: VultrVolumeId; readonly recoveryPolicy: 'task' | 'workspace' }
 type Runtime = Pick<WorkspaceSshRuntime, 'bind' | 'open' | 'status' | 'execute' | 'files' | 'cancel' | 'close' | 'releaseStopped' | 'dispose'>
 type Records = Pick<CloudWorkspaceRecords<SingleVmAllocation>, 'load' | 'save' | 'remove' | 'outside' | 'close'>
 
@@ -50,9 +50,11 @@ interface Slot {
   record?: SingleVmAllocation
   opening?: Promise<RunnerRunningSandbox>
   closing?: Promise<RunnerClosedSandbox>
+  needsReconnect?: boolean
+  runtimeGeneration?: SandboxContainerId
 }
 
-/** Cloud and VFS configuration for the single-session provider. */
+/** Cloud and VFS configuration shared by task and persistent providers. */
 export interface SingleVmVultrConfig extends Omit<VultrSettings, 'remoteRoot' | 'maxSavedBytes' | 'maxSavedFiles'> {
   /** UUID of the existing volume on the Harness host. */
   readonly volumeId: string
@@ -71,7 +73,7 @@ export class SingleVmVultrBackend {
   private startupRecovery: Promise<void> | undefined
 
   /**
-   * @param settings - Resolved allocation and volume settings.
+   * @param settings - Resolved allocation, volume and task or persistent recovery policy.
    * @param api - Authenticated Vultr transport.
    * @param records - Exclusive private allocation storage.
    * @param workspaces - Verified VFS workspace mapping and task identities.
@@ -86,8 +88,9 @@ export class SingleVmVultrBackend {
     private readonly provisioning: VultrVfsProvisioning, private readonly runtime: Runtime,
     private readonly report: (record: SingleVmAllocation, cause: unknown) => void) {}
 
-  /** Quarantine every prior allocation and reconcile them serially without blocking unrelated startup. */
+  /** Preserve fully mounted persistent allocations for verified reconnect; reclaim other retained allocations. */
   async initialize(): Promise<void> {
+    const recovery: WorkspaceId[] = []
     for (const record of await this.records.load()) {
       if (record.deploymentId !== this.settings.deploymentId || record.volumeId !== this.settings.volumeId
         || record.region !== this.settings.region || record.plan !== this.settings.plan
@@ -95,10 +98,14 @@ export class SingleVmVultrBackend {
         throw new Error('Single VM deployment differs from retained allocation records')
       }
       this.records.outside(record.project)
-      this.slots.set(record.workspaceId, { project: record.project, record: { ...record, state: 'cleanup_required' } })
+      const reconnect = this.settings.recoveryPolicy === 'workspace' && record.state === 'running' && record.phase === 'running'
+        && record.cleanup === undefined && record.instanceId !== undefined && record.attachment.state === 'attached'
+      this.slots.set(record.workspaceId, { project: record.project,
+        record: reconnect ? record : { ...record, state: 'cleanup_required' }, needsReconnect: reconnect })
+      if (!reconnect) recovery.push(record.workspaceId)
     }
     this.initialized = true
-    this.startupRecovery = this.recoverRetained([...this.slots.keys()])
+    this.startupRecovery = this.recoverRetained(recovery)
   }
 
   private async recoverRetained(ids: readonly WorkspaceId[]): Promise<void> {
@@ -123,11 +130,18 @@ export class SingleVmVultrBackend {
       if (current.project !== project) throw new RunnerResponseError('sandbox_workspace_conflict', 409, false)
       if (current.opening !== undefined) return current.opening
       if (current.closing !== undefined || current.record?.state === 'cleanup_required') {
+        if (current.closing !== undefined && this.settings.recoveryPolicy === 'workspace') {
+          throw new RunnerResponseError('sandbox_closing', 409, false)
+        }
         await this.recoverTask(id)
         return this.open(id, project)
       }
+      if (current.needsReconnect) {
+        current.opening = this.reconnectOnce(id, current).finally(() => { delete current.opening })
+        return current.opening
+      }
       const status = await this.status(id)
-      if (status.state === 'running') return status
+      if (status.state === 'running') { this.current(id, status.containerId); return status }
       throw new RunnerResponseError('sandbox_cleanup_required', 409, true)
     }
     if (this.slots.size >= this.settings.maxInstances) throw new RunnerResponseError('sandbox_capacity', 429, false)
@@ -137,6 +151,48 @@ export class SingleVmVultrBackend {
     this.slots.set(id, slot)
     slot.opening = this.openOnce(id, slot).finally(() => { delete slot.opening })
     return slot.opening
+  }
+
+  private async reconnectOnce(id: WorkspaceId, slot: Slot): Promise<RunnerRunningSandbox> {
+    const record = slot.record
+    if (record?.instanceId === undefined || record.attachment.state !== 'attached') {
+      throw new RunnerResponseError('sandbox_cleanup_required', 409, true)
+    }
+    const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(this.settings.operationTimeoutMs)])
+    try {
+      const directory = this.workspaces.resolve({ workspaceId: id, project: slot.project, signal, admit() {} })
+      const volume = await this.api.volume(record.volumeId, signal)
+      if (volume.id !== record.volumeId || volume.region !== record.region || volume.status !== 'active') {
+        throw new Error('Persistent VM VFS volume differs from the original active volume')
+      }
+      const instance = await this.waitReady(record, record.instanceId, signal, true)
+      const mountTag = await this.waitAttachment(record, record.instanceId, signal)
+      if (mountTag !== record.attachment.mountTag) throw new Error('Original VFS Mount Tag has changed')
+      directory.assertCurrent()
+      const connection = await this.provisioning.reconnect(record, instance, directory, mountTag, signal)
+      if (connection.workspace !== record.remoteRoot) throw new Error('Persistent VM helper has a different workspace root')
+      directory.assertCurrent()
+      const generation = cloudGeneration.parse(randomBytes(32).toString('hex'))
+      this.runtime.bind(id, { ...connection, instanceId: record.instanceId }, generation)
+      const running = await this.runtime.open(id, slot.project)
+      if (running.containerId !== generation) throw new Error('Persistent VM helper returned a different generation')
+      signal.throwIfAborted()
+      directory.assertCurrent()
+      slot.runtimeGeneration = generation
+      slot.needsReconnect = false
+      return running
+    } catch (error) {
+      slot.needsReconnect = false
+      slot.record = { ...record, state: 'cleanup_required' }
+      this.report(record, error)
+      try {
+        await this.save(slot, slot.record)
+        await this.reclaim(slot, record.generation)
+      } catch (cleanupError) {
+        error = new AggregateError([error, cleanupError], 'Persistent VM reconnect and reclamation failed')
+      }
+      throw new RunnerResponseError('cloud_open_failed', 503, this.slots.has(id), { cause: error })
+    }
   }
 
   private async openOnce(id: WorkspaceId, slot: Slot): Promise<RunnerRunningSandbox> {
@@ -225,7 +281,9 @@ export class SingleVmVultrBackend {
     slot.record = record
   }
 
-  private get deploymentTag(): string { return 'antfarm-single-' + this.settings.deploymentId }
+  private get deploymentTag(): string {
+    return (this.settings.recoveryPolicy === 'task' ? 'antfarm-single-' : 'antfarm-multi-vfs-') + this.settings.deploymentId
+  }
 
   private label(id: WorkspaceId, generation: SandboxContainerId): string {
     return this.deploymentTag + '-' + createHash('sha256').update(id).digest('hex').slice(0, 16) + '-' + generation.slice(0, 24)
@@ -280,17 +338,24 @@ export class SingleVmVultrBackend {
     if (slot === undefined) return this.closedStatus(id)
     if (slot.closing !== undefined) return { state: 'closing' }
     if (slot.opening !== undefined) return { state: 'starting' }
+    if (slot.needsReconnect) return { state: 'starting' }
     if (slot.record?.state !== 'running') return { state: 'cleanup_required' }
     const live = await this.runtime.status(id)
-    return live.state === 'running' && live.containerId === slot.record.generation ? live : { state: 'cleanup_required' }
+    return live.state === 'running' && live.containerId === (slot.runtimeGeneration ?? slot.record.generation)
+      ? live : { state: 'cleanup_required' }
   }
 
   /**
    * Confirm absence of an allocation or preserve the original record for the cleanup owner.
    * @param id - Authorized workspace.
-   * @returns Closed only when no allocation is retained, with reconciliation evidence after confirmed removal.
+   * @returns Persistent allocations close after confirmed VFS retirement; task allocations remain with their task owner.
    */
   close(id: WorkspaceId): Promise<RunnerClosedSandbox> {
+    if (this.settings.recoveryPolicy === 'workspace') {
+      const slot = this.slots.get(id)
+      if (slot?.opening !== undefined) return Promise.reject(new RunnerResponseError('sandbox_closing', 409, false))
+      return slot?.record === undefined ? Promise.resolve(this.closedStatus(id)) : this.reclaim(slot, slot.record.generation)
+    }
     return this.slots.has(id) ? Promise.reject(new RunnerResponseError('sandbox_cleanup_required', 409, true))
       : Promise.resolve(this.closedStatus(id))
   }
@@ -304,7 +369,11 @@ export class SingleVmVultrBackend {
   closeTask(id: WorkspaceId, generation: SandboxContainerId): Promise<RunnerClosedSandbox> {
     const slot = this.slots.get(id)
     if (slot?.opening !== undefined) return Promise.reject(new RunnerResponseError('sandbox_closing', 409, false))
-    return slot === undefined ? Promise.resolve(this.closedStatus(id)) : this.reclaim(slot, generation)
+    if (slot === undefined) return Promise.resolve(this.closedStatus(id))
+    if (slot.record === undefined || generation !== (slot.runtimeGeneration ?? slot.record.generation)) {
+      return Promise.reject(new RunnerResponseError('sandbox_workspace_conflict', 409, true))
+    }
+    return this.reclaim(slot, slot.record.generation)
   }
 
   /**
@@ -314,7 +383,9 @@ export class SingleVmVultrBackend {
   async recoverTask(id: WorkspaceId): Promise<void> {
     const slot = this.slots.get(id)
     if (slot?.closing !== undefined) await slot.closing
-    else if (slot?.record?.state === 'cleanup_required') await this.reclaim(slot, slot.record.generation)
+    else if (slot?.record !== undefined && (slot.record.state === 'cleanup_required' || slot.needsReconnect)) {
+      await this.reclaim(slot, slot.record.generation)
+    }
   }
 
   private reclaim(slot: Slot, generation: SandboxContainerId): Promise<RunnerClosedSandbox> {
@@ -448,8 +519,10 @@ export class SingleVmVultrBackend {
   }
 
   private current(id: WorkspaceId, generation: SandboxContainerId): void {
-    const record = this.slots.get(id)?.record
-    if (this.lifetime.signal.aborted || record?.state !== 'running' || record.generation !== generation) {
+    const slot = this.slots.get(id)
+    const record = slot?.record
+    if (this.lifetime.signal.aborted || slot?.needsReconnect || slot?.closing !== undefined
+      || record?.state !== 'running' || (slot?.runtimeGeneration ?? record.generation) !== generation) {
       throw new RunnerResponseError('sandbox_workspace_conflict', 409, false)
     }
   }
@@ -478,6 +551,23 @@ export class SingleVmVultrBackend {
  */
 export async function createSingleVmVultrBackend(ctx: Context, config: SingleVmVultrConfig,
   workspaces: SingleVmWorkspaces): Promise<SingleVmVultrBackend> {
+  return createVfsVultrBackend(ctx, config, workspaces, 'task')
+}
+
+/**
+ * Create a persistent provider sharing the VFS workspace mapping across Session turns.
+ * @param ctx - Deployment context.
+ * @param config - Cloud allocation and trusted provisioning assets, with a dedicated VFS allocation state root.
+ * @param workspaces - Shared VFS mapping used by files and mode transitions.
+ * @returns Initialized provider. The composition drains admission before disposal; close confirms guest retirement and cloud removal.
+ */
+export async function createMultiVmVultrBackend(ctx: Context, config: SingleVmVultrConfig,
+  workspaces: SingleVmWorkspaces): Promise<SingleVmVultrBackend> {
+  return createVfsVultrBackend(ctx, config, workspaces, 'workspace')
+}
+
+async function createVfsVultrBackend(ctx: Context, config: SingleVmVultrConfig,
+  workspaces: SingleVmWorkspaces, recoveryPolicy: Settings['recoveryPolicy']): Promise<SingleVmVultrBackend> {
   if (process.platform !== 'linux') throw new Error('Single VM Vultr requires a Linux Harness')
   const settings = Config({ ...config, remoteRoot: '/workspace' })
   z.string().regex(/^[a-zA-Z0-9_-]{1,32}$/u).parse(settings.deploymentId)
@@ -510,9 +600,9 @@ export async function createSingleVmVultrBackend(ctx: Context, config: SingleVmV
   const store = new CloudWorkspaceRecords(settings.stateRoot, singleVmAllocation)
   const runtime = new WorkspaceSshRuntime(ctx, { bindings: {}, maxExecutions: settings.maxExecutions,
     maxOutputBytes: settings.maxOutputBytes, graceMs: settings.graceMs })
-  const backend = new SingleVmVultrBackend({ ...settings, volumeId }, api, store, workspaces,
+  const backend = new SingleVmVultrBackend({ ...settings, volumeId, recoveryPolicy }, api, store, workspaces,
     provisioning.forVfs({ checkMount, launchHelper }), runtime, (record) => {
-      ctx.logger.warn('single-vm: workspace %s allocation %s instance %s failed at %s (reclamation %s)',
+      ctx.logger.warn('vfs-vm: workspace %s allocation %s instance %s failed at %s (reclamation %s)',
         record.workspaceId, record.label, record.instanceId ?? '(unconfirmed)', record.phase, record.cleanup ?? 'not started')
     })
   await store.initialize()

@@ -21,7 +21,7 @@ const instanceId = brandString<VultrInstance['id']>('e76abdcf-aeac-40c8-9e6e-bc2
 const freshInstanceId = brandString<VultrInstance['id']>('a60ccbd3-735c-4a1e-9038-f286361a4aaf')
 const stale = brandString<SandboxContainerId>('0'.repeat(64))
 const settings = { deploymentId: 'test', region: 'nrt', plan: 'vc2-1c-1gb', osId: 2284, volumeId,
-  maxInstances: 1, operationTimeoutMs: 10_000, pollIntervalMs: 1 }
+  maxInstances: 1, operationTimeoutMs: 10_000, pollIntervalMs: 1, recoveryPolicy: 'task' as const }
 
 type Fault = 'region' | 'attachment' | 'wrong-instance' | 'guest-readiness' | 'mount' | 'permission' | 'handshake' | 'create-hidden'
   | 'create-rejected' | 'create-limited' | 'attach-rejected' | 'attach-limited' | 'attach-not-found' | 'attachment-timeout'
@@ -130,6 +130,12 @@ function fixture(fault?: Fault) {
       workspace: fault === 'helper-root' ? '/unexpected' : '/workspace' }
   })
   const retire = vi.fn(async () => { requests.push('SSH retire') })
+  const reconnect = vi.fn(async (_record: SingleVmAllocation, vm: VultrInstance, location: typeof directory, tag: number) => {
+    expect(record()).toMatchObject({ phase: 'running', state: 'running', instanceId: vm.id,
+      attachment: { state: 'attached', mountTag: tag } })
+    expect(location).toBe(directory)
+    return { host: 'fixture', launch: { kind: 'executable' as const }, helper: '/helper', helperHash: 'a'.repeat(64), workspace: '/workspace' }
+  })
   const entered = Promise.withResolvers<undefined>()
   const handshake = Promise.withResolvers<undefined>()
   if (fault !== undefined) handshake.resolve(undefined)
@@ -138,7 +144,8 @@ function fixture(fault?: Fault) {
     bind: vi.fn((_id, _connection, reserved?: SandboxContainerId) => {
       if (reserved === undefined) throw new Error('Expected the durable generation')
       generation = reserved
-      expect(record()).toMatchObject({ phase: 'handshake', generation })
+      if (record().phase === 'handshake') expect(record()).toMatchObject({ generation })
+      expect(['handshake', 'running']).toContain(record().phase)
     }),
     open: vi.fn(async (): Promise<RunnerRunningSandbox> => {
       entered.resolve(undefined)
@@ -152,9 +159,10 @@ function fixture(fault?: Fault) {
     releaseStopped: vi.fn(async () => {}),
   }
   const report = vi.fn()
-  const make = () =>
-    new SingleVmVultrBackend(settings, api, records, { resolve: () => directory }, { bootstrap, connect, retire }, runtime, report)
-  return { make, record, records, requests, directory, api, connect, retire, runtime, report, entered, handshake,
+  const make = (recoveryPolicy: 'task' | 'workspace' = 'task') =>
+    new SingleVmVultrBackend({ ...settings, recoveryPolicy }, api, records, { resolve: () => directory },
+      { bootstrap, connect, reconnect, retire }, runtime, report)
+  return { make, record, records, requests, directory, api, connect, reconnect, retire, runtime, report, entered, handshake,
     setFault(value?: Fault) { fault = value },
     setMountTag(value: number) { mountTag = value },
     hideInstance() { visible = false },
@@ -274,7 +282,8 @@ test.each([
   await backend.initialize()
   await expect(backend.open(workspaceId, project)).rejects.toMatchObject({ code: 'cloud_open_failed', outcomeUnknown: retained })
   expect(f.report.mock.calls[0]?.[0]).toMatchObject({ phase, instanceId, attachment: { state: attachment } })
-  await expect(backend.status(workspaceId)).resolves.toEqual({ state: retained ? 'cleanup_required' : 'closed' })
+  await expect(backend.status(workspaceId)).resolves.toEqual(retained
+    ? { state: 'cleanup_required' } : { state: 'closed', reconciled: true })
   expect(() => { void backend.files(workspaceId, stale) }).toThrow('sandbox_workspace_conflict')
   if (phase !== 'handshake') expect(f.runtime.open).not.toHaveBeenCalled()
   expect(f.requests.includes('DELETE /instances/' + instanceId)).toBe(!retained)
@@ -514,4 +523,233 @@ test('an interrupted caller waits for the late allocation to be reclaimed', asyn
   expect(f.requests).toContain('DELETE /instances/' + instanceId)
   expect(lifecycle.status()).toBe('closed')
   await backend.dispose()
+})
+
+test('persistent VFS reuses one VM across workspace opens and explicitly closes without snapshots', async () => {
+  const f = fixture()
+  f.handshake.resolve(undefined)
+  const backend = f.make('workspace')
+  try {
+    await backend.initialize()
+    const first = await backend.open(workspaceId, project)
+    await expect(backend.open(workspaceId, project)).resolves.toEqual(first)
+    await backend.execute(workspaceId, executionRequest.parse({
+      expectedContainerId: first.containerId, executionId: 'persistent-first',
+      command: 'printf first', workdir: '.', timeoutMs: 1000,
+    }))
+    await backend.execute(workspaceId, executionRequest.parse({
+      expectedContainerId: first.containerId, executionId: 'persistent-second',
+      command: 'printf second', workdir: '.', timeoutMs: 1000,
+    }))
+    expect(f.runtime.execute).toHaveBeenCalledTimes(2)
+    expect(f.requests.filter(request => request === 'POST /instances')).toHaveLength(1)
+    expect(f.retire).not.toHaveBeenCalled()
+    await expect(backend.close(workspaceId)).resolves.toEqual({ state: 'closed', reconciled: true })
+    expect(f.requests.filter(request => request.startsWith('DELETE '))).toEqual([
+      'DELETE /vfs/' + volumeId + '/attachments/' + instanceId,
+      'DELETE /instances/' + instanceId,
+    ])
+    expect(f.requests.some(request => request.includes('snapshot'))).toBe(false)
+    expect(f.records.remove).toHaveBeenCalledWith(workspaceId)
+  } finally { await backend.dispose() }
+})
+
+test('persistent VFS restart rechecks the original mount and helper before reusing the same VM', async () => {
+  const f = fixture()
+  f.handshake.resolve(undefined)
+  const first = f.make('workspace')
+  await first.initialize()
+  const running = await first.open(workspaceId, project)
+  await first.dispose()
+  const originalReconnect = f.reconnect.getMockImplementation()
+  if (originalReconnect === undefined) throw new Error('Fixture reconnect is unavailable')
+  const reconnectEntered = Promise.withResolvers<undefined>()
+  const reconnectRelease = Promise.withResolvers<undefined>()
+  f.reconnect.mockImplementationOnce(async (...args) => {
+    reconnectEntered.resolve(undefined)
+    await reconnectRelease.promise
+    return originalReconnect(...args)
+  })
+  const restarted = f.make('workspace')
+  const openings: Promise<RunnerRunningSandbox>[] = []
+  try {
+    await restarted.initialize()
+    await expect(restarted.status(workspaceId)).resolves.toEqual({ state: 'starting' })
+    const one = restarted.open(workspaceId, project)
+    openings.push(one)
+    void one.catch(() => {}) // The assertions below observe the result after releasing the reconnect barrier.
+    await reconnectEntered.promise
+    const two = restarted.open(workspaceId, project)
+    openings.push(two)
+    void two.catch(() => {}) // Retain disposal failures if an earlier assertion interrupts this observer.
+    await expect(restarted.close(workspaceId)).rejects.toMatchObject({ code: 'sandbox_closing' })
+    expect(() => restarted.execute(workspaceId, executionRequest.parse({
+      expectedContainerId: running.containerId, executionId: 'before-reconnect',
+      command: 'true', workdir: '.', timeoutMs: 1000,
+    }))).toThrow('sandbox_workspace_conflict')
+    reconnectRelease.resolve(undefined)
+    const reconnected = await one
+    expect(reconnected).toMatchObject({ state: 'running' })
+    expect(reconnected.containerId).not.toBe(running.containerId)
+    await expect(two).resolves.toEqual(reconnected)
+    expect(() => restarted.execute(workspaceId, executionRequest.parse({
+      expectedContainerId: running.containerId, executionId: 'stale-after-reconnect',
+      command: 'true', workdir: '.', timeoutMs: 1000,
+    }))).toThrow('sandbox_workspace_conflict')
+    expect(f.reconnect).toHaveBeenCalledTimes(1)
+    expect(f.connect).toHaveBeenCalledTimes(1)
+    expect(f.requests.filter(request => request === 'POST /instances')).toHaveLength(1)
+    expect(f.requests.filter(request => request.startsWith('PUT '))).toHaveLength(1)
+    expect(f.retire).not.toHaveBeenCalled()
+    expect(f.record()).toMatchObject({ state: 'running', generation: running.containerId })
+    await expect(restarted.close(workspaceId)).resolves.toEqual({ state: 'closed', reconciled: true })
+  } finally {
+    reconnectRelease.resolve(undefined)
+    await Promise.allSettled(openings)
+    await restarted.dispose()
+  }
+})
+
+test('failed persistent reconnect waits for confirmed guest retirement before detaching its original VM', async () => {
+  const f = fixture()
+  f.handshake.resolve(undefined)
+  const first = f.make('workspace')
+  await first.initialize()
+  await first.open(workspaceId, project)
+  await first.dispose()
+  f.reconnect.mockRejectedValueOnce(new Error('Original guest mount changed'))
+  const retireEntered = Promise.withResolvers<undefined>()
+  const retireRelease = Promise.withResolvers<undefined>()
+  f.retire.mockImplementationOnce(async () => {
+    retireEntered.resolve(undefined)
+    await retireRelease.promise
+  })
+  const restarted = f.make('workspace')
+  try {
+    await restarted.initialize()
+    const opened = restarted.open(workspaceId, project)
+    const rejected = expect(opened).rejects.toMatchObject({ code: 'cloud_open_failed', outcomeUnknown: false })
+    await retireEntered.promise
+    expect(f.record()).toMatchObject({ state: 'cleanup_required', cleanup: 'draining' })
+    expect(f.requests.filter(request => request.startsWith('DELETE '))).toEqual([])
+    await expect(restarted.status(workspaceId)).resolves.toEqual({ state: 'closing' })
+    retireRelease.resolve(undefined)
+    await rejected
+    await expect(restarted.status(workspaceId)).resolves.toEqual({ state: 'closed', reconciled: true })
+    expect(f.requests.filter(request => request === 'POST /instances')).toHaveLength(1)
+  } finally {
+    retireRelease.resolve(undefined)
+    await restarted.dispose()
+  }
+})
+
+test('persistent reconnect failure retains unknown deletion and charges its original VM against capacity', async () => {
+  const f = fixture()
+  f.handshake.resolve(undefined)
+  const first = f.make('workspace')
+  await first.initialize()
+  await first.open(workspaceId, project)
+  await first.dispose()
+  f.setFault('delete-timeout')
+  f.reconnect.mockRejectedValueOnce(new Error('Helper reconnect failed'))
+  const restarted = f.make('workspace')
+  try {
+    await restarted.initialize()
+    await expect(restarted.open(workspaceId, project)).rejects.toMatchObject({ code: 'cloud_open_failed', outcomeUnknown: true })
+    expect(f.record()).toMatchObject({ state: 'cleanup_required', cleanup: 'deleting', instanceId })
+    await expect(restarted.status(workspaceId)).resolves.toEqual({ state: 'cleanup_required' })
+    await expect(restarted.open(secondId, '/registered/ws-2')).rejects.toMatchObject({ code: 'sandbox_capacity' })
+    expect(f.requests.filter(request => request === 'POST /instances')).toHaveLength(1)
+    f.setFault(undefined)
+    await expect(restarted.close(workspaceId)).resolves.toEqual({ state: 'closed', reconciled: true })
+  } finally { await restarted.dispose() }
+})
+
+test('persistent restart resumes interrupted detach instead of reconnecting or allocating another VM', async () => {
+  const f = fixture('detach-timeout')
+  const first = f.make('workspace')
+  await first.initialize()
+  await first.open(workspaceId, project)
+  await expect(first.close(workspaceId)).rejects.toMatchObject({ code: 'sandbox_cleanup_required', outcomeUnknown: true })
+  await first.dispose()
+  f.setFault(undefined)
+  const restarted = f.make('workspace')
+  try {
+    await restarted.initialize()
+    await restarted.recoverTask(workspaceId)
+    await expect(restarted.status(workspaceId)).resolves.toEqual({ state: 'closed', reconciled: true })
+    expect(f.reconnect).not.toHaveBeenCalled()
+    expect(f.retire).toHaveBeenCalledTimes(1)
+    expect(f.requests.filter(request => request === 'POST /instances')).toHaveLength(1)
+  } finally { await restarted.dispose() }
+})
+
+test('persistent close fences new opens until guest retirement and cloud removal finish', async () => {
+  const f = fixture()
+  f.handshake.resolve(undefined)
+  const backend = f.make('workspace')
+  const retireEntered = Promise.withResolvers<undefined>()
+  const retireRelease = Promise.withResolvers<undefined>()
+  f.retire.mockImplementationOnce(async () => {
+    retireEntered.resolve(undefined)
+    await retireRelease.promise
+  })
+  let closing: Promise<unknown> | undefined
+  try {
+    await backend.initialize()
+    await backend.open(workspaceId, project)
+    closing = backend.close(workspaceId)
+    await retireEntered.promise
+    await expect(backend.open(workspaceId, project)).rejects.toMatchObject({ code: 'sandbox_closing' })
+    await expect(backend.status(workspaceId)).resolves.toEqual({ state: 'closing' })
+    expect(f.requests.filter(request => request === 'POST /instances')).toHaveLength(1)
+    retireRelease.resolve(undefined)
+    await expect(closing).resolves.toEqual({ state: 'closed', reconciled: true })
+    expect(f.requests.filter(request => request === 'POST /instances')).toHaveLength(1)
+  } finally {
+    retireRelease.resolve(undefined)
+    await closing
+    await backend.dispose()
+  }
+})
+
+test('persistent reconnect quarantines local execution when saving cleanup state fails', async () => {
+  const f = fixture()
+  f.handshake.resolve(undefined)
+  const first = f.make('workspace')
+  await first.initialize()
+  const running = await first.open(workspaceId, project)
+  await first.dispose()
+  f.reconnect.mockRejectedValueOnce(new Error('Original mount could not be verified'))
+  f.records.save.mockRejectedValueOnce(new Error('Allocation journal is unavailable'))
+  const restarted = f.make('workspace')
+  try {
+    await restarted.initialize()
+    await expect(restarted.open(workspaceId, project)).rejects.toMatchObject({ code: 'cloud_open_failed', outcomeUnknown: true })
+    await expect(restarted.status(workspaceId)).resolves.toEqual({ state: 'cleanup_required' })
+    expect(() => restarted.execute(workspaceId, executionRequest.parse({
+      expectedContainerId: running.containerId, executionId: 'after-failed-save', command: 'true', workdir: '.', timeoutMs: 1000,
+    }))).toThrow('sandbox_workspace_conflict')
+    expect(f.requests.filter(request => request.startsWith('DELETE '))).toEqual([])
+    await expect(restarted.close(workspaceId)).resolves.toEqual({ state: 'closed', reconciled: true })
+  } finally { await restarted.dispose() }
+})
+
+test('persistent workspace teardown retires a restored VM without opening another helper generation', async () => {
+  const f = fixture()
+  f.handshake.resolve(undefined)
+  const first = f.make('workspace')
+  await first.initialize()
+  await first.open(workspaceId, project)
+  await first.dispose()
+  const restarted = f.make('workspace')
+  try {
+    await restarted.initialize()
+    await expect(restarted.status(workspaceId)).resolves.toEqual({ state: 'starting' })
+    await restarted.recoverTask(workspaceId)
+    await expect(restarted.status(workspaceId)).resolves.toEqual({ state: 'closed', reconciled: true })
+    expect(f.reconnect).not.toHaveBeenCalled()
+    expect(f.runtime.open).toHaveBeenCalledTimes(1)
+    expect(f.requests.filter(request => request === 'POST /instances')).toHaveLength(1)
+  } finally { await restarted.dispose() }
 })

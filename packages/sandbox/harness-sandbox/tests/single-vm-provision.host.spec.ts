@@ -109,6 +109,31 @@ test('a stale marker at the deadline never permits helper installation or mounti
   expect(child.exec.mock.calls.map(([program]) => program)).toEqual(['ssh'])
 })
 
+test('reconnect verifies the retained mounts and helper without reinstalling or remounting', async () => {
+  const f = await setup()
+  child.exec.mockResolvedValue({ stdout: '' })
+  const connection = await f.provisioning.reconnect(f.record, f.instance, f.directory, 113849250, new AbortController().signal)
+  expect(child.exec.mock.calls.map(([program]) => program)).toEqual(['ssh', 'ssh'])
+  const probe = child.exec.mock.calls[1]?.[1].at(-1) ?? ''
+  expect(probe).toContain("test ! -e '/opt/antfarm-vfs/retired'")
+  expect(probe).toContain("test \"$(id -u workspace-exec)\" = '11001'")
+  expect(probe).toContain("'/bin/bash' '/opt/antfarm-vfs/check-mount' '/srv/antfarm/vfs' '113849250' '/'")
+  expect(written(probe, '/opt/antfarm-vfs/reconnect-probe')).toContain("'113849250[/workspaces/ws-suffix]' '/workspaces/ws-suffix' '/workspace' 'read-write'")
+  expect(probe).toContain('sha256sum -c')
+  expect(probe).not.toContain('mount --bind')
+  expect(probe).not.toContain('mount -t virtiofs')
+  expect(probe).not.toContain('tar -xzf')
+  expect(connection).toMatchObject({ host: 'antfarm-workspace', workspace: '/workspace', helperHash: f.settings.helperHash })
+})
+
+test('reconnect rejects an unverified retained guest without changing its mounts', async () => {
+  const f = await setup()
+  child.exec.mockResolvedValueOnce({ stdout: '' }).mockRejectedValueOnce(new Error('Retained mount does not match'))
+  await expect(f.provisioning.reconnect(f.record, f.instance, f.directory, 113849250, new AbortController().signal))
+    .rejects.toThrow('Retained mount does not match')
+  expect(child.exec.mock.calls.map(([program]) => program)).toEqual(['ssh', 'ssh'])
+})
+
 test('an already cancelled SSH setup never probes the guest', async () => {
   const f = await setup()
   const reason = new Error('Allocation cancelled before SSH')

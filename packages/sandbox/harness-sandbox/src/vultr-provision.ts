@@ -55,6 +55,17 @@ export interface VultrVfsProvisioning {
   connect(record: BootTarget, instance: VultrInstance, directory: TaskDirectory, mountTag: number, signal: AbortSignal,
     beforeMount: () => Promise<void>): Promise<SshConfig>
   /**
+   * Verify retained mounts, task identity and installed helper before reconnecting after a provider restart.
+   * @param record - Original allocation and pinned bootstrap marker.
+   * @param instance - API-verified retained instance.
+   * @param directory - Registered volume directory and stable task identity.
+   * @param mountTag - Tag of the confirmed original attachment.
+   * @param signal - Recovery deadline.
+   * @returns Pinned helper coordinates; mismatched or retired guests reject without changing their mounts.
+   */
+  reconnect(record: BootTarget, instance: VultrInstance, directory: TaskDirectory,
+    mountTag: number, signal: AbortSignal): Promise<SshConfig>
+  /**
    * Fence helper startup, confirm task processes exited, and synchronize and unmount the original guest.
    * @param record - Original allocation, including its bootstrap marker.
    * @param instance - API-verified original VM.
@@ -124,6 +135,12 @@ export class VultrSshProvisioning implements VultrProvisioning {
           await beforeMount()
           await executeFile('ssh', ['-F', configFile, admin, command], { signal, maxBuffer: 64 * 1024 })
         })
+      },
+      reconnect: async (record, instance, directory, mountTag, signal) => {
+        const command = this.verifyWorkspace(directory, mountTag, scripts)
+        const configFile = await this.pinnedGuest(record, instance, signal)
+        await executeFile('ssh', ['-F', configFile, admin, command], { signal, maxBuffer: 64 * 1024 })
+        return this.helperConnection(record, configFile)
       },
       retire: async (record, instance, signal) => {
         const configFile = await this.pinnedGuest(record, instance, signal)
@@ -216,9 +233,12 @@ export class VultrSshProvisioning implements VultrProvisioning {
       'chown -R root:root ' + quote(install), 'chmod -R go-w ' + quote(install), 'rm -f ' + quote(remoteArchive),
     ].join('\n')
     await executeFile('ssh', ['-F', configFile, admin, command], { signal, maxBuffer: 64 * 1024 })
-    const helper = install + '/dsh-ssh-helper'
     await prepare?.(configFile)
-    return { host, configFile, launch: { kind: 'executable' }, helper, helperHash: this.settings.helperHash,
+    return this.helperConnection(record, configFile)
+  }
+
+  private helperConnection(record: BootTarget, configFile: string): SshConfig {
+    return { host, configFile, launch: { kind: 'executable' }, helper: this.helperDirectory + '/dsh-ssh-helper', helperHash: this.settings.helperHash,
       workspace: record.remoteRoot, requestTimeoutMs: this.settings.requestTimeoutMs }
   }
 
@@ -277,13 +297,42 @@ export class VultrSshProvisioning implements VultrProvisioning {
       command('/bin/bash', check, vfsRoot, tag, '/', source, 'traverse'),
       'mount --bind ' + command(source, guestWorkspace),
       write(probe, '#!/bin/sh\nexec ' + command('/bin/bash', check, guestWorkspace, tag + '[' + path + ']', path, guestWorkspace, 'read-write') + '\n'),
-      write(guestLaunch, [
-        '#!/bin/sh', 'set -eu', 'exec 9>>' + quote(guestHelperLock), '/usr/bin/flock -sn 9',
-        'test ! -e ' + quote(guestFence), 'exec ' + command(launch, task, guestWorkspace, this.helperDirectory + '/dsh-ssh-helper'), '',
-      ].join('\n')),
+      write(guestLaunch, this.vfsHelperStartup(task)),
       'chmod 0755 ' + command(check, launch, probe, guestLaunch),
       command(launch, task, guestWorkspace, probe),
       'rm -- ' + quote(probe),
+    ].join('\n')
+  }
+
+  private vfsHelperStartup(task: string): string {
+    return [
+      '#!/bin/sh', 'set -eu', 'exec 9>>' + quote(guestHelperLock), '/usr/bin/flock -sn 9',
+      'test ! -e ' + quote(guestFence),
+      'exec ' + [guestVfsSetup + '/launch', task, guestWorkspace, this.helperDirectory + '/dsh-ssh-helper'].map(quote).join(' '), '',
+    ].join('\n')
+  }
+
+  private verifyWorkspace(directory: TaskDirectory, mountTag: number, scripts: VultrVfsScripts): string {
+    const task = this.taskId(directory)
+    if (!Number.isSafeInteger(mountTag) || mountTag <= 0) throw new Error('Invalid native VFS Mount Tag')
+    const tag = String(mountTag)
+    const check = guestVfsSetup + '/check-mount'
+    const launch = guestVfsSetup + '/launch'
+    const probe = guestVfsSetup + '/reconnect-probe'
+    const command = (program: string, ...args: string[]): string => [program, ...args].map(quote).join(' ')
+    const digest = (path: string, content: string): string => 'printf "%s\\n" '
+      + quote(createHash('sha256').update(content).digest('hex') + '  ' + path) + ' | sha256sum -c - >/dev/null'
+    return [
+      'set -eu', 'exec 9>>' + quote(guestHelperLock), '/usr/bin/flock -xn 9', 'test ! -e ' + quote(guestFence),
+      'test "$(id -u workspace-exec)" = ' + quote(task), 'test "$(id -g workspace-exec)" = ' + quote(task),
+      ...[check, launch, guestLaunch].map(path => 'test ! -L ' + quote(path)
+        + '; test "$(stat -c %u:%g:%a -- ' + quote(path) + ')" = 0:0:755'),
+      digest(check, scripts.checkMount), digest(launch, scripts.launchHelper), digest(guestLaunch, this.vfsHelperStartup(task)),
+      'printf "%s\\n" ' + quote(this.settings.helperHash + '  ' + this.helperDirectory + '/dsh-ssh-helper') + ' | sha256sum -c - >/dev/null',
+      command('/bin/bash', check, vfsRoot, tag, '/', vfsRoot + directory.volumePath, 'traverse'),
+      write(probe, '#!/bin/sh\nexec ' + command('/bin/bash', check, guestWorkspace,
+        tag + '[' + directory.volumePath + ']', directory.volumePath, guestWorkspace, 'read-write') + '\n'),
+      'chmod 0755 ' + quote(probe), command(launch, task, guestWorkspace, probe), 'rm -- ' + quote(probe),
     ].join('\n')
   }
 
