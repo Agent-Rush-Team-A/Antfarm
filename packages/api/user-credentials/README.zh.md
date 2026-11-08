@@ -59,7 +59,10 @@ pnpm exec tsx scripts/user-credentials-key.ts --path "$DSH_HOME/secrets/user-cre
 
 可选的 `inferenceBindings` 数组将每个 pi-ai provider 绑定到精确的 `baseURL` 和账号内的 `credentialName`。pi-ai 路由必须配置 `credentialScope: request`；即使凭证消费者被卸载，也不会回退到部署密钥。例如绑定 provider `vultr`、接口 `https://api.vultrinference.com/v1` 和名称 `Vultr API Key`，再配置对应的 `openai-completions` 路由与所需模型。接口必须使用 HTTPS；`allowLoopbackHttp` 仅允许显式配置的本地测试服务。模型列表只展示已配置的元数据，不读取凭证；鉴权仅在推理时执行。推理在当前轮次捕获已认证提示的 principal，拒绝混合账号输入，并在解密前重新检查会话的当前归属。缺少有效轮次授权、同名凭证重复或目标接口变化时拒绝请求。Host 内部凭证 waterfall 不转发给浏览器，只有选定的传输层接收密钥。新增、替换和删除已绑定凭证只发布模型列表失效的元数据通知。
 
+可通过 `guestInferenceKeyFile` 指向工作区挂载之外的绝对路径私有普通文件。加载器拒绝末级软链接、空白内容、超过 `maxCredentialBytes` 的文件，以及 POSIX 上组或其他用户可访问的文件。只有通过游客入口创建的账号，才会在缺少个人凭证时对已配置的推理绑定使用此密钥。密钥保留在 Host，不通过凭证 API 返回。
+
 <a id="understand-the-implementation"></a>
+
 ## 理解实现
 
 <details>

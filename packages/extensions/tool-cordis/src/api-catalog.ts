@@ -2158,6 +2158,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'whether the account existed.',
       },
       {
+        signature: 'isGuest(userId: UserId): boolean',
+        description: 'Identify an account provisioned through the visitor entry.',
+        parameters: [{ name: 'userId', description: 'Authenticated account identifier.' }],
+        returns: 'Whether the account was provisioned for a visitor.',
+      },
+      {
+        signature: 'loginGuest(rateKey: string): Promise<LoginOutcome>',
+        description: 'Create a private visitor identity and issue its bounded login without exposing a password.',
+        parameters: [{ name: 'rateKey', description: 'address sharing the ordinary sign-in attempt budget.' }],
+        returns: 'a visitor login, or a refusal when guest access or capacity is unavailable.',
+      },
+      {
         signature: 'async login(username: string, password: string, rateKey: string): Promise<LoginOutcome>',
         description: 'Validate one account password and issue a persistent login.',
         parameters: [{ name: 'username', description: 'submitted account name.' }, { name: 'password', description: 'submitted password.' }, { name: 'rateKey', description: 'caller identity used for the attempt window.' }],
@@ -7530,7 +7542,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LoginOutcome',
-    declaration: 'export type LoginOutcome = {\n    readonly ok: true;\n    readonly token: string;\n    readonly expiresAt: number;\n    readonly user: MultiuserUser;\n} | {\n    readonly ok: false;\n    readonly reason: \'invalid\' | \'disabled\' | \'rate-limited\';\n    readonly retryAfterMs?: number;\n};',
+    declaration: 'export type LoginOutcome = {\n    readonly ok: true;\n    readonly token: string;\n    readonly expiresAt: number;\n    readonly user: MultiuserUser;\n} | {\n    readonly ok: false;\n    readonly reason: \'invalid\' | \'disabled\' | \'guest-capacity\' | \'rate-limited\';\n    readonly retryAfterMs?: number;\n};',
   },
   {
     name: 'LoginSessionRecord',
@@ -7886,7 +7898,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MultiuserUser',
-    declaration: 'export interface MultiuserUser {\n    readonly userId: UserId;\n    readonly username: string;\n}',
+    declaration: 'export interface MultiuserUser {\n    readonly userId: UserId;\n    readonly username: string;\n    readonly guest?: true | undefined;\n}',
   },
   {
     name: 'NativeFileApplication',

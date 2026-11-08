@@ -36,7 +36,7 @@ afterEach(async () => {
   }
 })
 
-async function setup(root?: string, config = {}, provisionKey = true) {
+async function setup(root?: string, config = {}, provisionKey = true, guestAccess = false) {
   const directory = root ?? await mkdtemp(join(tmpdir(), 'personal-credentials-'))
   const keyFile = join(directory, 'key')
   if (root === undefined && provisionKey) await writeFile(keyFile, randomBytes(32), { mode: 0o600, flag: 'wx' })
@@ -53,7 +53,7 @@ async function setup(root?: string, config = {}, provisionKey = true) {
   await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 })
   await ctx.plugin(CredentialsLocal, { path: join(directory, 'global.credentials.yaml') })
   await ctx.plugin({ inject: Connection.inject, apply: Connection.apply }, { multiuser: true })
-  await ctx.plugin(Multiuser, { workspaceRoot: join(directory, 'workspaces') })
+  await ctx.plugin(Multiuser, { workspaceRoot: join(directory, 'workspaces'), guestAccess })
   const fiber = ctx.plugin(UserCredentials, { encryptionKeyFile: keyFile, ...config })
   await fiber.await()
   async function login(username: string): Promise<PeerScope> {
@@ -69,6 +69,13 @@ async function setup(root?: string, config = {}, provisionKey = true) {
     return ctx.typertGateway.invoke({ peer, namespace: 'userCredentials', method, args: request === undefined ? {} : { request } }) as Promise<T>
   }
   return { ctx, root: directory, keyFile, fiber, login, invoke }
+}
+
+async function agentForAccount(ctx: Context, userId: UserId): Promise<Agent> {
+  const workspace = await ctx.multiuser.createUserWorkspace(userId)
+  const session = ctx.sessions.create(undefined, { meta: { cwd: workspace.path } })
+  await workspace.attachSession(session.id)
+  return { id: session.id, session, ctx, status: 'running' } as Agent
 }
 
 it('initializes an empty deployment once and preserves the key and credentials across reloads', async () => {
@@ -149,14 +156,8 @@ it('authorizes each current turn independently and refuses missing credentials, 
   const ownerA = alice.principal
   const ownerB = bob.principal
   await f.invoke(alice, 'create', { name: 'Test key', value: 'ALICE-INFERENCE-CANARY' })
-  async function agentFor(userId: UserId): Promise<Agent> {
-    const workspace = await f.ctx.multiuser.createUserWorkspace(userId)
-    const session = f.ctx.sessions.create(undefined, { meta: { cwd: workspace.path } })
-    await workspace.attachSession(session.id)
-    return { id: session.id, session, ctx: f.ctx, status: 'running' } as Agent
-  }
-  const a = await agentFor(ownerA.userId)
-  const b = await agentFor(ownerB.userId)
+  const a = await agentForAccount(f.ctx, ownerA.userId)
+  const b = await agentForAccount(f.ctx, ownerB.userId)
   async function claim(agent: Agent, principals: Array<typeof ownerA>, turn = 1, step = 1) {
     const messages = principals.map(principal => createUserMessage({ source: { kind: 'user', principal }, content: [{ type: 'text', text: 'hi' }] }))
     await f.ctx.waterfall('agent/pre-step', { agent, messages, turn, step, signal: new AbortController().signal,
@@ -313,4 +314,118 @@ it('contains a persistence failure and rejects canceled requests without changin
     args: { request: { name: 'Canceled', value: 'secret' } }, signal: canceled.signal,
   })).rejects.toBeDefined()
   expect(await f.invoke(alice, 'list')).toEqual([])
+})
+
+it.each(['empty', 'whitespace', 'oversized'] as const)('rejects a %s visitor inference key without changing its file', async (kind) => {
+  const f = await setup()
+  await f.fiber.dispose()
+  const guestInferenceKeyFile = join(f.root, 'guest-key')
+  const bytes = kind === 'empty' ? Buffer.alloc(0) : Buffer.alloc(kind === 'oversized' ? 33 : 32, kind === 'whitespace' ? ' ' : 'x')
+  await writeFile(guestInferenceKeyFile, bytes, { mode: 0o600, flag: 'wx' })
+  const rejected = f.ctx.plugin(UserCredentials, {
+    encryptionKeyFile: f.keyFile, guestInferenceKeyFile, maxCredentialBytes: 32,
+  })
+  await expect(rejected.await()).rejects.toThrow('Visitor inference key')
+  await rejected.dispose()
+  expect(await readFile(guestInferenceKeyFile)).toEqual(bytes)
+})
+
+it.skipIf(process.platform === 'win32')('rejects publicly readable visitor keys and final file symlinks', async () => {
+  const f = await setup()
+  await f.fiber.dispose()
+  const path = join(f.root, 'guest-key')
+  await writeFile(path, 'GUEST-INFERENCE-CANARY', { mode: 0o600, flag: 'wx' })
+  await chmod(path, 0o644)
+  const publicKey = f.ctx.plugin(UserCredentials, { encryptionKeyFile: f.keyFile, guestInferenceKeyFile: path })
+  await expect(publicKey.await()).rejects.toThrow('private regular file')
+  await publicKey.dispose()
+  await chmod(path, 0o600)
+  const alias = join(f.root, 'guest-key-alias')
+  await symlink(path, alias)
+  const linked = f.ctx.plugin(UserCredentials, { encryptionKeyFile: f.keyFile, guestInferenceKeyFile: alias })
+  await expect(linked.await()).rejects.toThrow()
+  await linked.dispose()
+  expect(await readFile(path, 'utf8')).toBe('GUEST-INFERENCE-CANARY')
+})
+
+it('rejects relative visitor keys, directories and aliases into workspace mounts', async () => {
+  const f = await setup()
+  await f.fiber.dispose()
+  const inside = join(f.root, 'workspaces', 'guest-key')
+  await writeFile(inside, 'GUEST-INFERENCE-CANARY', { mode: 0o600, flag: 'wx' })
+  const alias = join(f.root, 'workspace-guest-alias')
+  await symlink(join(f.root, 'workspaces'), alias, 'junction')
+  for (const guestInferenceKeyFile of ['relative-key', f.root, inside, join(alias, 'guest-key')]) {
+    const rejected = f.ctx.plugin(UserCredentials, { encryptionKeyFile: f.keyFile, guestInferenceKeyFile })
+    await expect(rejected.await()).rejects.toThrow()
+    await rejected.dispose()
+  }
+  expect(await readFile(inside, 'utf8')).toBe('GUEST-INFERENCE-CANARY')
+})
+
+it('uses a private visitor key only for an authorized guest turn on its exact inference binding', async () => {
+  const f = await setup(undefined, {}, true, true)
+  await f.fiber.dispose()
+  const guestInferenceKeyFile = join(f.root, 'guest-key')
+  const secret = 'GUEST-INFERENCE-CANARY'
+  const encoded = `\n${secret}\n`
+  await writeFile(guestInferenceKeyFile, encoded, { mode: 0o600, flag: 'wx' })
+  const baseURL = 'https://inference.example.test/v1'
+  const service = f.ctx.plugin(UserCredentials, {
+    encryptionKeyFile: f.keyFile, guestInferenceKeyFile, maxCredentialBytes: Buffer.byteLength(encoded),
+    inferenceBindings: [{ provider: 'guest-test', baseURL, credentialName: 'Test key' }],
+  })
+  await service.await()
+  await f.ctx.plugin(SessionStore)
+  await f.ctx.plugin(SessionProjectionRegistry)
+  await f.ctx.plugin(AgentRegistry)
+  await f.ctx.plugin(LlmRuntime)
+  const login = await f.ctx.multiuser.loginGuest('guest-test-address')
+  if (!login.ok) throw new Error('Guest login failed')
+  const admission = f.ctx.multiuser.admit({ headers: { cookie: 'dsh-login=' + login.token } }, false)
+  if (!('peer' in admission) || admission.peer.principal.kind !== 'user') throw new Error('Guest admission failed')
+  const guestPeer = admission.peer
+  const guest = admission.peer.principal
+  const alicePeer = await f.login('alice')
+  if (alicePeer.principal.kind !== 'user') throw new Error('Expected normal user')
+  const alice = alicePeer.principal
+  async function claim(agent: Agent, principals: Array<typeof guest>, turn = 1, signal = new AbortController().signal) {
+    const messages = principals.map(principal => createUserMessage({ source: { kind: 'user', principal }, content: [{ type: 'text', text: 'hi' }] }))
+    await f.ctx.waterfall('agent/pre-step', { agent, messages, turn, step: 1, signal,
+      modelSelection: { provider: 'guest-test', model: 'model' } }, () => Promise.resolve({ kind: 'enter' as const, messages }))
+  }
+  const guestAgent = await agentForAccount(f.ctx, guest.userId)
+  const aliceAgent = await agentForAccount(f.ctx, alice.userId)
+  const fallback = vi.fn(async () => 'DEPLOYMENT-FALLBACK-MUST-NOT-BE-USED')
+  const requestFor = (agent: Agent) => ({ provider: 'guest-test', baseURL, model: 'model', credentialScope: 'request' as const, sessionId: agent.id })
+  const resolve = (agent: Agent) => f.ctx.agents.withInitiator(agent,
+    () => f.ctx.waterfall('llm-pi-ai/resolve-api-key', requestFor(agent), fallback))
+  await claim(guestAgent, [guest])
+  await claim(aliceAgent, [alice])
+  await expect(resolve(guestAgent)).resolves.toBe(secret)
+  await expect(resolve(guestAgent)).resolves.toBe(secret)
+  await expect(resolve(aliceAgent)).rejects.toMatchObject({ code: 'PERSONAL_CREDENTIAL_MISSING' })
+  await f.invoke(alicePeer, 'create', { name: 'Test key', value: 'ALICE-INFERENCE-CANARY' })
+  await expect(resolve(aliceAgent)).resolves.toBe('ALICE-INFERENCE-CANARY')
+  await expect(f.invoke(guestPeer, 'list')).rejects.toMatchObject({ code: 'remote-access/denied' })
+  await expect(f.ctx.agents.withInitiator(guestAgent, () => f.ctx.waterfall('llm-pi-ai/resolve-api-key', {
+    ...requestFor(guestAgent), baseURL: 'https://other.example.test/v1',
+  }, fallback))).rejects.toMatchObject({ code: 'PERSONAL_CREDENTIAL_ENDPOINT' })
+  await expect(f.ctx.agents.withInitiator(guestAgent, () => f.ctx.waterfall('llm-pi-ai/resolve-api-key', {
+    ...requestFor(guestAgent), credentialScope: 'global',
+  }, fallback))).rejects.toMatchObject({ code: 'PERSONAL_CREDENTIAL_SCOPE' })
+  await claim(guestAgent, [alice], 2)
+  await expect(resolve(guestAgent)).rejects.toMatchObject({ code: 'PERSONAL_CREDENTIAL_UNAUTHORIZED' })
+  await claim(guestAgent, [guest, alice], 3)
+  await expect(resolve(guestAgent)).rejects.toMatchObject({ code: 'PERSONAL_CREDENTIAL_UNAUTHORIZED' })
+  const canceled = new AbortController()
+  await claim(guestAgent, [guest], 4, canceled.signal)
+  canceled.abort()
+  await expect(resolve(guestAgent)).rejects.toMatchObject({ code: 'PERSONAL_CREDENTIAL_UNAUTHORIZED' })
+  await claim(guestAgent, [guest], 5)
+  await expect(resolve(guestAgent)).resolves.toBe(secret)
+  await f.ctx.multiuser.disableUser(guest.userId)
+  await expect(resolve(guestAgent)).rejects.toMatchObject({ code: 'PERSONAL_CREDENTIAL_UNAUTHORIZED' })
+  expect(fallback).not.toHaveBeenCalled()
+  expect(await readFile(guestInferenceKeyFile, 'utf8')).toBe(encoded)
 })

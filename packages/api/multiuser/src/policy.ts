@@ -13,6 +13,8 @@ import type { PrincipalMap } from '@deepseek-ai/dsh-typert-protocol'
 
 /** Read-only ownership state the policy consults synchronously. */
 export interface MultiuserAccessIndex {
+  /** @param userId - admitted account. @returns whether its capabilities are limited to the visitor experience. */
+  isGuest?(userId: PrincipalMap['user']['userId']): boolean
   /**
    * Whether one user currently owns one workspace.
    * @param userId - account identity.
@@ -130,6 +132,14 @@ const SESSION_ROLE: RemoteAccessRole<'session'> = {
   resource: 'session',
   actions: SESSION_ACTIONS,
 }
+const GUEST_GLOBAL_ROLE: RemoteAccessRole<'global'> = {
+  name: 'multiuser:visitor', resource: 'global',
+  actions: GLOBAL_ACTIONS.filter(action => !action.startsWith('userCredentials/')),
+}
+const GUEST_WORKSPACE_ROLE: RemoteAccessRole<'workspace'> = {
+  name: 'multiuser:visitor-workspace', resource: 'workspace',
+  actions: WORKSPACE_ACTIONS.filter(action => action !== 'workspace/delete'),
+}
 
 /** Allow only the resources the account currently owns, rechecked at decision time. */
 export class MultiuserPolicy implements RemoteAccessPolicy<PrincipalMap['user']> {
@@ -141,8 +151,9 @@ export class MultiuserPolicy implements RemoteAccessPolicy<PrincipalMap['user']>
   /** @param principal - the authenticated account. @returns its current bindings. */
   bindings(principal: PrincipalMap['user']): readonly RemoteAccessBinding[] {
     const userId = principal.userId
+    const guest = this.index.isGuest?.(userId) === true
     const bindings: RemoteAccessBinding[] = [{
-      role: GLOBAL_ROLE,
+      role: guest ? GUEST_GLOBAL_ROLE : GLOBAL_ROLE,
       resource: { kind: 'global' },
     }]
     const workspaceCondition: RemoteAccessCondition<'workspace'> = ({ resource }) =>
@@ -151,7 +162,7 @@ export class MultiuserPolicy implements RemoteAccessPolicy<PrincipalMap['user']>
       this.checkSession(userId, resource.id)
     for (const workspaceId of this.index.ownedWorkspaces(userId)) {
       bindings.push({
-        role: WORKSPACE_ROLE,
+        role: guest ? GUEST_WORKSPACE_ROLE : WORKSPACE_ROLE,
         resource: { kind: 'workspace', id: workspaceId },
         condition: workspaceCondition,
       })

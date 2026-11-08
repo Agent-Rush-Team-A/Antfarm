@@ -1,6 +1,7 @@
 /** Registration-owned configuration gestures and settled Remote operations. */
 import type { Context } from '@deepseek-ai/cordis'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { WorkspaceMode } from '@deepseek-ai/dsh-workspace/types'
 import type { IWorkspaces, WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { modeFailureKey } from './mode-errors.ts'
 import { ModeOverlay, type ModeDialogInjected, type ModeSelection } from './ModeDialog.tsx'
@@ -15,9 +16,10 @@ export interface ModeControls {
  * Install the overlay and menu independently of optional execution providers.
  * @param ctx - Workspace plugin context.
  * @param workspaces - Authoritative client projection and mode commands.
+ * @param visibleModes - Optional mode choices exposed by the deployment.
  * @returns Configuration gestures for the Workspace row and first-Session flow.
  */
-export function registerModeUi(ctx: Context, workspaces: IWorkspaces): ModeControls {
+export function registerModeUi(ctx: Context, workspaces: IWorkspaces, visibleModes?: readonly WorkspaceMode[]): ModeControls {
   const selection = createSnapshotStore<ModeSelection | null>(null)
   const pending = createSnapshotStore<readonly WorkspaceId[]>([])
   const lifetime = new AbortController()
@@ -39,6 +41,7 @@ export function registerModeUi(ctx: Context, workspaces: IWorkspaces): ModeContr
     return operation
   }
   const actions: ModeDialogInjected = {
+    ...(visibleModes === undefined ? {} : { visibleModes }),
     hooks: { modeSelection: selection, modePending: pending },
     dismissMode: dismiss,
     refreshMode: (id) => {

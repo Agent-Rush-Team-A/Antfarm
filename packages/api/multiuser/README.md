@@ -39,12 +39,15 @@ Tool execution is denied by default, including preset contributions. A trusted i
 | Route | Method | Behavior |
 | --- | --- | --- |
 | `/auth/login` | POST | Bounded JSON login, origin-checked, rate-limited; sets an HttpOnly cookie. |
+| `/auth/guest` | POST | Creates a private visitor login when enabled, or reuses the current valid visitor login. |
 | `/auth/logout` | POST | Revokes the current login, disposes its Peer, clears the cookie; idempotent. |
 | `/auth/me` | GET | Returns the current account or 401. |
 | `/auth/client.js` | GET | Login document and account badge helper. |
-| `/auth/sign-in` | GET | Public login page, without the application or private boot state. |
+| `/auth/sign-in` | GET | Public login page with anonymous presentation bootstrap and no application modules or private account state. |
 
-Unauthenticated index requests redirect to the public `auth/sign-in` document relative to the index URL. Script references, login/logout requests and account refreshes preserve the deployment prefix; the browser derives the application root from the account script URL. Authenticated pages show the account and a logout control. Login changes refresh other tabs, and switching accounts clears browser-persisted application views before boot. A failed logout stays visible and can be retried. Active Peers expire at the login deadline; authentication responses and personalized index documents are not cacheable.
+Unauthenticated index requests redirect to the public `auth/sign-in` document relative to the index URL. Script references, login/logout requests and account refreshes preserve the deployment prefix; the browser derives the application root from the account script URL. Authenticated pages show the account and a logout control. Login changes refresh other tabs, and switching accounts clears browser-persisted application views before boot. When browser-local locale preferences are configured, the login page and account control offer English and Chinese, retain entered form values while switching languages, and follow the application document language. The public login document uses the same Host theme bootstrap as the application, including system dark mode. A failed logout stays visible and can be retried. Active Peers expire at the login deadline; authentication responses and personalized index documents are not cacheable.
+
+The Antfarm workbench hosts account controls in the sidebar footer; folding the sidebar hides them with that sidebar, while other compositions keep the floating account control.
 
 <a id="remote-access-policy"></a>
 ## Remote access policy
@@ -83,7 +86,10 @@ pnpm exec tsx scripts/multiuser-provision.ts --storage-root "$DSH_HOME/storages"
 
 `MultiuserService.provisionUser(username, password)` is the equivalent in-process step. Existing users are never overwritten and passwords are not reset at startup. Disabling an account writes `disabledAt` and revokes every login it holds.
 
+Guest access is opt-in with `guestAccess: true`. `POST /auth/guest` accepts `{}`, creates a separate visitor account, and issues an HttpOnly login without exposing a password; an already authenticated visitor reuses its current identity and expiry. New visitor accounts share the address-wide login attempt budget. `guestAccountLimit` defaults to 100 accounts that have not been disabled, and `guestLoginMaxAgeMinutes` defaults to 120. Capacity refusals return `503` with `guest-capacity`; an operator can raise the configured limit or disable an unused visitor through `MultiuserService.disableUser()` to free a slot without deleting files or transferring ownership. Logout and expiry alone do not free slots. Each visitor owns only its own workspaces and sessions; visitor roles omit personal credential management and workspace deletion.
+
 <a id="workspace-creation"></a>
+
 ## Workspace creation
 
 A user's `workspace/create` carries only an optional `title`; the service allocates an unpredictable directory below `workspaceRoot`, registers it, then commits the ownership row. A failed ownership commit withdraws the registration and removes the new empty directory. A workspace without an ownership row is invisible to every user.

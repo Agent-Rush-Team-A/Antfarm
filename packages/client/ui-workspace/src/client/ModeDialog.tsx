@@ -18,6 +18,7 @@ export interface ModeSelection {
 
 /** Configuration actions and private interaction sources bound by the renderer. */
 export interface ModeDialogInjected {
+  visibleModes?: readonly WorkspaceMode[]
   hooks: {
     modeSelection: SnapshotStore<ModeSelection | null>
     modePending: SnapshotStore<readonly WorkspaceId[]>
@@ -41,7 +42,7 @@ export function ModeOverlay(props: Props) {
 const modes: readonly WorkspaceMode[] = ['single-vm', 'multi-vm', 'single-docker', 'multi-docker']
 /** Pure form props shared with focused presentation tests. */
 export type ModeFormProps = Pick<Props, 't' | 'useWorkspaceAccess' | 'dismissMode' | 'refreshMode' | 'saveMode' | 'beginModeSession'>
-  & { row: WorkspaceView; selection: ModeSelection; pending: boolean }
+  & { row: WorkspaceView; selection: ModeSelection; pending: boolean; visibleModes?: readonly WorkspaceMode[] }
 
 /** @param props - Live row and local interaction callbacks. @returns Revision-checked mode choices and permanent locking. */
 export function ModeForm(props: ModeFormProps) {
@@ -64,7 +65,7 @@ export function ModeForm(props: ModeFormProps) {
       {config.modeLocked && config.firstSessionId !== null && <code className={css.identity}>{config.firstSessionId}</code>}
       <fieldset className={css.choices} disabled={disabled}>
         <legend>{t('mode.choose')}</legend>
-        {modes.map(mode => <label key={mode} className={css.choice}>
+        {(props.visibleModes ?? modes).map(mode => <label key={mode} className={css.choice}>
           <input type="radio" name={`workspace-mode-${row.workspaceId}`} value={mode} checked={selected === mode}
             onChange={() => { setDraft({ mode, revision: config.revision }) }} />
           <span>{t(`mode.${mode}`)}</span>

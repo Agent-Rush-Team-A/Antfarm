@@ -31,6 +31,7 @@ import { GuideBody } from '../src/client/tabs/guide/GuideBody.tsx'
 import { GuideTitle } from '../src/client/tabs/guide/GuideTitle.tsx'
 import { GUIDE_ID } from '../src/client/tabs/guide/definition.ts'
 import { en, ja, zh, es, fr, de, ru, pt } from '../src/client/locales.ts'
+import { Config } from '../src/config.ts'
 
 const SHORTCUT_CATALOG: readonly never[] = []
 
@@ -46,7 +47,7 @@ interface Recorded {
   component: unknown
 }
 
-async function boot(shortcuts: Partial<Shortcuts> = {}) {
+async function boot(shortcuts: Partial<Shortcuts> = {}, config?: Config) {
   const ctx = new Context()
   const registered: Recorded[] = []
   const slots = {
@@ -85,7 +86,7 @@ async function boot(shortcuts: Partial<Shortcuts> = {}) {
   ctx.provide('resources', resources as never)
   ctx.provide('sessions', { retain: vi.fn(() => ({ ready: Promise.resolve(), release: vi.fn() })) } as never)
   ctx.provide('uiSession', { adapter: { current } } as never)
-  const fiber = ctx.plugin({ inject: [...inject], apply })
+  const fiber = ctx.plugin({ inject: [...inject], apply }, config)
   await fiber.await()
   const seat = (name: string): Recorded => {
     const entry = registered.find(candidate => candidate.name === name)
@@ -100,6 +101,45 @@ async function boot(shortcuts: Partial<Shortcuts> = {}) {
 }
 
 describe('ui-sidebar-right apply', () => {
+  it.each([true, false])('opens the configured file page automatically only on a wide viewport (%s)', async (wide) => {
+    vi.stubGlobal('matchMedia', () => ({ matches: wide }))
+    onTestFinished(() => { vi.unstubAllGlobals() })
+    const h = await boot({}, Config({ initiallyExpanded: true, defaultPage: 'spec-files' }))
+    onTestFinished(async () => { await h.ctx.fiber.dispose() })
+    h.ctx.sidebarRightTabs.register({ id: 'spec/files', kind: 'spec-files', title: () => 'Files' })
+    const handle = h.seat('rightbar.session').store as ReturnType<typeof createSidebarRightStore>
+    const instance = handle.create(SESSION)
+    if (wide) expect(instance.getSnapshot().bySession[SESSION]?.layout.expanded).toBe(true)
+    else expect(instance.getSnapshot().bySession[SESSION]).toBeUndefined()
+    instance.actions.setExpanded(SESSION, true)
+    expect(Object.values(instance.getSnapshot().bySession[SESSION]!.layout.tabs).map(tab => tab.kind)).toEqual(['spec-files'])
+  })
+
+  it('preserves a saved collapsed layout instead of applying the new expansion default', async () => {
+    const saved = sidebarStores.createSidebarRightStore(() => ({ kind: 'guide', title: 'Guide' })).create(SESSION)
+    saved.actions.setExpanded(SESSION, true)
+    saved.actions.setExpanded(SESSION, false)
+    vi.stubGlobal('localStorage', { getItem: () => JSON.stringify(saved.getSnapshot()), setItem: vi.fn(), removeItem: vi.fn() })
+    vi.stubGlobal('matchMedia', () => ({ matches: true }))
+    onTestFinished(() => { vi.unstubAllGlobals() })
+    const h = await boot({}, Config({ initiallyExpanded: true, defaultPage: 'spec-files' }))
+    onTestFinished(async () => { await h.ctx.fiber.dispose() })
+    h.ctx.sidebarRightTabs.register({ id: 'spec/files', kind: 'spec-files', title: () => 'Files' })
+    const handle = h.seat('rightbar.session').store as ReturnType<typeof createSidebarRightStore>
+    const instance = handle.create(SESSION)
+    expect(instance.getSnapshot().bySession[SESSION]?.layout.expanded).toBe(false)
+    expect(Object.values(instance.getSnapshot().bySession[SESSION]!.layout.tabs).map(tab => tab.kind)).toEqual(['guide'])
+  })
+
+  it('fails clearly when the configured initial file page is unavailable', async () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true }))
+    onTestFinished(() => { vi.unstubAllGlobals() })
+    const h = await boot({}, Config({ initiallyExpanded: true, defaultPage: 'missing-files' }))
+    onTestFinished(async () => { await h.ctx.fiber.dispose() })
+    const handle = h.seat('rightbar.session').store as ReturnType<typeof createSidebarRightStore>
+    expect(() => handle.create(SESSION)).toThrow('Default sidebar page is not registered: missing-files')
+  })
+
   it('keeps the host Loader entry inert', () => {
     expect(hostApply).not.toThrow()
   })

@@ -6,6 +6,8 @@ import type { UserId } from '@deepseek-ai/dsh-typert-protocol'
 export interface MultiuserUser {
   readonly userId: UserId
   readonly username: string
+  /** Present for a visitor admitted through the deployment's guest entry. */
+  readonly guest?: true | undefined
 }
 
 /** Login request body. */

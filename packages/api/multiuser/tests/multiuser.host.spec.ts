@@ -13,7 +13,7 @@ import { SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionHeader } from '@deepseek-ai/dsh-session'
 import { SessionPersistenceRevision } from '@deepseek-ai/dsh-session-persistence'
 import type { SessionPersistenceSnapshot } from '@deepseek-ai/dsh-session-persistence'
-import WorkspaceRegistry from '@deepseek-ai/dsh-workspace'
+import WorkspaceRegistry, { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import WorkspaceController from '@deepseek-ai/dsh-api-workspace-controller'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import TypertGatewayService from '@deepseek-ai/dsh-api-gateway'
@@ -85,6 +85,9 @@ async function setup(options: {
   workspaceRoot?: string
   loginAttemptLimit?: number
   provision?: boolean
+  guestAccess?: boolean
+  guestAccountLimit?: number
+  guestLoginMaxAgeMinutes?: number
 } = {}): Promise<Fixture> {
   const home = options.storageRoot === undefined ? await mkdtemp(join(tmpdir(), 'dsh-multiuser-')) : options.storageRoot
   const workspaceRoot = options.workspaceRoot ?? join(home, 'workspaces')
@@ -114,6 +117,9 @@ async function setup(options: {
   const config: MultiuserConfig = {
     workspaceRoot,
     ...(options.loginAttemptLimit === undefined ? {} : { loginAttemptLimit: options.loginAttemptLimit }),
+    ...(options.guestAccess === undefined ? {} : { guestAccess: options.guestAccess }),
+    ...(options.guestAccountLimit === undefined ? {} : { guestAccountLimit: options.guestAccountLimit }),
+    ...(options.guestLoginMaxAgeMinutes === undefined ? {} : { guestLoginMaxAgeMinutes: options.guestLoginMaxAgeMinutes }),
   }
   const multiuserFiber = ctx.plugin(MultiuserService, config)
   await multiuserFiber.await()
@@ -557,5 +563,79 @@ describe('concurrent authentication and resource lifecycle', () => {
     expect(admission.peer.signal.aborted).toBe(true)
     expect(fixture.ctx.connection.admit({ headers: { host: new URL(fixture.base).host, cookie } })).toEqual({ rejection: 401 })
     expect(await fetch(`${fixture.base}/auth/me`, { headers: { cookie } })).toMatchObject({ status: 404 })
+  })
+})
+
+describe('visitor access', () => {
+  it('issues separate bounded logins and denies another visitor workspace', async () => {
+    const fixture = await setup({ guestAccess: true, guestLoginMaxAgeMinutes: 10 })
+    async function enter() {
+      const response = await fetch(`${fixture.base}/auth/guest`, {
+        method: 'POST', headers: { origin: fixture.base, 'content-type': 'application/json' }, body: '{}',
+      })
+      expect(response.status).toBe(200)
+      const cookie = response.headers.get('set-cookie')?.split(';')[0]
+      if (cookie === undefined) throw new Error('Guest cookie missing')
+      const identity = fixture.ctx.multiuser.authenticateToken(cookie.slice('dsh-login='.length))
+      if (identity === undefined) throw new Error('Guest login did not authenticate')
+      expect(await response.json()).toEqual({ user: identity.user })
+      expect(identity.user.guest).toBe(true)
+      expect(fixture.ctx.multiuser.isGuest(identity.user.userId)).toBe(true)
+      expect(Date.parse(identity.record.expiresAt) - Date.parse(identity.record.createdAt)).toBe(10 * 60_000)
+      return { cookie, user: identity.user }
+    }
+    const first = await enter(), second = await enter()
+    expect(first.user.userId).not.toBe(second.user.userId)
+    expect(first.cookie).not.toBe(second.cookie)
+    const workspaceId = await createWorkspace(fixture.base, first.cookie, 'Visitor private project')
+    expect(await rpc(fixture.base, second.cookie, 'workspace/getMode', { request: { workspaceId } }))
+      .toMatchObject({ ok: false, error: { code: 'remote-access/denied' } })
+    expect(await rpc(fixture.base, first.cookie, 'workspace/getMode', { request: { workspaceId } }))
+      .toMatchObject({ ok: true })
+  })
+
+  it('keeps guest access disabled by default and enforces origin and account capacity', async () => {
+    const disabled = await setup()
+    expect((await fetch(`${disabled.base}/auth/guest`, { method: 'POST', headers: { origin: disabled.base, 'content-type': 'application/json' }, body: '{}' })).status).toBe(404)
+    const fixture = await setup({ guestAccess: true, guestAccountLimit: 1 })
+    expect((await fetch(`${fixture.base}/auth/guest`, { method: 'POST', headers: { origin: 'https://untrusted.invalid', 'content-type': 'application/json' }, body: '{}' })).status).toBe(403)
+    const send = () => fetch(`${fixture.base}/auth/guest`, { method: 'POST', headers: { origin: fixture.base, 'content-type': 'application/json' }, body: '{}' })
+    expect((await send()).status).toBe(200)
+    expect((await send()).status).toBe(503)
+  })
+
+  it('reuses an authenticated guest entry without consuming another account slot', async () => {
+    const fixture = await setup({ guestAccess: true, guestAccountLimit: 1 })
+    const first = await fetch(`${fixture.base}/auth/guest`, { method: 'POST',
+      headers: { origin: fixture.base, 'content-type': 'application/json' }, body: '{}' })
+    const cookie = first.headers.getSetCookie()[0]!.split(';', 1)[0]!
+    const identity: unknown = await first.json()
+    const second = await fetch(`${fixture.base}/auth/guest`, { method: 'POST',
+      headers: { origin: fixture.base, 'content-type': 'application/json', cookie }, body: '{}' })
+    expect(second.status).toBe(200)
+    expect(await second.json()).toEqual(identity)
+    expect(second.headers.getSetCookie()).toEqual([])
+  })
+
+  it('releases guest capacity when an operator disables a visitor while preserving ownership', async () => {
+    const fixture = await setup({ guestAccess: true, guestAccountLimit: 1 })
+    const send = () => fetch(`${fixture.base}/auth/guest`, { method: 'POST',
+      headers: { origin: fixture.base, 'content-type': 'application/json' }, body: '{}' })
+    const first = await send()
+    const cookie = first.headers.getSetCookie()[0]!.split(';', 1)[0]!
+    const previous = fixture.ctx.multiuser.authenticateToken(cookie.slice('dsh-login='.length))!
+    const workspaceId = await createWorkspace(fixture.base, cookie, 'Retained visitor files')
+    const limited = await send()
+    expect(limited.status).toBe(503)
+    expect(await limited.json()).toEqual({ error: 'guest-capacity' })
+    await fixture.ctx.multiuser.disableUser(previous.user.userId)
+    expect(fixture.ctx.multiuser.authenticateToken(cookie.slice('dsh-login='.length))).toBeUndefined()
+    expect(fixture.ctx.multiuser.ownerOfWorkspace(WorkspaceId(workspaceId))).toBe(previous.user.userId)
+    const next = await send()
+    expect(next.status).toBe(200)
+    const nextCookie = next.headers.getSetCookie()[0]!.split(';', 1)[0]!
+    const visitor = fixture.ctx.multiuser.authenticateToken(nextCookie.slice('dsh-login='.length))!
+    expect(visitor.user.userId).not.toBe(previous.user.userId)
+    expect((await rpc(fixture.base, nextCookie, 'workspace/getMode', { request: { workspaceId } })).ok).toBe(false)
   })
 })

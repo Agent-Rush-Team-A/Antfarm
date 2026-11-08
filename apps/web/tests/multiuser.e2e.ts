@@ -123,10 +123,14 @@ it('logs in separate accounts, creates private workspaces, revokes all tabs, and
     await signIn(alicePage, 'alice')
     await signIn(bobPage, 'bob')
     await alicePage.getByRole('button', { name: 'Choose workspace', exact: true }).click()
+    await alicePage.getByRole('dialog', { name: 'Workspace configuration', exact: true })
+      .getByRole('button', { name: 'Start session', exact: true }).click()
     await alicePage.locator('[data-composer-input][contenteditable="true"]').first().waitFor()
     expect(scaffold.ctx.workspaceRegistry.list()).toHaveLength(1)
     const aliceWorkspaceId = scaffold.ctx.workspaceRegistry.list()[0]!.id
     await bobPage.getByRole('button', { name: 'Choose workspace', exact: true }).click()
+    await bobPage.getByRole('dialog', { name: 'Workspace configuration', exact: true })
+      .getByRole('button', { name: 'Start session', exact: true }).click()
     await bobPage.locator('[data-composer-input][contenteditable="true"]').first().waitFor()
     expect(scaffold.ctx.workspaceRegistry.list()).toHaveLength(2)
     const bobWorkspaceId = scaffold.ctx.workspaceRegistry.list().find(workspace => workspace.id !== aliceWorkspaceId)!.id

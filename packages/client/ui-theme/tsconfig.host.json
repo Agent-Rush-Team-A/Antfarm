@@ -8,7 +8,8 @@
   "files": [
     "src/boot-theme.ts",
     "src/index.ts",
-    "src/theme-settings.ts"
+    "src/theme-settings.ts",
+    "src/antfarm-palette.ts"
   ],
   "references": [
     {

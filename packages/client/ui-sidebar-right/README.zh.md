@@ -28,7 +28,10 @@ kind: "package-reference"
 
 -----
 
+可选工作台 Web 启动设置 `initiallyExpanded` 与 `defaultPage` 指定新 Session 的初始面板。已保存布局保持优先。初始展开仅适用于宽度不小于 768px 的界面，更窄屏幕保持折叠。配置的默认页面必须已有注册的标签类型。
+
 <a id="what-lives-here-and-what-does-not"></a>
+
 ## 什么住在这里，什么不住
 
 布局本身——分裂树、它的操作、拖拽手势、浮窗——属于 `@deepseek-ai/dsh-client-ui-dockkit`，并保持与宿主无关。本包提供套件拒绝知道的一切：产品文案、tab 的 `kind` 是什么意思、新格用哪个 tab 播种、停靠面挂在哪里、其它插件如何触达它。

@@ -1,0 +1,25 @@
+# Bilingual-pair consistency record for antfarm-guest-workbench.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/user/guide/antfarm-guest-workbench.md
+/:
+  en: dcdf0bb8096ed3b6
+  zh: 9dee08c2cb03131e
+/antfarm-guest-workbench:
+  en: 2af1ad05bd833ea4
+  zh: fcaf1b6f379e3df5
+/antfarm-guest-workbench/prepare-the-preview:
+  en: 7e65e71535233b34
+  zh: 3a9607b45b2459a5
+/antfarm-guest-workbench/enable-the-workbench:
+  en: 396815e9c7be83f2
+  zh: 9ccb3b2be18d1746
+/antfarm-guest-workbench/try-a-task:
+  en: 156f949893eb219f
+  zh: 1202112b02c21c58
+/antfarm-guest-workbench/recover-from-a-failed-action:
+  en: 342d7e8499d79da9
+  zh: 5b9afd4eb5b6f2c6
+/antfarm-guest-workbench/preview-the-interface:
+  en: dc31d8f9b161a17b
+  zh: 18c0796acf8f0f9a

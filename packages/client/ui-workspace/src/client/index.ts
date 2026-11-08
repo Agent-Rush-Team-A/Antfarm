@@ -1,4 +1,6 @@
 import { newSessionAvailable } from './mode-policy.ts'
+import { registerWorkbench } from './register-workbench.ts'
+import { Config } from '../config.ts'
 import { modeFailureKey } from './mode-errors.ts'
 import { registerModeUi } from './mode-ui.ts'
 import { WorkspaceFilesButton, type WorkspaceFilesInjected } from './WorkspaceFilesButton.tsx'
@@ -75,6 +77,7 @@ export type {
   WorkspacePickerInjected, WorkspacePickerProps,
 } from './contract/slots.ts'
 export type { WorkspaceKey } from './locales.ts'
+export { Config } from '../config.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface GlobalStandardProps {
@@ -117,7 +120,9 @@ export const inject = ['contextMenus',
  * framework's global hooks.
  * @param ctx - client root context.
  */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config: Config = Config({})): void {
+  const presentation: unknown = Reflect.get(globalThis, '__DSH_ANTFARM_WORKBENCH__')
+  if (presentation !== undefined) config = Config(presentation)
   const sessions = ctx.get('sessions') as ISessions
   const workspaces = ctx.get('workspaces') as IWorkspaces
   // One viewing-store instance, created here as ui-layout does for its layout
@@ -133,6 +138,7 @@ export function apply(ctx: Context): void {
     ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
       name: 'conversation.input.left', id: 'workspace.files', order: 210, locale: NS,
       inject: (): WorkspaceFilesInjected => ({
+        showLabel: Boolean(config.workbench),
         listFiles: (workspaceId, path, signal) => ctx.workspaceArtifactFiles.listFiles(workspaceId, path, signal),
         downloadFile: async (workspaceId, path, maxBytes, signal) => {
           const result = await ctx.workspaceArtifactFiles.downloadFile(workspaceId, path, maxBytes, signal)
@@ -147,6 +153,7 @@ export function apply(ctx: Context): void {
     ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
       name: 'conversation.input.left', id: 'workspace.upload', order: 200, locale: NS,
       inject: (): WorkspaceUploadInjected => ({
+        showLabel: Boolean(config.workbench),
         uploadFile: async (workspaceId, file, signal) => {
           const result = await ctx.workspaceUploads.uploadFile(workspaceId, file, signal)
           notify(result.ok ? { kind: 'uploaded', name: result.value.name } : { kind: 'uploadFailed', ...result.error })
@@ -154,10 +161,12 @@ export function apply(ctx: Context): void {
       }),
     }, WorkspaceUploadButton))
   })
-  const modeControls = registerModeUi(ctx, workspaces)
+  const modeControls = registerModeUi(ctx, workspaces, config.workbench ? ['single-docker', 'multi-docker'] : undefined)
   const uiWorkspace = new UiWorkspaceService(
-    ctx, ctx.remote.directoryPicker, workspaces, sessions, viewInstance.actions, notify, modeControls.request,
+    ctx, ctx.remote.directoryPicker, workspaces, sessions, viewInstance.actions, notify,
+    (workspaceId, begin) => { modeControls.request(workspaceId, begin) },
   )
+  if (config.workbench) registerWorkbench(ctx, uiWorkspace)
   ctx.slots.provideRoot({
     hooks: { workspaces: workspaces.list },
     props: { sessionCreationAllowed: newSessionAvailable },

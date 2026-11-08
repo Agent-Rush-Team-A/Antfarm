@@ -271,3 +271,5 @@ These limits cover search, navigation, archival, and folder selection.
 None.
 
 </details>
+
+The opt-in Antfarm workbench registers a task dashboard in the existing main panel, prepares example files through the workspace upload API, and keeps a workspace file tab in the existing right sidebar. Isolated providers contribute environment status through `workspace.files.environment`. The optional guest workbench overlay uses `apps/cli/config/examples/antfarm-workbench-boot.mjs` to deliver validated `workbench`, `initiallyExpanded`, and `defaultPage` presentation settings through the Web bootstrap. The default composition retains its existing views. Sample prompts select the active English or Chinese language for generated reports and replies.
