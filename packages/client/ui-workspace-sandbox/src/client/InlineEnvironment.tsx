@@ -13,7 +13,7 @@ export function InlineEnvironment(props: Props) {
   const resource = props.useResource<'workspacesandbox'>(sandboxAddress(props.workspaceId))
   const value = resource.value
   const state = value?.pending === 'open' ? 'starting' : value?.pending === 'close' ? 'closing' : value?.state
-  const available = resource.status === 'live' && value?.connected === true && value?.statusFailure === undefined
+  const available = resource.status === 'live' && value?.connected === true && value.statusFailure === undefined
   const label = !available ? props.t('unconfirmed') : props.t(state ?? 'loading')
   const single = props.mode.startsWith('single-')
   return <section className={css.panel}>

@@ -121,7 +121,7 @@ export const inject = ['contextMenus',
  * @param ctx - client root context.
  */
 export function apply(ctx: Context, config: Config = Config({})): void {
-  const presentation = Reflect.get(globalThis, '__DSH_ANTFARM_WORKBENCH__')
+  const presentation: unknown = Reflect.get(globalThis, '__DSH_ANTFARM_WORKBENCH__')
   if (presentation !== undefined) config = Config(presentation)
   const sessions = ctx.get('sessions') as ISessions
   const workspaces = ctx.get('workspaces') as IWorkspaces
@@ -163,7 +163,8 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   })
   const modeControls = registerModeUi(ctx, workspaces, config.workbench ? ['single-docker', 'multi-docker'] : undefined)
   const uiWorkspace = new UiWorkspaceService(
-    ctx, ctx.remote.directoryPicker, workspaces, sessions, viewInstance.actions, notify, modeControls.request,
+    ctx, ctx.remote.directoryPicker, workspaces, sessions, viewInstance.actions, notify,
+    (workspaceId, begin) => { modeControls.request(workspaceId, begin) },
   )
   if (config.workbench) registerWorkbench(ctx, uiWorkspace)
   ctx.slots.provideRoot({

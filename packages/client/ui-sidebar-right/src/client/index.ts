@@ -107,7 +107,7 @@ declare module '@deepseek-ai/cordis' {
  * @param ctx - client root context carrying the slot registry, the frame's face, and copy.
  */
 export function apply(ctx: ClientContext, config: Config = Config({})): void {
-  const presentation = Reflect.get(globalThis, '__DSH_ANTFARM_WORKBENCH__')
+  const presentation: unknown = Reflect.get(globalThis, '__DSH_ANTFARM_WORKBENCH__')
   if (presentation !== undefined) config = Config(presentation)
   // The registry and the face it backs are built here, at apply's top level,
   // and never inside an effect. A registry other packages register into cannot
