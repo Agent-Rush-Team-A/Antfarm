@@ -2,7 +2,7 @@
 
 # 🐜 Antfarm
 
-**From good to better**
+**Let it dig. The glass holds**
 
 A general-purpose agent for every task, built on Vultr secure sandboxes
 
