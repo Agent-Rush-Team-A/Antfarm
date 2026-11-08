@@ -15,9 +15,10 @@ export interface ModeControls {
  * Install the overlay and menu independently of optional execution providers.
  * @param ctx - Workspace plugin context.
  * @param workspaces - Authoritative client projection and mode commands.
+ * @param isAntfarm - Whether to use Antfarm workspace mode labels and defaults.
  * @returns Configuration gestures for the Workspace row and first-Session flow.
  */
-export function registerModeUi(ctx: Context, workspaces: IWorkspaces): ModeControls {
+export function registerModeUi(ctx: Context, workspaces: IWorkspaces, isAntfarm: boolean): ModeControls {
   const selection = createSnapshotStore<ModeSelection | null>(null)
   const pending = createSnapshotStore<readonly WorkspaceId[]>([])
   const lifetime = new AbortController()
@@ -39,6 +40,7 @@ export function registerModeUi(ctx: Context, workspaces: IWorkspaces): ModeContr
     return operation
   }
   const actions: ModeDialogInjected = {
+    isAntfarm,
     hooks: { modeSelection: selection, modePending: pending },
     dismissMode: dismiss,
     refreshMode: (id) => {

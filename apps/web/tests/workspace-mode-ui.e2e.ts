@@ -1,6 +1,7 @@
 /** Workspace mode UI through the shipped Loader and durable coordinator; only external execution is a test adapter. */
 import { randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -9,7 +10,6 @@ import { expect, it, onTestFinished } from 'vitest'
 import type { WorkspaceCreateValue, WorkspaceModeValue } from '@deepseek-ai/dsh-api-workspace-controller'
 import type { WorkspaceModeRuntime } from '@deepseek-ai/dsh-workspace/types'
 import { compareOrRefreshGolden, launchWebScaffold, webSnapshotMode } from './scaffold.ts'
-import { requireBuilt } from './support.ts'
 
 it('configures four modes, preserves permanent locks, and keeps Workspace admission independent', async () => {
   const root = await mkdtemp(join(tmpdir(), 'workspace-mode-ui-'))
@@ -39,8 +39,8 @@ it('configures four modes, preserves permanent locks, and keeps Workspace admiss
     await dialog.waitFor()
     const a = scaffold.ctx.workspaceRegistry.list()[0]
     if (a === undefined) throw new Error('Workspace creation did not register a row')
-    const defaultMode = dialog.getByRole('radio', { name: 'Single session · VM (default)', exact: true })
-    const committedMode = dialog.getByRole('radio', { name: 'Multiple sessions · VM', exact: true })
+    const defaultMode = dialog.getByRole('radio', { name: 'Single session · Docker (default)', exact: true })
+    const committedMode = dialog.getByRole('radio', { name: 'Multiple sessions · Sandbox Pro (VM)', exact: true })
     await dialog.getByRole('alert').getByText('The execution environment is unavailable. Contact the administrator.', { exact: true }).waitFor()
     expect(await committedMode.isChecked()).toBe(true)
     expect(await dialog.getByRole('radio').count()).toBe(1)
@@ -61,7 +61,8 @@ it('configures four modes, preserves permanent locks, and keeps Workspace admiss
       await row.getByRole('button', { name: 'Workspace configuration', exact: true }).click()
       await dialog.waitFor()
     }
-    const { WorkspaceModeError } = requireBuilt('@deepseek-ai/dsh-workspace') as typeof import('@deepseek-ai/dsh-workspace')
+    const requireFromWebBundle = createRequire(new URL('../../../packages/bundle/web-app/package.json', import.meta.url))
+    const { WorkspaceModeError } = requireFromWebBundle('@deepseek-ai/dsh-workspace') as typeof import('@deepseek-ai/dsh-workspace')
     let capacityExhausted = true
     const runtime: WorkspaceModeRuntime = { supportedModes: ['single-vm', 'multi-vm', 'single-docker', 'multi-docker'],
       prepare: async (change, signal) => {
@@ -75,6 +76,9 @@ it('configures four modes, preserves permanent locks, and keeps Workspace admiss
     await configure(a.title)
     await defaultMode.waitFor()
     expect(await defaultMode.isChecked()).toBe(true)
+    expect(a.modeConfig.mode).toBe('multi-vm')
+    expect(scaffold.ctx.sessions.list()).toHaveLength(0)
+    await dialog.getByRole('radio', { name: 'Single session · Sandbox Pro (VM)', exact: true }).check()
     await dialog.getByRole('button', { name: 'Save mode', exact: true }).click()
     await dialog.getByRole('alert').getByText('No single-session VM slots are available.', { exact: false }).waitFor()
     await expect.poll(() => committedMode.isChecked()).toBe(true)
@@ -84,8 +88,8 @@ it('configures four modes, preserves permanent locks, and keeps Workspace admiss
     for (const [mode, label, detail] of [
       ['single-docker', 'Single session · Docker', 'lightweight Docker container'],
       ['multi-docker', 'Multiple sessions · Docker', 'share one Docker container'],
-      ['multi-vm', 'Multiple sessions · VM', 'disk snapshot'],
-      ['single-vm', 'Single session · VM', 'stored separately in the cloud'],
+      ['multi-vm', 'Multiple sessions · Sandbox Pro (VM)', 'disk snapshot'],
+      ['single-vm', 'Single session · Sandbox Pro (VM)', 'stored separately in the cloud'],
     ] as const) {
       await dialog.getByRole('button', { name: `About ${label}`, exact: true }).hover()
       await tooltip.waitFor()
@@ -93,7 +97,10 @@ it('configures four modes, preserves permanent locks, and keeps Workspace admiss
       expect(await items.allTextContents()).toHaveLength(4)
       expect(await items.locator('strong').allTextContents()).toEqual(['Sessions', 'How it runs', 'Benefit', 'Best for'])
       expect(await tooltip.getByRole('list').evaluate(element => getComputedStyle(element).rowGap)).toBe('6px')
-      expect(await tooltip.innerText()).toContain(detail)
+      const tooltipText = await tooltip.innerText()
+      expect(tooltipText).toContain(detail)
+      expect(tooltipText.includes('takes longer to start than a Docker container, but a dedicated VM provides stronger isolation.'))
+        .toBe(mode.endsWith('-vm'))
       await dialog.getByRole('radio', { name: label, exact: true }).check()
       await dialog.getByRole('button', { name: 'Save mode', exact: true }).click()
       await expect.poll(() => a.modeConfig.mode).toBe(mode)
@@ -120,7 +127,7 @@ it('configures four modes, preserves permanent locks, and keeps Workspace admiss
     await dialog.getByRole('alert').getByText('Configuration changed. Refresh before choosing again.', { exact: true }).waitFor()
     expect(await dialog.getByRole('button', { name: 'Save mode', exact: true }).isDisabled()).toBe(true)
     await dialog.getByRole('button', { name: 'Refresh configuration', exact: true }).click()
-    await dialog.getByRole('radio', { name: 'Single session · VM', exact: true }).check()
+    await dialog.getByRole('radio', { name: 'Single session · Sandbox Pro (VM)', exact: true }).check()
     await dialog.getByRole('button', { name: 'Save mode', exact: true }).click()
     await expect.poll(() => a.modeConfig.revision).toBeGreaterThan(changed.config.revision)
     await page.keyboard.press('Escape')
@@ -133,9 +140,9 @@ it('configures four modes, preserves permanent locks, and keeps Workspace admiss
     await dialog.waitFor({ state: 'hidden' })
     await configure(a.title)
     await dialog.getByText('The first session has been created. The mode is permanently locked.', { exact: true }).waitFor()
-    expect(await dialog.getByRole('radio', { name: 'Single session · VM', exact: true }).isDisabled()).toBe(true)
+    expect(await dialog.getByRole('radio', { name: 'Single session · Sandbox Pro (VM)', exact: true }).isDisabled()).toBe(true)
     await compareOrRefreshGolden(join(expected, 'locked.expected.md'), scrub(await dialog.ariaSnapshot()), webSnapshotMode())
-    await dialog.getByRole('button', { name: 'About Multiple sessions · VM', exact: true }).click()
+    await dialog.getByRole('button', { name: 'About Multiple sessions · Sandbox Pro (VM)', exact: true }).click()
     await tooltip.getByText(/disk snapshot/).waitFor()
     await page.keyboard.press('Escape')
     await tooltip.waitFor({ state: 'hidden' })
@@ -218,11 +225,11 @@ it.runIf(process.platform === 'linux')('supports guest mode selection and keeps 
     await navigation.getByRole('button', { name: 'Overview', exact: true }).waitFor()
     await page.getByRole('button', { name: 'New workspace', exact: true }).first().click()
     const setup = page.getByRole('dialog', { name: 'Your workspace, your way' })
-    await setup.getByRole('textbox', { name: 'Workspace name' }).fill('Visitor VM test')
+    await setup.getByRole('textbox', { name: 'Workspace name' }).fill('Visitor workspace')
     await setup.getByRole('button', { name: 'Create workspace', exact: true }).click()
     const mode = page.getByRole('dialog', { name: 'Workspace configuration', exact: true })
     await expect.poll(() => mode.getByRole('radio').count()).toBe(4)
-    const recommended = mode.getByRole('radio', { name: 'Single session · VM (default)', exact: true })
+    const recommended = mode.getByRole('radio', { name: 'Single session · Docker (default)', exact: true })
     expect(await recommended.isChecked()).toBe(true)
     expect(scaffold.ctx.sessions.list()).toHaveLength(0)
     await mode.getByRole('button', { name: 'Save mode', exact: true }).click()
@@ -231,7 +238,7 @@ it.runIf(process.platform === 'linux')('supports guest mode selection and keeps 
     await start.click()
     await mode.waitFor({ state: 'hidden' })
     await expect.poll(() => scaffold.ctx.workspaceRegistry.list()[0]?.modeConfig).toMatchObject({
-      mode: 'single-vm', modeLocked: true,
+      mode: 'single-docker', modeLocked: true,
     })
     expect(await navigation.getByRole('button', { name: 'More', exact: true }).count()).toBe(0)
 

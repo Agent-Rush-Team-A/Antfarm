@@ -20,6 +20,7 @@ export interface ModeSelection {
 
 /** Configuration actions and private interaction sources bound by the renderer. */
 export interface ModeDialogInjected {
+  readonly isAntfarm: boolean
   hooks: {
     modeSelection: SnapshotStore<ModeSelection | null>
     modePending: SnapshotStore<readonly WorkspaceId[]>
@@ -44,12 +45,14 @@ export function ModeOverlay(props: Props) {
 const modes: readonly WorkspaceMode[] = ['single-vm', 'multi-vm', 'single-docker', 'multi-docker']
 const helpSections = ['sessions', 'runs', 'benefit', 'fit'] as const
 /** Pure form props shared with focused presentation tests. */
-export type ModeFormProps = Pick<Props, 't' | 'useWorkspaceAccess' | 'dismissMode' | 'refreshMode' | 'saveMode' | 'beginModeSession'>
+export type ModeFormProps = Pick<Props,
+  't' | 'isAntfarm' | 'useWorkspaceAccess' | 'dismissMode' | 'refreshMode' | 'saveMode' | 'beginModeSession'>
   & { row: WorkspaceView; selection: ModeSelection; pending: boolean }
 
 /** @param props - Live row and local interaction callbacks. @returns Revision-checked mode choices and permanent locking. */
 export function ModeForm(props: ModeFormProps) {
-  const { row, selection, pending, t } = props
+  const { row, selection, pending, isAntfarm, t } = props
+  const preferredMode = isAntfarm ? 'single-docker' : 'single-vm'
   const config = row.modeConfig
   const readAllowed = props.useWorkspaceAccess(row.workspaceId, 'workspace/getMode')
   const editAllowed = props.useWorkspaceAccess(row.workspaceId, 'workspace/setMode')
@@ -57,9 +60,9 @@ export function ModeForm(props: ModeFormProps) {
   const [draft, setDraft] = useState<{ mode: WorkspaceMode; revision: number } | null>(null)
   const availableModes = selection.availableModes ?? []
   const visibleModes = modes.filter(mode => availableModes.includes(mode) || mode === config.mode)
-  const defaultSingleVm = config.revision === 0 && !config.modeLocked && editAllowed
-    && selection.saveFailure === undefined && availableModes.includes('single-vm')
-  const selected = draft?.mode ?? (defaultSingleVm ? 'single-vm' : config.mode)
+  const showPreferredMode = config.revision === 0 && !config.modeLocked && editAllowed
+    && selection.saveFailure === undefined && availableModes.includes(preferredMode)
+  const selected = draft?.mode ?? (showPreferredMode ? preferredMode : config.mode)
   const stale = draft !== null && draft.revision !== config.revision
   const busy = pending || config.operationState !== 'ready' || (selection.availableModes === undefined && selection.queryFailure === undefined)
   const disabled = busy || config.modeLocked || !editAllowed || selection.queryFailure !== undefined
@@ -75,16 +78,18 @@ export function ModeForm(props: ModeFormProps) {
       <fieldset className={css.choices}>
         <legend>{t('mode.choose')}</legend>
         {visibleModes.map((mode) => {
-          const label = t(`mode.${mode}`)
+          const proVm = isAntfarm && (mode === 'single-vm' || mode === 'multi-vm')
+          const label = t(proVm ? `mode.pro.${mode}` : `mode.${mode}`)
           return <div key={mode} className={css.option}>
             <label className={css.choice}>
               <input type="radio" name={`workspace-mode-${row.workspaceId}`} value={mode} checked={selected === mode} disabled={disabled || !availableModes.includes(mode)}
                 onChange={() => { setDraft({ mode, revision: config.revision }) }} />
-              <span>{defaultSingleVm && mode === 'single-vm' ? t('mode.defaultOption', { mode: label }) : label}</span>
+              <span>{showPreferredMode && mode === preferredMode ? t('mode.defaultOption', { mode: label }) : label}</span>
             </label>
             <Tooltip label={() => <span className={css.helpDetails} role="list">
               {helpSections.map(section => <span key={section} role="listitem">
                 <strong>{t(`mode.help.${section}`)}</strong>{' '}{t(`mode.help.${mode}.${section}`)}
+                {proVm && section === 'runs' && ` ${t('mode.help.proVm')}`}
               </span>)}
             </span>} delayMs={300} maxWidth={360} portal openOnClick>
               <Button size="sm" className={css.help} aria-label={t('mode.help.label', { mode: label })}>

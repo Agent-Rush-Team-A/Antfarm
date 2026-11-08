@@ -5,12 +5,12 @@
   - status: The first session has been created. The mode is permanently locked.
   - group "Workspace mode":
     - text: Workspace mode
-    - radio "Single session · VM" [checked] [disabled]
-    - text: Single session · VM
-    - button "About Single session · VM"
-    - radio "Multiple sessions · VM" [disabled]
-    - text: Multiple sessions · VM
-    - button "About Multiple sessions · VM"
+    - radio "Single session · Sandbox Pro (VM)" [checked] [disabled]
+    - text: Single session · Sandbox Pro (VM)
+    - button "About Single session · Sandbox Pro (VM)"
+    - radio "Multiple sessions · Sandbox Pro (VM)" [disabled]
+    - text: Multiple sessions · Sandbox Pro (VM)
+    - button "About Multiple sessions · Sandbox Pro (VM)"
     - radio "Single session · Docker" [disabled]
     - text: Single session · Docker
     - button "About Single session · Docker"
