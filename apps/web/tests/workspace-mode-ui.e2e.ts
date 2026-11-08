@@ -38,6 +38,10 @@ it('configures four modes, preserves permanent locks, and keeps Workspace admiss
     await dialog.waitFor()
     const a = scaffold.ctx.workspaceRegistry.list()[0]
     if (a === undefined) throw new Error('Workspace creation did not register a row')
+    const defaultMode = dialog.getByRole('radio', { name: 'Single session · VM (default)', exact: true })
+    expect(await defaultMode.isChecked()).toBe(true)
+    expect(await dialog.getByRole('button', { name: 'Start session', exact: true }).isDisabled()).toBe(true)
+    expect(a.modeConfig.mode).toBe('multi-vm')
     expect(scaffold.ctx.sessions.list()).toHaveLength(0)
     await page.keyboard.press('Escape')
     await dialog.waitFor({ state: 'hidden' })
@@ -52,7 +56,7 @@ it('configures four modes, preserves permanent locks, and keeps Workspace admiss
       await dialog.waitFor()
     }
     await configure(a.title)
-    await dialog.getByRole('radio', { name: 'Single session · VM', exact: true }).check()
+    expect(await defaultMode.isChecked()).toBe(true)
     await dialog.getByRole('button', { name: 'Save mode', exact: true }).click()
     await page.getByText('The execution environment is unavailable. Contact the administrator.', { exact: true }).waitFor()
     expect(a.modeConfig.mode).toBe('multi-vm')

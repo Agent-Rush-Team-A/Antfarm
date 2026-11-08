@@ -28,6 +28,7 @@ function props(value = row): ModeFormProps {
 it('offers four modes before the first Session and saves the captured revision', async () => {
   const p = props(); render(<ModeForm {...p} />)
   expect(screen.getAllByRole('radio')).toHaveLength(4)
+  expect(screen.getByRole<HTMLInputElement>('radio', { name: en['mode.multi-vm'] }).checked).toBe(true)
   fireEvent.click(screen.getByRole('radio', { name: en['mode.single-docker'] }))
   expect(screen.getByRole('button', { name: en['mode.begin'] }).hasAttribute('disabled')).toBe(true)
   fireEvent.click(screen.getByRole('button', { name: en['mode.save'] }))
@@ -90,7 +91,9 @@ it('keeps read-only mode information visible and dismisses without creating a Se
 })
 
 it('shows help only for the modes offered by the deployment', () => {
-  render(<ModeForm {...props()} visibleModes={['single-docker', 'multi-docker']} />)
+  const p = props({ ...row, modeConfig: { ...row.modeConfig, mode: 'multi-docker', revision: 0 } })
+  render(<ModeForm {...p} visibleModes={['single-docker', 'multi-docker']} />)
+  expect(screen.getByRole<HTMLInputElement>('radio', { name: en['mode.multi-docker'] }).checked).toBe(true)
   expect(screen.getAllByRole('button', { name: /^About / }).map(button => button.getAttribute('aria-label')))
     .toEqual(['About Single session · Docker', 'About Multiple sessions · Docker'])
 })

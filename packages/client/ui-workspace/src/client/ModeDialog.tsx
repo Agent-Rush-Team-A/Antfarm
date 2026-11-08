@@ -53,7 +53,9 @@ export function ModeForm(props: ModeFormProps) {
   const editAllowed = props.useWorkspaceAccess(row.workspaceId, 'workspace/setMode')
   const createAllowed = props.useWorkspaceAccess(row.workspaceId, 'session/create')
   const [draft, setDraft] = useState<{ mode: WorkspaceMode; revision: number } | null>(null)
-  const selected = draft?.mode ?? config.mode
+  const visibleModes = props.visibleModes ?? modes
+  const defaultSingleVm = config.revision === 0 && !config.modeLocked && editAllowed && visibleModes.includes('single-vm')
+  const selected = draft?.mode ?? (defaultSingleVm ? 'single-vm' : config.mode)
   const stale = draft !== null && draft.revision !== config.revision
   const busy = pending || config.operationState !== 'ready'
   const disabled = busy || config.modeLocked || !editAllowed || selection.queryFailure !== undefined
@@ -66,13 +68,13 @@ export function ModeForm(props: ModeFormProps) {
       {config.modeLocked && config.firstSessionId !== null && <code className={css.identity}>{config.firstSessionId}</code>}
       <fieldset className={css.choices}>
         <legend>{t('mode.choose')}</legend>
-        {(props.visibleModes ?? modes).map((mode) => {
+        {visibleModes.map((mode) => {
           const label = t(`mode.${mode}`)
           return <div key={mode} className={css.option}>
             <label className={css.choice}>
               <input type="radio" name={`workspace-mode-${row.workspaceId}`} value={mode} checked={selected === mode} disabled={disabled}
                 onChange={() => { setDraft({ mode, revision: config.revision }) }} />
-              <span>{label}</span>
+              <span>{defaultSingleVm && mode === 'single-vm' ? t('mode.defaultOption', { mode: label }) : label}</span>
             </label>
             <Tooltip label={() => <span className={css.helpDetails} role="list">
               {helpSections.map(section => <span key={section} role="listitem">
