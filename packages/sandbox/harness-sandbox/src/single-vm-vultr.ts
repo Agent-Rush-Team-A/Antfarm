@@ -181,7 +181,9 @@ export class SingleVmVultrBackend {
         signal.throwIfAborted()
         this.verifyAttachment(attaching, created.id, await this.api.attach(record.volumeId, created.id, signal))
       } catch (error) {
-        if (error === signal.reason || rejectedMutation(error)) await this.save(slot, { ...attaching, attachment: { state: 'not-requested' } })
+        if (error === signal.reason || rejectedMutation(error) || error instanceof VultrApiError && error.status === 404) {
+          await this.save(slot, { ...attaching, attachment: { state: 'not-requested' } })
+        }
         throw error
       }
       const mountTag = await this.waitAttachment(attaching, created.id, signal)

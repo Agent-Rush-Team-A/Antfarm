@@ -1,9 +1,9 @@
 /** Persistent directories and task identities for single-session VFS workspaces. */
-import { chmodSync, chownSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync } from 'node:fs'
+import { lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { WorkspaceFileScope } from '@deepseek-ai/dsh-fs/workspace-access'
-import type { Workspace, WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
+import type { Workspace, WorkspaceId, WorkspaceModeChange, WorkspaceModeChangeId } from '@deepseek-ai/dsh-workspace/types'
 import type { WorkspaceModeCopyLimits } from './mode-copy.ts'
 import { WorkspaceModeDirectoryFiles, type WorkspaceModeDirectory } from './mode-directory-files.ts'
 import { WorkspaceModeDirectoryResources } from './mode-directory-resources.ts'
@@ -79,7 +79,12 @@ export class SingleVmWorkspaces {
       throw new Error('Single VM identity storage must be private to Web')
     }
     using db = this.database()
-    db.exec('CREATE TABLE IF NOT EXISTS identities (workspace TEXT PRIMARY KEY, project TEXT NOT NULL UNIQUE, task INTEGER NOT NULL UNIQUE) STRICT')
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS identities (workspace TEXT PRIMARY KEY, project TEXT NOT NULL UNIQUE, task INTEGER NOT NULL UNIQUE) STRICT;
+      CREATE TABLE IF NOT EXISTS identity_reservations (
+        workspace TEXT PRIMARY KEY REFERENCES identities(workspace) ON DELETE CASCADE, change_id TEXT NOT NULL
+      ) STRICT;
+    `)
     this.files = new WorkspaceModeDirectoryFiles(scope => Promise.resolve(this.resolve(scope)))
   }
 
@@ -100,7 +105,7 @@ export class SingleVmWorkspaces {
    */
   resolve(scope: WorkspaceFileScope): SingleVmWorkspaceDirectory {
     const location = this.location(scope)
-    const id = this.identity(scope.workspaceId, scope.project, false)
+    const id = this.identity(scope.workspaceId, scope.project)
     const initial = this.ownedDirectory(location.root, id)
     if (initial === undefined) throw new Error('Single VM workspace directory is missing')
     const assertCurrent = (): void => {
@@ -129,23 +134,22 @@ export class SingleVmWorkspaces {
         const assertCurrent = (): void => {
           location.assertCurrent()
           if (directory(location.root) !== undefined) {
-            this.ownedDirectory(location.root, this.identity(change.workspaceId, change.project, false))
+            this.ownedDirectory(location.root, this.identity(change.workspaceId, change.project, change.changeId))
           } else if (change.from === 'single-vm') throw new Error('Single VM source directory is missing')
         }
         return Promise.resolve({ ...location, assertCurrent })
       },
       prepareDestination: (change, destination) => {
         destination.assertCurrent()
-        const id = this.identity(change.workspaceId, change.project, true)
-        if (this.ownedDirectory(destination.root, id) !== undefined) return
-        const pending = mkdtempSync(join(this.config.workspaceRoot, '.antfarm-vfs-'))
-        try {
-          chownSync(pending, this.webUid, id)
-          chmodSync(pending, 0o2770)
-          destination.assertCurrent()
-          renameSync(pending, destination.root)
-        } finally { rmSync(pending, { force: true, recursive: true }) }
+        const id = this.identity(change.workspaceId, change.project, change.changeId, true)
+        return this.ownedDirectory(destination.root, id) === undefined ? { uid: this.webUid, gid: id, rootMode: 0o2770 } : undefined
       },
+      published: (change, signal) => {
+        signal.throwIfAborted()
+        using db = this.database()
+        db.prepare('DELETE FROM identity_reservations WHERE workspace = ? AND change_id = ?').run(change.workspaceId, change.changeId)
+      },
+      discarded: (change, signal) => { this.discardReservation(change, signal) },
     })
   }
 
@@ -206,24 +210,44 @@ export class SingleVmWorkspaces {
     return new DatabaseSync(join(this.config.stateRoot, 'identities.sqlite'), { timeout: 5000 })
   }
 
-  private identity(id: WorkspaceId, project: string, allocate: boolean): number {
+  private identity(id: WorkspaceId, project: string, changeId?: WorkspaceModeChangeId, allocate = false): number {
     using db = this.database()
     if (allocate) db.exec('BEGIN IMMEDIATE')
-    const binding = db.prepare('SELECT project, task FROM identities WHERE workspace = ?').get(id)
+    const binding = db.prepare(`
+      SELECT project, task, change_id FROM identities LEFT JOIN identity_reservations USING (workspace) WHERE workspace = ?
+    `).get(id)
     if (binding !== undefined) {
       const task = binding.task
       if (binding.project !== project || typeof task !== 'number' || !this.taskIds.includes(task)) {
         throw new Error('Single VM task identity conflicts with the workspace registration or configured groups')
       }
+      if (binding.change_id !== null && binding.change_id !== changeId) {
+        throw new Error('Single VM task identity is reserved by another transition')
+      }
       if (allocate) db.exec('COMMIT')
       return task
     }
-    if (!allocate) throw new Error('Single VM workspace has no bound task identity')
+    if (!allocate || changeId === undefined) throw new Error('Single VM workspace has no bound task identity')
     const occupied = new Set(db.prepare('SELECT task FROM identities').all().map(row => row.task))
     const task = this.taskIds.find(candidate => !occupied.has(candidate))
     if (task === undefined) throw new Error('No reserved single VM task identity is available')
     db.prepare('INSERT INTO identities (workspace, project, task) VALUES (?, ?, ?)').run(id, project, task)
+    db.prepare('INSERT INTO identity_reservations (workspace, change_id) VALUES (?, ?)').run(id, changeId)
     db.exec('COMMIT')
     return task
+  }
+
+  private discardReservation(change: WorkspaceModeChange, signal: AbortSignal): void {
+    signal.throwIfAborted()
+    using db = this.database()
+    const reservation = db.prepare('SELECT change_id FROM identity_reservations WHERE workspace = ?').get(change.workspaceId)
+    if (reservation?.change_id !== change.changeId) return
+    const { root } = this.location({ workspaceId: change.workspaceId, project: change.project, signal, admit() {} })
+    if (directory(root) !== undefined) throw new Error('Single VM task identity still has a published directory')
+    db.prepare(`
+      DELETE FROM identities WHERE workspace = ? AND project = ? AND EXISTS (
+        SELECT 1 FROM identity_reservations WHERE workspace = identities.workspace AND change_id = ?
+      )
+    `).run(change.workspaceId, change.project, change.changeId)
   }
 }

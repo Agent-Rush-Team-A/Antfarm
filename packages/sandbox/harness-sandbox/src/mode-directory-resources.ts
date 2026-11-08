@@ -17,14 +17,17 @@ export interface WorkspaceModeDirectoryResourceConfig extends WorkspaceModeCopyL
   readonly backend: WorkspaceModeTarget['execution']
   /** Resolve the immutable directory mapping and verify its parent/mount, including publication recovery. */
   directory(change: WorkspaceModeChange, signal: AbortSignal): Promise<WorkspaceModeDirectory>
-  /** Prepare the destination before recording its ownership for the staged copy. */
-  prepareDestination?(change: WorkspaceModeChange, directory: WorkspaceModeDirectory): void | Promise<void>
+  /** Reserve ownership for a destination that does not exist yet. Existing directories supply their own ownership. */
+  prepareDestination?(change: WorkspaceModeChange, directory: WorkspaceModeDirectory):
+    { uid: number; gid: number; rootMode: number } | undefined
   /** Give copied files and directories access for the destination's task group. */
   readonly shareWithGroup?: true
   /** Omitted for bind directories; VM providers return their completed read-only file copy after closure. */
   checkpointRoot?(change: WorkspaceModeChange, signal: AbortSignal): Promise<string>
-  /** Omitted for bind directories; VM providers replace their closed file view and obsolete snapshots. */
-  published?(change: WorkspaceModeChange, signal: AbortSignal): Promise<void>
+  /** Commit provider resources after the directory has been published and synchronized. */
+  published?(change: WorkspaceModeChange, signal: AbortSignal): void | Promise<void>
+  /** Release a provider reservation after staged files are gone, including a reservation made before journaling. */
+  discarded?(change: WorkspaceModeChange, signal: AbortSignal): void
   /** Omitted when the source has no external saved resources; VM providers retire obsolete snapshots. */
   retired?(change: WorkspaceModeChange, signal: AbortSignal): Promise<void>
 }
@@ -36,7 +39,7 @@ const journalSchema = z.strictObject({
     z.strictObject({ kind: z.literal('source'), phase: z.enum(['checkpointing', 'checkpointed', 'restored', 'retired']), wasRunning: z.boolean() }),
     z.strictObject({ kind: z.literal('target'), phase: z.enum(['staging', 'staged', 'publishing', 'published', 'discarded']),
       uid: z.number().int().nonnegative(), gid: z.number().int().nonnegative(), rootMode: z.number().int().min(0).max(0o3777),
-      shareWithGroup: z.literal(true).optional() }),
+      shareWithGroup: z.literal(true).optional(), destinationAbsent: z.literal(true).optional() }),
   ]),
 })
 type Journal = z.infer<typeof journalSchema>
@@ -79,11 +82,16 @@ export class WorkspaceModeDirectoryResources implements WorkspaceModeResources {
     const directory = await this.directory(change, signal)
     let journal = await this.load(change)
     if (journal === undefined) {
-      await this.config.prepareDestination?.(change, directory)
-      const info = await lstat(directory.root)
-      if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('Mode destination directory is unavailable')
+      const prepared = this.config.prepareDestination?.(change, directory)
+      let ownership = prepared
+      if (ownership === undefined) {
+        const info = await lstat(directory.root)
+        if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('Mode destination directory is unavailable')
+        ownership = { uid: info.uid, gid: info.gid, rootMode: info.mode & 0o3777 }
+      }
       journal = this.record(change, directory.root, {
-        kind: 'target', phase: 'staging', uid: info.uid, gid: info.gid, rootMode: info.mode & 0o3777,
+        kind: 'target', phase: 'staging', ...ownership,
+        ...prepared === undefined ? {} : { destinationAbsent: true },
         ...this.config.shareWithGroup === true ? { shareWithGroup: true } : {},
       })
       await this.save(change, journal)
@@ -107,15 +115,18 @@ export class WorkspaceModeDirectoryResources implements WorkspaceModeResources {
     const stage = this.stagePath(change, journal.root)
     const backup = stage + '.previous'
     if (await this.exists(stage)) {
-      if (!await this.exists(backup)) {
+      if (journal.role.destinationAbsent) {
+        if (await this.exists(journal.root)) throw new Error('Mode publication conflicts with an existing destination')
+      } else if (!await this.exists(backup)) {
         await rename(journal.root, backup)
         await this.sync(dirname(stage))
       } else if (await this.exists(journal.root)) throw new Error('Mode publication conflicts with an existing destination')
       await rename(stage, journal.root)
-      await this.sync(dirname(stage))
-    } else if (!await this.exists(journal.root) || !await this.exists(backup) && journal.role.phase !== 'published') {
+    } else if (!await this.exists(journal.root)
+      || !journal.role.destinationAbsent && journal.role.phase !== 'published' && !await this.exists(backup)) {
       throw new Error('Mode publication recovery data is missing')
     }
+    await this.sync(dirname(stage))
     directory.assertCurrent()
     await this.config.published?.(change, signal)
     await this.save(change, { ...journal, role: { ...journal.role, phase: 'published' } })
@@ -130,11 +141,15 @@ export class WorkspaceModeDirectoryResources implements WorkspaceModeResources {
 
   async discard(change: WorkspaceModeChange, signal: AbortSignal): Promise<void> {
     const journal = await this.load(change)
-    if (journal === undefined) return
+    if (journal === undefined) {
+      this.config.discarded?.(change, signal)
+      return
+    }
     if (journal.role.kind !== 'target' || journal.role.phase === 'published' || journal.role.phase === 'publishing') throw new Error('Committed mode files cannot be discarded')
     signal.throwIfAborted()
     await rm(this.stagePath(change, journal.root), { recursive: true, force: true })
     await this.sync(dirname(journal.root))
+    this.config.discarded?.(change, signal)
     await this.save(change, { ...journal, role: { ...journal.role, phase: 'discarded' } })
   }
 

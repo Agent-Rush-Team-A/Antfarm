@@ -1,13 +1,14 @@
 /** Single VM directory admission over real Linux files, with a controlled provider mount record. */
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { chmod, mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, readFile, readdir, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { WorkspaceFileScope } from '@deepseek-ai/dsh-fs/workspace-access'
 import type { WorkspaceId, WorkspaceMode, WorkspaceModeChange, WorkspaceModeChangeId } from '@deepseek-ai/dsh-workspace/types'
 import { describe, expect, onTestFinished, test, vi } from 'vitest'
+import { z } from 'zod'
 import { WorkspaceModeDirectoryFiles } from '../src/mode-directory-files.ts'
 import { WorkspaceModeDirectoryResources } from '../src/mode-directory-resources.ts'
 import { WorkspaceModeRouting, type WorkspaceModeTarget } from '../src/mode-routing.ts'
@@ -23,7 +24,7 @@ const taskIds = (process.getgroups?.() ?? []).filter(id => id > 0 && id !== proc
 
 async function* bytes(content: string) { yield Buffer.from(content) }
 
-async function setup() {
+async function setup(configuredTaskIds = taskIds) {
   const home = await mkdtemp(join(tmpdir(), 'single-vm-vfs-'))
   const mountRead = vi.mocked(readFileSync)
   onTestFinished(async () => {
@@ -51,7 +52,7 @@ async function setup() {
     return { workspaceId: brandString<WorkspaceId>('registry-' + String(index)), project, signal, admit() {} }
   }))
   const records = new Map(scopes.map(scope => [scope.workspaceId, { path: scope.project }]))
-  const config = { projectRoot, mountPoint, mountTag, workspaceRoot, stateRoot, taskIds }
+  const config = { projectRoot, mountPoint, mountTag, workspaceRoot, stateRoot, taskIds: configuredTaskIds }
   const provider = () => new SingleVmWorkspaces(config, id => records.get(id))
   const backend = {
     status: vi.fn(async () => ({ state: 'closed' as const })),
@@ -80,7 +81,7 @@ async function setup() {
   }, new Map<WorkspaceMode, WorkspaceModeTarget>([
     ['multi-docker', { execution: backend, files: localFiles }], ['single-vm', { execution: backend, files: vfs.files }],
   ]))
-  return { scopes, provider, runtime, route, change, signal, workspaceRoot, mountRecord,
+  return { scopes, provider, runtime, route, change, signal, workspaceRoot, stateRoot, mountRecord,
     setMount(value: string) { mountInfo = value } }
 }
 
@@ -158,5 +159,76 @@ describe.runIf(process.platform === 'linux' && process.getuid?.() !== 0 && taskI
     f.setMount(f.mountRecord(undefined, '/', '25'))
     expect(() => { location.assertCurrent() }).toThrow('mount changed')
     expect(await readFile(join(location.root, 'input.csv'), 'utf8')).toBe('keep original')
+  })
+
+  test.each(['copy', 'journal'] as const)('releases the only first-use identity on rollback after a %s failure', async (failure) => {
+    const f = await setup(taskIds.slice(0, 1))
+    const [scope, peer] = f.scopes
+    if (scope === undefined || peer === undefined) throw new Error('Missing test workspace')
+    const modeState = join(f.stateRoot, 'modes')
+    if (failure === 'journal') {
+      await mkdir(f.stateRoot, { mode: 0o700 })
+      await mkdir(modeState)
+      await chmod(modeState, 0o755)
+    }
+    await writeFile(join(scope.project, 'input.csv'), 'keep original')
+    const failed = f.change(scope)
+    const preparing = f.runtime(f.provider(), 1).prepare(failed, f.signal)
+    if (failure === 'journal') await expect(preparing).rejects.toThrow('Mode journal root must be private')
+    else await expect(preparing).rejects.toMatchObject({ reason: 'byte-limit' })
+    await f.runtime(f.provider()).settle(failed, 'rollback', f.signal)
+    expect(await readdir(f.workspaceRoot)).toEqual([])
+    expect(await readFile(join(scope.project, 'input.csv'), 'utf8')).toBe('keep original')
+    if (failure === 'journal') await chmod(modeState, 0o700)
+
+    const entering = f.change(peer)
+    await f.runtime(f.provider()).prepare(entering, f.signal)
+    await f.runtime(f.provider()).settle(entering, 'commit', f.signal)
+    await f.runtime(f.provider()).settle(failed, 'rollback', f.signal)
+    expect(f.provider().resolve(peer).uid).toBe(taskIds[0])
+  })
+
+  test('retains a previously published identity and its files when a later switch rolls back', async () => {
+    const f = await setup(taskIds.slice(0, 1))
+    const [scope, peer] = f.scopes
+    if (scope === undefined || peer === undefined) throw new Error('Missing test workspace')
+    const vfs = f.provider()
+    await writeFile(join(scope.project, 'input.csv'), 'keep original')
+    const entering = f.change(scope)
+    await f.runtime(vfs).prepare(entering, f.signal)
+    await f.runtime(vfs).settle(entering, 'commit', f.signal)
+    const location = vfs.resolve(scope)
+    const leaving = f.change(scope, 'multi-docker')
+    await f.runtime(vfs).prepare(leaving, f.signal)
+    await f.runtime(vfs).settle(leaving, 'commit', f.signal)
+    const failing = f.change(scope)
+    await expect(f.runtime(vfs, 1).prepare(failing, f.signal)).rejects.toMatchObject({ reason: 'byte-limit' })
+    await f.runtime(f.provider()).settle(failing, 'rollback', f.signal)
+    expect(f.provider().resolve(scope).uid).toBe(location.uid)
+    expect(await readFile(join(location.root, 'input.csv'), 'utf8')).toBe('keep original')
+    await expect(f.runtime(f.provider()).prepare(f.change(peer), f.signal)).rejects.toThrow('No reserved single VM task identity')
+  })
+
+  test('commits the first identity after restarting between directory rename and publication', async () => {
+    const f = await setup()
+    const [scope] = f.scopes
+    if (scope === undefined) throw new Error('Missing test workspace')
+    await writeFile(join(scope.project, 'input.csv'), 'keep original')
+    const entering = f.change(scope)
+    await f.runtime(f.provider()).prepare(entering, f.signal)
+    const hash = createHash('sha256').update('single-vm:' + entering.changeId).digest('hex')
+    const journalPath = join(f.stateRoot, 'modes', hash, 'state.json')
+    const journal = z.object({ role: z.object({ phase: z.string() }).loose() }).loose()
+      .parse(JSON.parse(await readFile(journalPath, 'utf8')))
+    journal.role.phase = 'publishing'
+    await writeFile(journalPath, JSON.stringify(journal))
+    const leaf = basename(scope.project)
+    await rename(join(f.workspaceRoot, '.' + leaf + '.mode-' + hash), join(f.workspaceRoot, leaf))
+
+    const restarted = f.provider()
+    expect(() => { restarted.resolve(scope) }).toThrow('reserved by another transition')
+    await f.runtime(restarted).settle(entering, 'commit', f.signal)
+    expect(await readFile(join(restarted.resolve(scope).root, 'input.csv'), 'utf8')).toBe('keep original')
+    await f.runtime(f.provider()).settle(entering, 'commit', f.signal)
   })
 })

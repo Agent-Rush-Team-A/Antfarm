@@ -21,7 +21,7 @@ const settings = { deploymentId: 'test', region: 'nrt', plan: 'vc2-1c-1gb', osId
   maxInstances: 1, operationTimeoutMs: 10_000, pollIntervalMs: 1 }
 
 type Fault = 'region' | 'attachment' | 'wrong-instance' | 'guest-readiness' | 'mount' | 'permission' | 'handshake' | 'create-hidden'
-  | 'create-rejected' | 'create-limited' | 'attach-rejected' | 'attach-limited' | 'attachment-timeout'
+  | 'create-rejected' | 'create-limited' | 'attach-rejected' | 'attach-limited' | 'attach-not-found' | 'attachment-timeout'
   | 'detach-timeout' | 'detach-applied' | 'delete-timeout' | 'delete-applied'
 
 function fixture(fault?: Fault) {
@@ -93,6 +93,7 @@ function fixture(fault?: Fault) {
         expect(options?.body).toBeUndefined()
         if (fault === 'attach-rejected') return new Response(null, { status: 422 })
         if (fault === 'attach-limited') return new Response(null, { status: 429 })
+        if (fault === 'attach-not-found') return new Response(null, { status: 404 })
         if (fault === 'attachment-timeout') return loseResponse()
         attached = true
       }
@@ -304,7 +305,7 @@ test('task settlement fences a disconnected helper, waits for guest cleanup, and
   await backend.dispose()
 })
 
-test.each(['create-rejected', 'create-limited', 'attach-rejected', 'attach-limited', 'permission'] as const)('a confirmed %s failure allows the next task without restarting', async (fault) => {
+test.each(['create-rejected', 'create-limited', 'attach-rejected', 'attach-limited', 'attach-not-found', 'permission'] as const)('a confirmed %s failure allows the next task without restarting', async (fault) => {
   const f = fixture(fault)
   const backend = f.make()
   await backend.initialize()
@@ -312,7 +313,10 @@ test.each(['create-rejected', 'create-limited', 'attach-rejected', 'attach-limit
   const signal = new AbortController().signal
   await expect(lifecycle.acquire(signal)).rejects.toMatchObject({ code: 'cloud_open_failed', outcomeUnknown: false })
   expect(lifecycle.status()).toBe('closed')
-  if (fault === 'attach-limited') expect(f.requests).toContain('DELETE /instances/' + instanceId)
+  if (fault === 'attach-limited' || fault === 'attach-not-found') {
+    expect(f.requests.filter(value => value.startsWith('DELETE '))).toEqual(['DELETE /instances/' + instanceId])
+    expect(f.connect).not.toHaveBeenCalled()
+  }
   f.setFault()
   const fresh = await lifecycle.acquire(signal)
   await fresh.release()
