@@ -12,10 +12,13 @@ async function main(): Promise<void> {
   try {
     if (process.argv.length !== 2) throw new Error('SSH helper accepts no command arguments')
     const packaged = isSea()
+    const sharedWorkspace = process.env.DSH_SSH_VFS_WORKSPACE === '1'
+    Reflect.deleteProperty(process.env, 'DSH_SSH_VFS_WORKSPACE')
     await runSshHelper({
       input: process.stdin, output: process.stdout,
       entryPath: packaged ? process.execPath : fileURLToPath(import.meta.url),
       kind: packaged ? 'executable' : 'node-script', signal: controller.signal,
+      ...sharedWorkspace ? { sharedWorkspace: process.cwd() } : {},
     })
   } catch (error) {
     process.stderr.write(`dsh-ssh-sandbox: ${error instanceof Error ? error.message : String(error)}\n`)

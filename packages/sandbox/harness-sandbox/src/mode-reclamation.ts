@@ -1,5 +1,5 @@
 /** Task-owned sandbox generations retained through queued input, commands, and file cleanup. */
-import type { RunnerRunningSandbox } from './runner-client.ts'
+import { RunnerResponseError, type RunnerRunningSandbox } from './runner-client.ts'
 
 /** Lifecycle operations supplied by the mode-selected Docker or VM owner. */
 export interface TaskSandboxDriver {
@@ -7,6 +7,8 @@ export interface TaskSandboxDriver {
   open(signal: AbortSignal): Promise<RunnerRunningSandbox>
   /** Delete only the captured generation, using provider-owned cancellation and finite cleanup budgets. */
   close(target: RunnerRunningSandbox): Promise<void>
+  /** Retry original-resource reconciliation after a retained failure, before a new reservation. */
+  recover?(): Promise<void>
   /** Publish a persistent cleanup failure through the owning service's status/logging mechanism. */
   failed(error: TaskSandboxFailure): void
 }
@@ -58,6 +60,7 @@ type State =
 export class TaskSandboxLifecycle {
   private state: State = { kind: 'closed' }
   private readonly lifetime = new AbortController()
+  private recovery: Promise<void> | undefined
   private disposal: Promise<void> | undefined
 
   /** @param driver - Selected provider and failure-reporting owner for this workspace. */
@@ -89,11 +92,15 @@ export class TaskSandboxLifecycle {
   async reserve(signal: AbortSignal): Promise<TaskSandboxReservation> {
     const waiting = AbortSignal.any([signal, this.lifetime.signal])
     waiting.throwIfAborted()
-    while (this.state.kind === 'closing') {
-      await this.wait(this.state.generation.closed.promise, waiting)
+    while (this.state.kind === 'closing' || this.state.kind === 'cleanup-required') {
+      if (this.state.kind === 'closing') await this.wait(this.state.generation.closed.promise, waiting)
+      else {
+        if (this.driver.recover === undefined) throw this.state.failure
+        this.recovery ??= this.recover(this.state.failure).finally(() => { this.recovery = undefined })
+        await this.wait(this.recovery, waiting)
+      }
       waiting.throwIfAborted()
     }
-    if (this.state.kind === 'cleanup-required') throw this.state.failure
     const generation = this.state.kind === 'closed' ? this.start() : this.state.generation
     const token = Symbol('task-sandbox-use')
     generation.users.add(token)
@@ -129,7 +136,7 @@ export class TaskSandboxLifecycle {
   dispose(): Promise<void> {
     if (this.disposal !== undefined) return this.disposal
     this.lifetime.abort(new Error('Task sandbox lifecycle stopped'))
-    this.disposal = this.state.kind === 'closed' ? Promise.resolve() : this.state.generation.closed.promise
+    this.disposal = this.recovery ?? (this.state.kind === 'closed' ? Promise.resolve() : this.state.generation.closed.promise)
     return this.disposal
   }
 
@@ -150,6 +157,12 @@ export class TaskSandboxLifecycle {
     let target: RunnerRunningSandbox
     try { target = await this.driver.open(this.lifetime.signal) }
     catch (cause) {
+      if (this.driver.recover !== undefined && cause instanceof RunnerResponseError && !cause.outcomeUnknown) {
+        this.state = { kind: 'closed' }
+        generation.ready.reject(cause)
+        generation.closed.resolve()
+        return
+      }
       const failure = this.fail(generation, 'open', cause)
       generation.ready.reject(failure)
       generation.closed.reject(failure)
@@ -158,6 +171,12 @@ export class TaskSandboxLifecycle {
     this.state = { kind: 'running', generation, target }
     generation.ready.resolve(target)
     if (generation.users.size === 0) this.close(generation, target)
+  }
+
+  private async recover(failure: TaskSandboxFailure): Promise<void> {
+    try { await this.driver.recover?.() }
+    catch (_error) { throw failure }
+    this.state = { kind: 'closed' }
   }
 
   private release(generation: Generation, token: symbol): Promise<void> {

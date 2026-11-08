@@ -77,6 +77,8 @@ OpenSSH 主连接承载私有管理 RPC。每条程序流使用独立转发的 U
 
 连接会禁用 helper 的 SIGUSR1 调试器激活：脚本调用使用 `--disable-sigusr1`，可执行文件调用通过 `NODE_OPTIONS` 提供该标志。
 
+[VFS 启动脚本](../../../team-docs/vfs/run-workspace-helper.sh)在已验证的组共享目录中，以分配的任务 UID/GID 启动已安装的 helper。脚本清除补充组和 capabilities，并启用 no_new_privs。helper 以 0660 权限发布工作区的新建文本文件，替换时保留原文件权限。
+
 `signal` 在连接中断或释放时取消。`closeConfirmed()` 等待本地资源释放，并要求原 helper 确认受管理资源清理；连接中断后，即使普通 `dispose()` 能完成本地释放，它仍会拒绝。Workspace 生命周期管理方须据此决定是否可以接纳替代的运行时代次。
 
 </details>

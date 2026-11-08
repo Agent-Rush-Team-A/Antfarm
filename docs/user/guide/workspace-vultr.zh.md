@@ -67,3 +67,19 @@ pnpm run start:web --patch apps/cli/config/examples/harness-vultr.patch.yml --no
 默认容量为两台实例。轮询、请求和操作期限，以及副本的总字节数和条目数上限，均为[包参考](../../../packages/sandbox/harness-sandbox/README.zh.md)中说明的部署配置。超过副本上限时保存失败并保留 VM。新的完整保存记录成功前保留上一份完整快照；保存完成后移除旧快照。即使没有运行 VM，快照存储仍会计费。
 
 Vultr overlay 启用网页沙箱控件及共用空闲插件，空闲阈值为 30 分钟、扫描间隔为 10 秒。持续的云端准备、文件传输和清理阻止空闲关闭。上传恢复 VM 后重新进入空闲跟踪，取得新的运行状态观察后才开始计时。条件关闭调用本后端的保存流程，不另加计时器。面板显示通用沙箱状态和云端失败提示；详细阶段可通过管理 API 获取。云验收使用隔离凭据和可丢弃工作区；显式启用的 Loader 测试仅清理自己的带标签资源，保留账号中的其他资源。
+
+## 同时提供 VM 和 Docker 模式
+
+使用[工作区模式叠加层](../../../apps/cli/config/examples/harness-docker-modes.patch.yml)同时提供两种 Docker 模式和两种 VM 模式。先准备 [Docker 模式配置](workspace-sandboxes.zh.md)，再向 `DSH_DOCKER_MODES_CONFIG_JSON` 添加 `vultr` 对象。
+
+- `vultr.multi` 使用上文的快照提供方配置。客体机根目录保持为 `/workspace`。
+- `vultr.single` 使用相同的分配与 helper 配置，指定独立的私有 `stateRoot` 和 `deploymentId`。添加已有 VFS 卷的 `volumeId`，并将 `vfsScriptsRoot` 指向部署方持有的脚本目录，其中包含 `check-mount.sh` 和 `run-workspace-helper.sh`。
+- `vultr.vfs` 指定 Harness 上的 `mountPoint`、字符串格式的 `mountTag`、挂载点的直接子目录 `workspaceRoot`、保存任务身份的私有 `stateRoot`，以及预留的数字 `taskIds`。Web 使用非 root 账号运行，补充组须包含这些 ID。[VFS 部署说明](../../../team-docs/VULTR-VFS.md#执行-vm-的挂载和权限)
+
+```sh
+export DSH_MULTIUSER_WORKSPACE_ROOT=/srv/antfarm/workspaces
+export DSH_DOCKER_MODES_CONFIG_JSON="$(cat /srv/antfarm/workspace-modes.json)"
+pnpm run start:web --patch apps/cli/config/examples/harness-docker-modes.patch.yml --no-open
+```
+
+此叠加层让新工作区默认使用多会话 Docker 模式。若覆盖 `workspace.defaultMode`，请选用 `single-vm` 以外的模式。在创建首个会话前选择 **单会话 · VM**，切换会准备 VFS 目录并迁入已上传的文件。执行 VM 关闭时，网页仍可从已校验的 VFS 目录上传、列表和下载。首个有效任务打开 VM，最后一个任务收尾后回收。同一会话再次收到消息时，会启动新 VM 并使用该 VFS 目录中的文件。出现 `cleanup_required` 时，已校验的 VFS 目录仍可列表和下载。

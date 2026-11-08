@@ -11,7 +11,7 @@ import type { WorkspaceRuntimeFiles } from '../src/backend.ts'
 import type { RunnerRunningSandbox, SandboxContainerId } from '../src/runner-client.ts'
 import type { WorkspaceSshRuntime } from '../src/ssh-controller.ts'
 import type { WorkspaceSshServices } from '../src/ssh-runtime.ts'
-import { VultrApi, type VultrInstance, type VultrSnapshot } from '../src/vultr-api.ts'
+import { VultrApi, vultrInstance, vultrVolumeId, type VultrInstance, type VultrSnapshot } from '../src/vultr-api.ts'
 import { Config } from '../src/vultr-config.ts'
 import { CloudWorkspaceStore } from '../src/vultr-storage.ts'
 import { VultrWorkspaceController } from '../src/vultr-controller.ts'
@@ -28,6 +28,37 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
   vi.restoreAllMocks()
 })
+
+test('only an explicit missing VFS attachment counts as absence', async () => {
+  const volume = vultrVolumeId.parse(randomUUID())
+  const instance = vultrInstance.parse({ id: randomUUID(), label: 'original', tags: [], main_ip: '192.0.2.44',
+    status: 'active', power_status: 'running', server_status: 'ok' })
+  const transport = vi.fn<typeof fetch>()
+    .mockResolvedValueOnce(new Response(null, { status: 404 }))
+    .mockResolvedValueOnce(new Response('unavailable', { status: 503 }))
+    .mockResolvedValueOnce(new Response('unavailable', { status: 503 }))
+  const api = new VultrApi('fixture', 'https://fixture.invalid/v2', 1000, 2, 4096, transport)
+  const signal = new AbortController().signal
+  await expect(api.attachment(volume, instance.id, signal)).resolves.toBeUndefined()
+  await expect(api.attachment(volume, instance.id, signal)).rejects.toMatchObject({ status: 503, outcomeUnknown: false })
+  await expect(api.attach(volume, instance.id, signal)).rejects.toMatchObject({ status: 503, outcomeUnknown: true })
+  expect(transport.mock.calls.map(([, options]) => options?.method)).toEqual(['GET', 'GET', 'PUT'])
+})
+
+test.each([['complete', 2, null], ['repeated cursor', 2, 'cursor & more'], ['page limit', 1, null]] as const)(
+  'bounds inventory pagination at %s', async (scenario, pages, next) => {
+    const row = { id: randomUUID(), description: 'retained', status: 'complete' }
+    const transport = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ snapshots: [row], meta: { links: { next: 'cursor & more' } } }))
+      .mockResolvedValueOnce(Response.json({ snapshots: [], meta: { links: { next } } }))
+    const api = new VultrApi('fixture', 'https://fixture.invalid/v2', 1000, pages, 4096, transport)
+    const inventory = api.snapshots(new AbortController().signal)
+    if (scenario === 'complete') await expect(inventory).resolves.toEqual([row])
+    else await expect(inventory).rejects.toMatchObject({ status: 0, outcomeUnknown: false })
+    expect(transport).toHaveBeenCalledTimes(pages)
+    if (pages > 1) expect(transport.mock.calls[1]?.[0]).toBe('https://fixture.invalid/v2/snapshots?per_page=100&cursor=cursor%20%26%20more')
+  },
+)
 
 function cloud() {
   const instances = new Map<string, VultrInstance>()

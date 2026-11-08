@@ -107,6 +107,12 @@ The `/vultr` entry accepts these deployment settings. Keep credential files and 
 | `maxOutputBytes` | `65536` | Retained command-output byte limit. |
 | `graceMs` | `5000` | Managed-process termination grace period. |
 
+The single-session VM directory provider uses the registered project leaf under a separate [VFS workspace root](../../../team-docs/VULTR-VFS.md#执行-vm-的挂载和权限). It checks the live whole-volume mount and its tag. On the first transition into this mode, Harness reserves a UID/GID in private state and stages the complete file copy under that group. Publication makes the workspace binding permanent. Rollback removes staged files before releasing a new reservation. Web uploads, listings, and downloads use the verified directory directly and require no execution VM.
+
+The single-session allocation provider saves the original generation, label, and volume before sending the create request. It verifies instance ownership and Shared Memory Backing, then confirms the matching VFS attachment and its Mount Tag. Pinned SSH prepares and probes the guest's whole-volume mount and `/workspace` bind as the assigned task user. Only a verified helper on that generation admits commands and text files. Interrupted allocations remain in private state and count against capacity until cleanup confirms their disposition.
+
+Once the last task reservation settles, the provider fences the original helper, confirms task processes exited, synchronizes and unmounts the guest, then confirms VFS detachment and instance removal. Harness startup and later admission reconcile retained records against the original label and resource IDs. A confirmed cleanup permits the next task to create a fresh VM.
+
 <a id="workspace-text-tools"></a>
 ### Workspace text tools
 
@@ -262,7 +268,7 @@ The stable tool description can share the prompt prefix; results append as ordin
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Deployment** — the Runner requires Linux Unix sockets and a separately provisioned non-root filesystem identity. Windows named pipes support transport tests only.
-- **Mode composition** — Deployments provide the coordinator and explicit backend mappings; shipped profiles do not activate `./modes` automatically. Single-session VM also requires a verified shared-filesystem execution provider. Unknown creation or deletion outcomes block new task generations until provider reconciliation and mode admission reload.
+- **Mode composition** — Deployments provide the coordinator and explicit backend mappings; shipped profiles do not activate `./modes` automatically. Single-session VM also requires a verified shared-filesystem execution provider. Uncertain allocation and removal outcomes block new single-session VM generations until the provider reconciles the original resources.
 - **Capabilities** — The Runner overlay exposes only Bash. SSH text files require the separate `./files` entry and generation-bound backend access. Search, PowerShell, background, terminal, browser and indirect tools still require isolation before activation. The Runner overlay enables Web management controls.
 - **Cloud retention** — Workspace registration deletion does not remove retained cloud snapshots or private copies. Deployment operators manage retention for deleted workspaces. The provider preserves only regular files and directories in the closed download copy; symlinks and special entries remain available only in the full disk snapshot.
 - **Cloud acceptance** — `DSH_VULTR_TEST_CONFIG` selects a private deployment JSON for [the opt-in real-cloud Loader test](tests/vultr-loader.e2e.ts). Run it with `pnpm exec vitest run --config vitest.e2e.config.ts packages/sandbox/harness-sandbox/tests/vultr-loader.e2e.ts`; `DSH_VULTR_TEST_EVIDENCE` optionally selects its report path. It creates two billable VMs and disk snapshots, checks real SSH and authenticated HTTP with a scripted model, and removes its uniquely tagged resources. It does not verify a live model provider or browser controls.

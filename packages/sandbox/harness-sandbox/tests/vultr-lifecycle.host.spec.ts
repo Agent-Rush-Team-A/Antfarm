@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -39,6 +39,27 @@ async function fixture() {
   const inventory = vi.spyOn(VultrApi.prototype, 'instances').mockResolvedValue([])
   return { ctx, competitor, project, settings, inventory }
 }
+
+test.runIf(process.platform === 'linux' && process.getuid?.() !== 0)('existing private state opens beneath a search-only parent', async () => {
+  const parent = await mkdtemp(join(tmpdir(), 'antfarm-vultr-private-'))
+  const store = new CloudWorkspaceStore(join(parent, 'state'))
+  try {
+    await mkdir(store.root, { mode: 0o700 })
+    await chmod(parent, 0o100)
+    await store.initialize()
+    await expect(store.load()).resolves.toEqual([])
+  } finally {
+    await store.close()
+    await chmod(parent, 0o700)
+    await rm(parent, { recursive: true, force: true })
+  }
+})
+
+linuxTest('record removal settles when the allocation directory was never created', async () => {
+  const f = await fixture()
+  await f.competitor.initialize()
+  await expect(f.competitor.remove(WorkspaceId('unpublished-allocation'))).resolves.toBeUndefined()
+})
 
 linuxTest.each(['provider', 'root'] as const)('%s unload keeps the lock through request and SSH cleanup', async (owner) => {
   const f = await fixture()
