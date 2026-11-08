@@ -19,7 +19,11 @@ const zh: BootCopy = {
   failed: 'Antfarm 未能启动',
 }
 
-/** @param language - Document language. @returns Boot copy without loading a client plugin. */
+/**
+ * Provides localized boot copy before the client locale plugin loads.
+ * @param language - Document language.
+ * @returns Boot copy for Chinese or, for other languages, English.
+ */
 export function bootCopy(language: string): BootCopy {
   return language.toLowerCase().startsWith('zh') ? zh : en
 }
