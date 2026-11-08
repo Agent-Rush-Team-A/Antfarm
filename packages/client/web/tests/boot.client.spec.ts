@@ -65,8 +65,8 @@ describe('bootstrap failure rendering', () => {
     const failure = vi.fn()
     await entry.run(failure)
     expect(failure).toHaveBeenCalledWith(new Error('web boot: window.__ModuleLoader__ bootstrap facade is missing'))
-    expect(container.textContent).toContain('Loading plugins')
-    expect(container.textContent).not.toContain('Failed to load plugins')
+    expect(container.textContent).toContain('Preparing Antfarm')
+    expect(container.textContent).not.toContain('Antfarm could not start')
     expect(container.querySelector('[data-dsh-boot-spinner]')).not.toBeNull()
     await entry.dispose()
   })
@@ -93,10 +93,10 @@ describe('bootstrap failure rendering', () => {
         expect(report).toHaveBeenCalledOnce()
         expect(String(report.mock.calls[0]![0])).toContain(`${REQUIRED_ID} (required): failed: Error: plugin activation failed`)
         expect(container.querySelector('[data-dsh-boot-spinner]')).not.toBeNull()
-        expect(container.textContent).not.toContain('Failed to load plugins')
+        expect(container.textContent).not.toContain('Antfarm could not start')
       } else {
         expect(report).not.toHaveBeenCalled()
-        expect(container.textContent).toContain('Failed to load plugins')
+        expect(container.textContent).toContain('Antfarm could not start')
         expect(container.textContent).toContain(`${REQUIRED_ID} (required): failed: Error: plugin activation failed`)
       }
     } finally {
@@ -135,7 +135,7 @@ describe('bootstrap failure rendering', () => {
       expect(mounted).toHaveBeenCalledExactlyOnceWith(container)
       expect(report).not.toHaveBeenCalled()
       expect(warn).toHaveBeenCalledExactlyOnceWith('web boot: warning: 1 entry did not activate\nbroken: failed: Error: plugin activation failed')
-      expect(container.textContent).not.toContain('Failed to load plugins')
+      expect(container.textContent).not.toContain('Antfarm could not start')
     } finally {
       await entry.dispose()
     }

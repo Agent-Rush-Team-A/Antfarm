@@ -48,10 +48,10 @@ function svgUrl(svg: string): string {
 it('ships install metadata with the built web application', async () => {
   const index = await readFile(join(DIST_ROOT, 'index.html'), 'utf8')
   expect(index).toContain('<meta name="viewport" content="width=device-width, initial-scale=1" />')
-  expect(index).toContain('<link rel="manifest" href="./manifest.webmanifest" />')
-  expect(index).toContain('<link rel="apple-touch-icon" href="./apple-touch-icon.png" />')
+  expect(index).toContain('<link rel="manifest" href="./manifest.webmanifest?brand=antfarm" />')
+  expect(index).toContain('<link rel="apple-touch-icon" href="./apple-touch-icon.png?brand=antfarm" />')
   expect(index).toContain('<meta name="mobile-web-app-capable" content="yes" />')
-  expect(index).toContain('<meta name="apple-mobile-web-app-title" content="DSH" />')
+  expect(index).toContain('<meta name="apple-mobile-web-app-title" content="Antfarm" />')
   // No `theme-color` here: `ThemePresenter` owns the single metadata node and
   // follows the resolved in-application theme, which a static media query
   // cannot. The manifest's `theme_color` covers the surrounding chrome before
@@ -62,8 +62,8 @@ it('ships install metadata with the built web application', async () => {
   // so only an absent `id`, which defaults to the resolved `start_url`, gives
   // each mount its own identity. `public-mount.e2e.ts` reads the resolved form.
   expect(manifest).toEqual({
-    name: 'DeepSeek Harness',
-    short_name: 'DSH',
+    name: 'Antfarm',
+    short_name: 'Antfarm',
     start_url: './',
     scope: './',
     // `standalone` keeps the phone's status bar; `fullscreen` hides it and the
@@ -72,9 +72,9 @@ it('ships install metadata with the built web application', async () => {
     background_color: '#ffffff',
     theme_color: '#ffffff',
     icons: [
-      { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-      { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-      { src: 'icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      { src: 'icon-192.png?brand=antfarm', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: 'icon-512.png?brand=antfarm', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: 'icon-maskable-512.png?brand=antfarm', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
     ],
   })
 })
@@ -90,7 +90,7 @@ it('decodes every generated and shipped icon with its full artwork and opaque co
     }
     const declared = [...manifest.icons, { src: 'apple-touch-icon.png', sizes: '180x180' }]
     expect(generated.map(({ variant }) => [variant.file, `${variant.size}x${variant.size}`]))
-      .toEqual(declared.map(icon => [icon.src, icon.sizes]))
+      .toEqual(declared.map(icon => [icon.src.split('?')[0], icon.sizes]))
     for (const { variant, png } of generated) {
       const reference = await pixels(page, svgUrl(tileDocument(source)), variant.size)
       expect(reference.ink).toBeGreaterThan(0)
@@ -110,14 +110,14 @@ it('decodes every generated and shipped icon with its full artwork and opaque co
 
 it('ships fixed-color favicons selected by document media queries', async () => {
   const index = await readFile(join(DIST_ROOT, 'index.html'), 'utf8')
-  expect(index).toContain('<link rel="icon" type="image/svg+xml" href="./favicon-dark.svg" media="(prefers-color-scheme: dark)" />')
-  expect(index).toContain('<link rel="icon" type="image/svg+xml" href="./favicon.svg" media="(prefers-color-scheme: light)" />')
+  expect(index).toContain('<link rel="icon" type="image/svg+xml" href="./favicon-dark.svg?brand=antfarm" media="(prefers-color-scheme: dark)" />')
+  expect(index).toContain('<link rel="icon" type="image/svg+xml" href="./favicon.svg?brand=antfarm" media="(prefers-color-scheme: light)" />')
   const light = await readFile(join(DIST_ROOT, 'favicon.svg'), 'utf8')
   const dark = await readFile(join(DIST_ROOT, 'favicon-dark.svg'), 'utf8')
   expect(light).not.toContain('<style>')
-  expect(light).toContain('fill="#000"')
-  expect(dark).toContain('fill="#fff"')
-  expect(dark.replace('fill="#fff"', 'fill="#000"')).toBe(light)
+  expect(light).toContain('fill="#27251f"')
+  expect(dark).toContain('fill="#dbc39b"')
+  expect(dark.replaceAll('#dbc39b', '#27251f').replaceAll('#11110f', '#ffffff')).toBe(light)
 })
 
 it('preserves fractional coverage along the Apple icon curves', async () => {
