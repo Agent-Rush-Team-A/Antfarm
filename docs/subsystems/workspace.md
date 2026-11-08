@@ -887,6 +887,12 @@ unpinSession(sessionId: SessionId): Promise<void>
  * @returns the workspace owning the canonical path, when one exists.
  */
 async resolveByPath(path: string): Promise<Workspace | undefined>
+
+/**
+ * Pause mode admission for a planned Host shutdown and allow accepted operations to finish.
+ * @returns After the coordinator's queued and active leases settle.
+ */
+quiesceModes(): Promise<void>
 ```
 
 Types: [SessionId](core.md)

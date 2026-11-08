@@ -2,6 +2,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { chmod, mkdir, readFile, rename, symlink, writeFile } from 'node:fs/promises'
+import { request } from 'node:http'
 import { basename, join } from 'node:path'
 import { describe, expect, test, vi } from 'vitest'
 import { z } from 'zod'
@@ -10,6 +11,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import type { WorkspaceFileScope } from '@deepseek-ai/dsh-fs/workspace-access'
 import type { WorkspaceModeChange, WorkspaceModeChangeId, WorkspaceModeRuntime } from '@deepseek-ai/dsh-workspace/types'
 import * as DockerModes from '../src/docker-modes.ts'
+import WorkspaceSandbox from '../src/index.ts'
 import { VultrApi } from '../src/vultr-api.ts'
 import { fixture } from './fixtures/management.ts'
 
@@ -38,6 +40,96 @@ function cloudSettings(home: string) {
 }
 
 describe.runIf(process.platform === 'linux')('Docker mode directory publication', () => {
+  test.each(['single-docker', 'multi-docker'] as const)('deleting a %s workspace waits for its configured Runner to confirm cleanup', async (mode) => {
+    const f = await fixture(1000, false, 1000, 1000, mode)
+    await f.sandboxFiber.dispose()
+    await f.ctx.plugin(DockerModes, {
+      socketPath: f.socketPath, workspaceRoot: f.workspaceRoot, stateRoot: join(f.home, 'mode-state'),
+      maxFiles: 100, maxBytes: 4096,
+    })
+    await f.ctx.plugin(WorkspaceSandbox, { backend: 'provided', workspaceRoot: f.workspaceRoot })
+    const file = join(f.alice.workspace.path, 'keep.txt')
+    await writeFile(file, 'keep')
+    const respond = f.control.respond
+    f.control.respond = (response, method, call) => {
+      if (method === 'DELETE') response.writeHead(409).end(JSON.stringify({ error: 'sandbox_cleanup_required' }))
+      else respond(response, method, call)
+    }
+
+    expect(await f.remove(f.alice.cookie, f.alice.id)).toMatchObject({
+      ok: false, error: { code: 'sandbox/failed', details: { reason: 'sandbox_cleanup_required' } },
+    })
+    expect(f.ctx.workspaceRegistry.get(f.alice.id)).toBe(f.alice.workspace)
+    expect(f.ctx.multiuser.ownsWorkspace(f.alice.user.userId, f.alice.id)).toBe(true)
+
+    f.control.respond = respond
+    expect(await f.remove(f.alice.cookie, f.alice.id)).toEqual({ ok: true, value: { deleted: true } })
+    const path = `/v1/workspaces/${f.alice.id}/sandbox`
+    expect(f.calls.map(call => [call.method, call.path])).toEqual([['GET', path], ['DELETE', path], ['GET', path], ['DELETE', path]])
+    expect(f.ctx.workspaceRegistry.get(f.alice.id)).toBeUndefined()
+    expect(f.ctx.workspaceRegistry.get(f.bob.id)).toBe(f.bob.workspace)
+    expect(await readFile(file, 'utf8')).toBe('keep')
+  })
+
+  test('the private drain socket lets an admitted upload finish and refuses new work', async () => {
+    const f = await fixture(1000, false, 1000, 1000, 'multi-docker')
+    await f.sandboxFiber.dispose()
+    const drainSocket = join(f.home, 'drain.sock')
+    const registry = f.ctx.workspaceRegistry
+    const quiesce = registry.quiesceModes.bind(registry)
+    const started = Promise.withResolvers<undefined>()
+    vi.spyOn(registry, 'quiesceModes').mockImplementation(() => {
+      const result = quiesce()
+      started.resolve(undefined)
+      return result
+    })
+    await f.ctx.plugin(DockerModes, {
+      socketPath: f.socketPath, workspaceRoot: f.workspaceRoot, stateRoot: join(f.home, 'mode-state'),
+      maxFiles: 100, maxBytes: 4096, drainSocket,
+    })
+    const callSocket = (method: string, path: string) => new Promise<number | undefined>((resolve, reject) => {
+      request({ socketPath: drainSocket, path, method }, (response) => {
+        response.resume()
+        resolve(response.statusCode)
+      }).once('error', reject).end()
+    })
+    await expect(callSocket('GET', '/ready')).resolves.toBe(204)
+    const options = { signal: new AbortController().signal, admit: () => {} }
+    const lease = await registry.modes.acquireUse(f.alice.id, options)
+    const writing = Promise.withResolvers<undefined>()
+    const finishWrite = Promise.withResolvers<undefined>()
+    const upload = f.ctx.workspaceFileAccess.upload({
+      ...options, workspaceId: f.alice.id, project: f.alice.workspace.path,
+    }, 'drained.txt', (async function* () {
+      writing.resolve(undefined)
+      yield Buffer.from('saved')
+      await finishWrite.promise
+    })(), 100)
+    let acknowledged = false
+    let drained: Promise<number | undefined>
+    try {
+      await Promise.race([writing.promise, upload])
+      drained = callSocket('POST', '/drain').then((status) => {
+        acknowledged = true
+        return status
+      })
+      const entered = await Promise.race([started.promise.then(() => true), drained.then(() => false)])
+      expect(entered).toBe(true)
+      await expect(callSocket('GET', '/ready')).resolves.toBe(503)
+      await expect(registry.modes.acquireUse(f.bob.id, options)).rejects.toMatchObject({ code: 'workspace/mode-runtime-unavailable' })
+      await expect(registry.modes.setMode({ workspaceId: f.bob.id, mode: 'single-docker', expectedRevision: 0 }, options))
+        .rejects.toMatchObject({ code: 'workspace/mode-runtime-unavailable' })
+      expect(acknowledged).toBe(false)
+      expect(() => lease.admit()).not.toThrow()
+    } finally {
+      lease.release()
+      finishWrite.resolve(undefined)
+    }
+    await expect(upload).resolves.toMatchObject({ bytes: 5 })
+    expect(await readFile(join(f.alice.workspace.path, 'drained.txt'), 'utf8')).toBe('saved')
+    await expect(drained).resolves.toBe(204)
+  })
+
   test.each(['single-vm', 'multi-vm'] as const)('rejects default %s before starting cloud providers', async (mode) => {
     const f = await fixture(1000, false, 1000, 1000, mode)
     await f.sandboxFiber.dispose()

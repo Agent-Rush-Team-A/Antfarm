@@ -7,6 +7,7 @@ import type { WorkspaceId, WorkspaceMode } from '@deepseek-ai/dsh-workspace/type
 import DockerWorkspaceBackend, { Config as DockerConfig } from './docker.ts'
 import type { Config as DockerSettings } from './docker.ts'
 import WorkspaceModeBackend from './mode-backend.ts'
+import { listenModeDrain } from './mode-drain.ts'
 import { WorkspaceModeDirectoryFiles } from './mode-directory-files.ts'
 import type { WorkspaceModeDirectory } from './mode-directory-files.ts'
 import { WorkspaceModeDirectoryResources } from './mode-directory-resources.ts'
@@ -22,6 +23,8 @@ export type Config = DockerSettings & {
   readonly stateRoot: string
   readonly maxFiles: number
   readonly maxBytes: number
+  /** When set, expose the planned shutdown control in a private runtime directory. */
+  readonly drainSocket?: string
   readonly vultr?: {
     readonly multi: SingleVmVultrConfig
     readonly single: SingleVmVultrConfig
@@ -35,6 +38,7 @@ export const Config: Schema<Config> = Schema.intersect([DockerConfig, Schema.obj
   stateRoot: Schema.string().required(),
   maxFiles: Schema.natural().min(1).required(),
   maxBytes: Schema.natural().min(1).required(),
+  drainSocket: Schema.string(),
   vultr: Schema.union([Schema.const(undefined), Schema.object({
     multi: Schema.intersect([VultrConfig, Schema.object({
       remoteRoot: Schema.const('/workspace').default('/workspace'),
@@ -138,6 +142,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       })
       disposeFacade = () => plugin.dispose()
       await plugin
+      if (settings.drainSocket !== undefined) {
+        const dispose = await listenModeDrain(settings.drainSocket, () => registry.quiesceModes())
+        facade.effect(() => dispose)
+      }
     }
     if (cloud == null) { await publish(owner); return }
 

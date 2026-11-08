@@ -107,6 +107,7 @@ export class WorkspaceModes implements IWorkspaceModes {
   private readonly recoveries = new Map<WorkspaceId, Promise<WorkspaceModeConfig>>()
   private runtime: RuntimeRegistration | undefined
   private runtimeEstablished = false
+  private quiescing = false
   private sessionRecovery?: (entity: WorkspaceEntity) => Promise<void>
 
   /** @param host - Registry-owned persistence, registration identities, and logs. */
@@ -263,7 +264,7 @@ export class WorkspaceModes implements IWorkspaceModes {
 
   async acquireUse(workspaceId: WorkspaceId, options: WorkspaceModeOperationOptions): Promise<WorkspaceModeUseLease> {
     const entity = this.requireEntity(workspaceId)
-    const signal = this.operationSignal(options.signal)
+    const signal = this.operationSignal(workspaceId, options.signal)
     const release = await this.queue(workspaceId).acquire(false, signal)
     try {
       this.check(entity, options, signal)
@@ -334,7 +335,7 @@ export class WorkspaceModes implements IWorkspaceModes {
   async exclusive<T>(workspaceId: WorkspaceId, options: WorkspaceModeOperationOptions,
     operation: (entity: WorkspaceEntity, signal: AbortSignal) => Promise<T>): Promise<T> {
     const entity = this.requireEntity(workspaceId)
-    const signal = this.operationSignal(options.signal)
+    const signal = this.operationSignal(workspaceId, options.signal)
     const release = await this.queue(workspaceId).acquire(true, signal)
     try {
       this.check(entity, options, signal)
@@ -344,6 +345,7 @@ export class WorkspaceModes implements IWorkspaceModes {
 
   /** Refuse admission while a durable operation remains pending.
    * @param entity - Registration whose pending intent prevents resource admission.
+   * @param lifecycle - Allow lifecycle operations on an archived or deactivating workspace.
    */
   assertReady(entity: WorkspaceEntity, lifecycle = false): void {
     if (!lifecycle && (entity.archived || this.host.deactivating?.(entity.id))) {
@@ -370,6 +372,12 @@ export class WorkspaceModes implements IWorkspaceModes {
     await this.drain()
   }
 
+  /** Refuse new mode operations and let previously queued or active leases settle. */
+  quiesce(): Promise<void> {
+    this.quiescing = true
+    return this.drain()
+  }
+
   private async drain(): Promise<void> {
     await Promise.all([...this.admission.values()].map(queue => queue.drain()))
   }
@@ -381,7 +389,8 @@ export class WorkspaceModes implements IWorkspaceModes {
     if (this.runtimeEstablished) this.requireRuntime(entity.id)
   }
 
-  private operationSignal(signal: AbortSignal): AbortSignal {
+  private operationSignal(workspaceId: WorkspaceId, signal: AbortSignal): AbortSignal {
+    if (this.quiescing) throw new WorkspaceModeError('workspace/mode-runtime-unavailable', { workspaceId })
     return AbortSignal.any([signal, this.lifetime.signal, ...this.runtime === undefined ? [] : [this.runtime.lifetime.signal]])
   }
 

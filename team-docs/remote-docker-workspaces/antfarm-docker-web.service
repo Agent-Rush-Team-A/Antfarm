@@ -1,0 +1,19 @@
+[Unit]
+Description=Antfarm Web with a remote Docker workspace Runner
+BindsTo=srv-antfarm-docker.mount
+Wants=antfarm-runner-tunnel.service
+After=srv-antfarm-docker.mount antfarm-runner-tunnel.service
+
+[Service]
+User=antfarm-web
+RuntimeDirectory=antfarm-docker-web
+RuntimeDirectoryMode=0700
+WorkingDirectory=/srv/antfarm/source
+EnvironmentFile=/etc/antfarm/docker-web.env
+ExecStartPre=/usr/bin/bash /srv/antfarm/source/team-docs/remote-docker-workspaces/host-control.sh harness-check
+ExecStartPre=/usr/bin/bash /srv/antfarm/source/team-docs/vfs/check-mount.sh /srv/antfarm/docker ${ANTFARM_DOCKER_MOUNT_TAG} / /srv/antfarm/docker/workspaces read-write
+ExecStartPre=/usr/bin/curl --fail --silent --show-error --output /dev/null --max-time 3 --retry 10 --retry-all-errors --retry-max-time 30 --unix-socket /run/antfarm-runner-tunnel/runner.sock http://localhost/v1/workspaces/runner-readiness/sandbox
+ExecStart=/usr/bin/env node /srv/antfarm/source/apps/cli/lib/bin.js --profile web --patch /srv/antfarm/source/apps/cli/config/antfarm-web.patch.yml --patch /srv/antfarm/source/apps/cli/config/examples/harness-docker-modes.patch.yml --host 127.0.0.1 --port ${ANTFARM_WEB_PORT} --no-open
+ExecStartPost=/usr/bin/curl --fail --silent --show-error --output /dev/null --max-time 3 --retry 10 --retry-all-errors --retry-max-time 30 http://127.0.0.1:${ANTFARM_WEB_PORT}/
+ExecStartPost=/usr/bin/curl --fail --silent --show-error --output /dev/null --max-time 3 --retry 10 --retry-all-errors --retry-max-time 30 --unix-socket /run/antfarm-docker-web/drain.sock http://localhost/ready
+TimeoutStartSec=75s

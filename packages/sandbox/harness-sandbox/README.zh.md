@@ -217,6 +217,8 @@ Agent 步骤信号在异步工具策略前标识原 turn，工具在发送时重
 
 [Docker 模式叠加层](../../../apps/cli/config/examples/harness-docker-modes.patch.yml) 加载 `./docker-modes`，提供两种 Docker 目标和持久化目录切换。将 `DSH_DOCKER_MODES_CONFIG_JSON` 设为 Runner 通信配置，加上 `workspaceRoot`、私有绝对目录 `stateRoot`、`maxFiles` 和 `maxBytes`；`DSH_MULTIUSER_WORKSPACE_ROOT` 使用同一根目录。复制限制作用于完整切换。叠加层将新工作区默认模式设为 `multi-docker`；首个会话前可选择其他模式。可选 `vultr` 配置启用两种 VFS VM 目标；未配置时，加载拒绝已有 VM 模式。两种 VM 目标必须使用相同 `volumeId` 和 `region`，指定独立的私有 `stateRoot` 目录及可信 `vfsScriptsRoot` 资源。默认保持为 Docker 模式。可选 `vultr.legacyMultiStateRoot` 允许导入已完成的旧文件副本，不修改原记录和快照；详见[部署指南](../../../docs/user/guide/workspace-vultr.zh.md#offer-vm-and-docker-modes-together)。分配器、Runner 和容器身份必须共享目录访问权限。
 
+将 `drainSocket` 设为 Harness 用户私有运行目录下的绝对 Unix socket 路径，可启用计划停机控制。向此本地 socket 发送 `POST /drain` 会停止接纳新的工作区模式操作，等先前操作结算后返回 HTTP 204。Host 重启后恢复接纳。省略该字段时使用常规进程停机流程。 [Docker 专用 VM 部署](../../../team-docs/remote-docker-workspaces/README.zh.md)
+
 Docker 提供方使用 `./docker`，配置为 Runner 通信参数加 `workspaceRoot`，不会再创建嵌套容器。它为经过验证的绑定目录提供原生文本访问，显示路径为 `/workspace`。Harness 分配器、Runner 和容器的 uid/gid 必须预先匹配。持久化二进制文件通过经过验证的目录提供方访问，不依赖容器存活。
 
 模式入口在等待协调器或准备工作前为输入保留名额，在附件验证后启动环境，并将选中的后端保留到收件箱和对话轮次收尾。Bash、原生文本工具及二进制流在同一选择下分别保留清理工作。单会话的最后一个名额释放后销毁其原始环境；删除前到达的输入保留该代次，删除期间到达的输入等待新代次。后端拒绝单会话模式的手动生命周期控制。多会话模式保留手动与空闲控制。
