@@ -10,7 +10,7 @@ Vultr Agent Rush Hackathon · Blast Radius Zero · 基于 [DeepSeek Harness](htt
 
 [English](README.md) | 中文
 
-[**体验 Antfarm**](#try-antfarm) · [演示录屏](https://github.com/Agent-Rush-Team-A/Antfarm/pull/59) · [工作原理](#how-it-works) · [验证证据](#verification) · [自行部署](#quick-start)
+[**体验 Antfarm**](#try-antfarm) · [演示录屏](https://github.com/Agent-Rush-Team-A/Antfarm/pull/59) · [工作原理](#how-it-works) · [自行部署](#quick-start)
 
 [![Antfarm 访客会话执行真实任务并下载结果](https://github.com/user-attachments/assets/4eeb423c-8394-41de-a12c-0f852027b9ab?readme=1)](https://github.com/Agent-Rush-Team-A/Antfarm/pull/59)
 
@@ -65,21 +65,6 @@ Vultr Agent Rush Hackathon · Blast Radius Zero · 基于 [DeepSeek Harness](htt
 | 工作区隔离 | 每个账号拥有自己的工作区，工具在所选工作区的执行环境中运行。 |
 | 自动回收环境、保留文件 | 单会话 Docker 在任务结束后自动关闭，输入和输出文件仍可访问。 |
 | 持续迭代 | 多会话模式在不同对话间共享执行环境；VM 关闭后，工作区文件仍保留在 Vultr File System。 |
-
-<a id="verification"></a>
-## 验证与证据
-
-演示使用真实模型调用和执行后端。以下记录来自不同环境；云端验收记录与公网 Docker Demo 分别验证。
-
-| 证据 | 验证内容 |
-| --- | --- |
-| [访客演示 · PR #59](https://github.com/Agent-Rush-Team-A/Antfarm/pull/59) | 访客通过 Vultr Serverless Inference 和单会话 Docker 执行任务、下载结果，并在容器回收后继续访问文件。 |
-| [云端表格验收 · PR #39](https://github.com/Agent-Rush-Team-A/Antfarm/pull/39) | 较早的一次完整运行使用真实 Vultr 推理和工作区 VM，得到 **9 笔订单、16 件净销量、1,719.50 净销售额**，并检查了工作区隔离和文件保留。 |
-| [超时清理 · PR #39](https://github.com/Agent-Rush-Team-A/Antfarm/pull/39) | 后续专项检查通过独立 SSH 检查确认：Bash 触发 1,000 ms 超时后，Shell 和子进程均已终止。 |
-
-[云端验收样例](apps/web/tests/fixtures/workspace-spreadsheet/README.zh.md)包含 CSV 输入、独立计算的预期结果与复现说明。运行该场景会创建付费 Vultr 资源。
-
-
 
 <a id="how-it-works"></a>
 ## 工作原理

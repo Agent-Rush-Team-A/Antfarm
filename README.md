@@ -10,7 +10,7 @@ Vultr Agent Rush Hackathon · Blast Radius Zero · Built on [DeepSeek Harness](h
 
 English | [中文](README.zh.md)
 
-[**Try Antfarm**](#try-antfarm) · [Recorded demo](https://github.com/Agent-Rush-Team-A/Antfarm/pull/59) · [How it works](#how-it-works) · [Evidence](#verification) · [Self-host](#quick-start)
+[**Try Antfarm**](#try-antfarm) · [Recorded demo](https://github.com/Agent-Rush-Team-A/Antfarm/pull/59) · [How it works](#how-it-works) · [Self-host](#quick-start)
 
 [![Antfarm guest session running a real task and downloading the result](https://github.com/user-attachments/assets/4eeb423c-8394-41de-a12c-0f852027b9ab?readme=1)](https://github.com/Agent-Rush-Team-A/Antfarm/pull/59)
 
@@ -65,21 +65,6 @@ The recorded walkthrough uses single-session Docker. A single Antfarm deployment
 | Workspace isolation | Each account owns its workspaces; tool execution uses the selected workspace environment. |
 | Disposable execution, retained files | Single-session Docker closes automatically after work settles. Inputs and outputs remain available. |
 | Continued work | Multi-session modes share an environment across conversations; VM workspace files remain on Vultr File System after closure. |
-
-<a id="verification"></a>
-## Evidence and verification
-
-The demo uses real model calls and execution backends. These records cover different environments; the cloud acceptance record is separate from the public Docker demo.
-
-| Evidence | What it demonstrates |
-| --- | --- |
-| [Guest demo · PR #59](https://github.com/Agent-Rush-Team-A/Antfarm/pull/59) | A guest runs a task with Vultr Serverless Inference and single-session Docker, downloads its result, and retains access to files after container reclamation. |
-| [Cloud spreadsheet acceptance · PR #39](https://github.com/Agent-Rush-Team-A/Antfarm/pull/39) | An earlier full run with real Vultr inference and Workspace VMs produced **9 orders, 16 net units, and 1,719.50 net sales**, and checked workspace isolation and file retention. |
-| [Timeout containment · PR #39](https://github.com/Agent-Rush-Team-A/Antfarm/pull/39) | A focused follow-up checked a 1,000 ms Bash timeout through independent SSH inspection: both the shell and its child had terminated. |
-
-The [cloud acceptance fixture](apps/web/tests/fixtures/workspace-spreadsheet/README.md) contains its CSV inputs, independently computed expected results, and reproduction instructions. Running that scenario creates paid Vultr resources.
-
-
 
 <a id="how-it-works"></a>
 ## How it works
