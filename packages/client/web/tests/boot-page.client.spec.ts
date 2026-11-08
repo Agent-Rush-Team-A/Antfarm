@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
 import { BootPage } from '../src/boot-page.ts'
+import { bootMarkup } from '../src/boot-markup.ts'
+import css from '../src/boot-page.module.css'
 
 afterEach(() => { document.body.innerHTML = ''; document.documentElement.lang = '' })
 
@@ -11,6 +13,31 @@ function mount() {
 }
 
 describe('BootPage', () => {
+  it('adopts the initial HTML indicator without restarting its ant animation', () => {
+    const el = document.createElement('div')
+    el.innerHTML = bootMarkup('en', css)
+    document.body.append(el)
+    const indicator = el.firstElementChild
+    const ant = el.querySelector('[data-dsh-boot-ant]')
+    const page = new BootPage(el)
+    page.setTotal(2)
+    page.setState('first', 'active')
+    expect(el.querySelectorAll('[data-dsh-boot]')).toHaveLength(1)
+    expect(el.firstElementChild).toBe(indicator)
+    expect(el.querySelector('[data-dsh-boot-ant]')).toBe(ant)
+    expect(el.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('50')
+  })
+
+  it('localizes an adopted indicator before client plugins activate', () => {
+    const el = document.createElement('div')
+    el.innerHTML = bootMarkup('en', css)
+    document.body.append(el)
+    document.documentElement.lang = 'zh-CN'
+    new BootPage(el)
+    expect(el.textContent).toContain('正在准备 Antfarm…')
+    expect(el.querySelector('[role="progressbar"]')?.getAttribute('aria-label')).toBe('Antfarm 加载进度')
+  })
+
   it('draws the loading skeleton before any plugin state arrives', () => {
     const { el } = mount()
     expect(el.firstElementChild?.getAttribute('data-dsh-boot')).toBe('')

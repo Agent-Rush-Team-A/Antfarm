@@ -200,7 +200,7 @@ export class MultiuserService extends Service implements ConnectionAdmissionProv
           ...(user === undefined ? {} : { user }),
         },
       })
-      table.push({ kind: 'script-src', placement: 'head', src: 'auth/client.js' })
+      table.push({ kind: 'script-src', placement: 'head', src: 'auth/client.js', defer: true })
       table.push({ kind: 'style', text: MULTIUSER_CLIENT_STYLE })
     })
     this.ctx.inject(['tools'], (ctx) => {
@@ -820,7 +820,7 @@ export class MultiuserService extends Service implements ConnectionAdmissionProv
       } finally {
         await peer.dispose()
       }
-      rows.push({ kind: 'script-src', placement: 'body', src: 'client.js' })
+      rows.push({ kind: 'script-src', placement: 'body', src: 'client.js', defer: true })
       res.statusCode = 200
       res.setHeader('content-type', 'text/html; charset=utf-8')
       res.setHeader('cache-control', 'no-store')

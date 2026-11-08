@@ -1,12 +1,13 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { defineConfig } from 'vite'
-import type { Plugin } from 'vite'
+import { defineConfig, preprocessCSS } from 'vite'
+import type { Plugin, ResolvedConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { clientBuildEnvironmentDefines } from '../../scripts/client-build-environment.ts'
 import { productWebBundleIsolation } from './product-isolation.ts'
 import { katexWoff2Fonts } from './katex-fonts.ts'
+import { bootMarkup } from '../../packages/client/web/src/boot-markup.ts'
 
 const src = (rel: string): string => fileURLToPath(new URL(rel, import.meta.url))
 const STANDALONE_ERROR = 'apps/web is not a standalone application: bare Vite cannot inject window.__DSH_BOOT__. '
@@ -26,6 +27,26 @@ function clientDocumentTitle(): Plugin {
     name: 'dsh-client-document-title',
     transformIndexHtml(html) {
       return html.replace('<title>DSH Local Build</title>', `<title>${title}</title>`)
+    },
+  }
+}
+
+/** Include the shared boot indicator and its CSS before network-loaded scripts. */
+function initialBootPage(): Plugin {
+  let config: ResolvedConfig
+  return {
+    name: 'dsh-initial-boot-page',
+    configResolved(resolved) { config = resolved },
+    transformIndexHtml: {
+      order: 'pre',
+      async handler(html) {
+        const stylesheet = src('../../packages/client/web/src/boot-page.module.css')
+        const boot = await preprocessCSS(await readFile(stylesheet, 'utf8'), stylesheet, config)
+        if (boot.modules === undefined) throw new Error('Boot page CSS did not produce module names')
+        const base = await readFile(src('../../packages/client/web/src/base.css'), 'utf8')
+        return html.replace('<div id="root"></div>', `<div id="root">${bootMarkup('en', boot.modules)}</div>`)
+          .replace('</head>', `<style data-dsh-initial-boot-style>${base}\n${boot.code}</style></head>`)
+      },
     },
   }
 }
@@ -171,7 +192,7 @@ export default defineConfig({
   // directory, and the served index resolves identically from the site root.
   base: './',
   plugins: [
-    rejectStandaloneServe(), clientDocumentTitle(), brandFontLicense(), katexWoff2Fonts(), react(), emitPreviewPage(),
+    rejectStandaloneServe(), clientDocumentTitle(), initialBootPage(), brandFontLicense(), katexWoff2Fonts(), react(), emitPreviewPage(),
     productWebBundleIsolation(src('../..'), src('.')),
   ],
   build: {

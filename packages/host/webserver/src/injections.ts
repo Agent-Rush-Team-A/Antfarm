@@ -18,11 +18,11 @@ export type IndexInjection =
   /** Inline classic script. `text` must not contain `</script`, which would close the element early. */
   | { kind: 'script'; placement: IndexInjectionPlacement; text: string }
   /**
-   * External classic script, executed in table order: a parser-blocking tag
-   * when served, an awaited fetch-and-execute in the worker form (whose
-   * loader resolves worker-only references such as `plugins/...`).
+   * External classic script: parser-blocking by default; defer runs it after
+   * parsing, in deferred-script order. Static interpreters await execution in
+   * table order, including worker-only references such as `plugins/...`.
    */
-  | { kind: 'script-src'; placement: IndexInjectionPlacement; src: string }
+  | { kind: 'script-src'; placement: IndexInjectionPlacement; src: string; defer?: boolean }
   /** Advisory preload for an external classic script; static workers may ignore it. */
   | { kind: 'script-preload'; src: string }
   /** A `<style>` element in the head. `text` must not contain `</style`, which would close the element early. */
@@ -58,7 +58,7 @@ function renderRow(row: IndexInjection): { placement: IndexInjectionPlacement; m
     case 'script':
       return { placement: row.placement, markup: `<script>${row.text}</script>` }
     case 'script-src':
-      return { placement: row.placement, markup: `<script src="${escapeHtmlAttribute(row.src)}"></script>` }
+      return { placement: row.placement, markup: `<script${row.defer === true ? ' defer' : ''} src="${escapeHtmlAttribute(row.src)}"></script>` }
     case 'script-preload':
       return { placement: 'head', markup: `<link rel="preload" as="script" href="${escapeHtmlAttribute(row.src)}">` }
     case 'style':

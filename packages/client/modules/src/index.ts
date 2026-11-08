@@ -590,14 +590,14 @@ const PARSER_PRELOAD_IDS = [CLIENT_MODULES_ID] as const
 
 /**
  * The boot protocol as index injection rows. The inline registration queue
- * precedes the application-batch preload and the blocking bootstrap batch. Its
+ * precedes the application-batch preload and the deferred bootstrap batch. Its
  * `create()` method materializes the modules
  * bundle, delegates construction to that bundle, and leaves the same facade
  * in live-registration mode. The graph global follows before the shell reads
  * it.
  * @param graph - the composed entry graph.
- * @returns head rows in execution order: queue script, application preloads,
- * blocking bootstrap scripts, graph global.
+ * @returns Head rows: queue script, application preloads, deferred bootstrap
+ * scripts, graph global. Deferred scripts register before the module entry.
  */
 export function bootInjections(graph: WebBootGraph): IndexInjection[] {
   const bootstrapId = JSON.stringify(CLIENT_MODULES_ID)
@@ -630,7 +630,7 @@ window.__ModuleLoader__={
     rows.push({ kind: 'script-preload', src: batch.url })
   }
   for (const batch of bootstrap) {
-    rows.push({ kind: 'script-src', placement: 'head', src: batch.url })
+    rows.push({ kind: 'script-src', placement: 'head', src: batch.url, defer: true })
   }
   rows.push({ kind: 'global', name: '__DSH_BOOT__', value: graph })
   return rows

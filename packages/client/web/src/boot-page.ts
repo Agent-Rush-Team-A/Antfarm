@@ -5,6 +5,7 @@
  */
 import type { LoaderEntryState } from './loader-status.ts'
 import { bootCopy, type BootCopy } from './boot-copy.ts'
+import { bootMarkup } from './boot-markup.ts'
 import css from './boot-page.module.css'
 
 /** Create a div with one module class and optional text. */
@@ -29,34 +30,27 @@ export class BootPage {
   private failure: string | undefined
 
   /**
-   * Build and attach the boot page.
+   * Adopt the initial HTML indicator, or attach it for a programmatic entry.
    * @param container - Application mount point.
    */
   constructor(container: HTMLElement) {
     this.copy = bootCopy(container.ownerDocument.documentElement.lang)
-    this.root = div(css.boot)
-    this.root.dataset.dshBoot = ''
-    this.card = div(css.card)
-    this.wordmark = div(css.wordmark, this.copy.brand)
-    this.spinner = div(css.spinner)
-    this.spinner.dataset.dshBootSpinner = ''
-    this.spinner.setAttribute('role', 'progressbar')
-    this.spinner.setAttribute('aria-label', this.copy.progress)
-    this.spinner.setAttribute('aria-valuemin', '0')
-    this.spinner.setAttribute('aria-valuemax', '100')
-    const ant = div(css.ant)
-    ant.dataset.dshBootAnt = ''
-    ant.setAttribute('aria-hidden', 'true')
-    for (const position of [css.frontFar, css.middleFar, css.rearFar, css.frontNear, css.middleNear, css.rearNear]) {
-      ant.append(div(`${css.leg} ${position}`))
+    if (container.querySelector(':scope > [data-dsh-boot]') === null) {
+      container.insertAdjacentHTML('beforeend', bootMarkup(container.ownerDocument.documentElement.lang, css))
     }
-    ant.append(div(css.abdomen), div(css.thorax), div(css.head),
-      div(`${css.antenna} ${css.antennaFar}`), div(`${css.antenna} ${css.antennaNear}`))
-    this.spinner.append(div(css.trail), ant, div(css.progress))
-    this.hint = div(css.hint, this.copy.loading)
-    this.card.append(this.wordmark, this.spinner, this.hint)
-    this.root.append(this.card)
-    container.append(this.root)
+    const element = (selector: string): HTMLDivElement => {
+      const found = container.querySelector<HTMLDivElement>(selector)
+      if (found === null) throw new Error(`Boot page is missing ${selector}`)
+      return found
+    }
+    this.root = element(':scope > [data-dsh-boot]')
+    this.card = element('[data-dsh-boot-card]')
+    this.wordmark = element('[data-dsh-boot-wordmark]')
+    this.spinner = element('[data-dsh-boot-spinner]')
+    this.hint = element('[data-dsh-boot-hint]')
+    this.wordmark.textContent = this.copy.brand
+    this.hint.textContent = this.copy.loading
+    this.spinner.setAttribute('aria-label', this.copy.progress)
     this.updateProgress()
   }
 

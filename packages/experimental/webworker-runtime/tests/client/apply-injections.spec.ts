@@ -14,7 +14,7 @@ it('ignores script preload hints and executes script sources through the worker 
 
   await applyIndexInjections([
     { kind: 'script-preload', src: preload },
-    { kind: 'script-src', placement: 'head', src: bootstrap },
+    { kind: 'script-src', placement: 'head', src: bootstrap, defer: true },
   ], loadScript)
 
   expect(loadScript).toHaveBeenCalledOnce()

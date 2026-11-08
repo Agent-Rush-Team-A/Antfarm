@@ -49,6 +49,34 @@ describe.skipIf(MODE === 'record')('web e2e: public mount through a prefix-strip
   /** Requests outside the mount: the proxy strips no prefix from them, so nothing answers. */
   const offMountRequests = (): string[] => requestUrls.filter(url => !url.startsWith(scaffold.baseUrl))
 
+  it('shows the initial loading indicator while every external script is pending', async () => {
+    const context = await browser.newContext()
+    const coldPage = await context.newPage()
+    const scripts = Promise.withResolvers<undefined>()
+    let pendingScripts = 0
+    try {
+      await coldPage.route('**/*', async (route) => {
+        if (route.request().resourceType() === 'script') {
+          pendingScripts++
+          await scripts.promise
+        }
+        await route.continue()
+      })
+      await coldPage.goto(scaffold.authenticatedUrl, { waitUntil: 'commit' })
+      const indicator = coldPage.getByRole('progressbar', { name: 'Loading Antfarm' })
+      await indicator.waitFor({ state: 'visible' })
+      expect(await indicator.getAttribute('aria-valuenow')).toBe('0')
+      expect(await coldPage.locator('[data-dsh-boot-ant]').isVisible()).toBe(true)
+      expect(await indicator.evaluate(element => getComputedStyle(element).width)).toBe('192px')
+      await expect.poll(() => pendingScripts).toBeGreaterThan(0)
+      scripts.resolve(undefined)
+      await coldPage.getByRole('tree', { name: 'Sessions' }).waitFor()
+    } finally {
+      scripts.resolve(undefined)
+      await context.close()
+    }
+  })
+
   it('loads the shell, its plugin bundles, and the Gateway WebSocket under the mount', async () => {
     const welcome = page.getByRole('dialog', { name: WELCOME_NOTICE_COPY.zh.title })
     await welcome.waitFor({ timeout: 15_000 })
